@@ -12,6 +12,7 @@
 #
 #   bash examples/demo.sh              # run, then delete the repository
 #   bash examples/demo.sh --keep       # keep it and print its path
+#   bash examples/demo.sh --full       # print the whole metrics report, not a summary
 #   DEMO_PAUSE=1 bash examples/demo.sh # pause between steps (for recording)
 #   DEMO_COLOR=1 bash examples/demo.sh # colours even when not writing to a terminal
 #
@@ -20,8 +21,14 @@
 set -u
 
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEEP=0
-[ "${1:-}" = "--keep" ] && KEEP=1
+KEEP=0 FULL=0
+for arg in "$@"; do
+  case "$arg" in
+    --keep) KEEP=1 ;;
+    --full) FULL=1 ;;
+    *) echo "usage: bash examples/demo.sh [--keep] [--full]" >&2; exit 2 ;;
+  esac
+done
 PAUSE="${DEMO_PAUSE:-0}"
 WORK="$(mktemp -d)"
 if [ "$KEEP" -eq 0 ]; then trap 'rm -rf "$WORK"' EXIT; fi
@@ -80,8 +87,10 @@ elif cmd == "explain":
         print("unparsed " + raw[:200])
 PY
 
-B="" C="" R=""
-if [ -t 1 ] || [ "${DEMO_COLOR:-0}" = 1 ]; then B=$'\033[1m' C=$'\033[36m' R=$'\033[0m'; fi
+B="" C="" RED="" GRN="" R=""
+if [ -t 1 ] || [ "${DEMO_COLOR:-0}" = 1 ]; then
+  B=$'\033[1m' C=$'\033[36m' RED=$'\033[1;31m' GRN=$'\033[32m' R=$'\033[0m'
+fi
 say()  { printf '%s\n' "$*"; }
 step() {
   [ "$PAUSE" != 0 ] && sleep "$PAUSE"
@@ -110,10 +119,10 @@ call() {
     verdict="$(printf '%s' "$out" | python3 -c "$PYHELP" explain)"
     [ "$verdict" = allow ] && continue
     denied="$denied $g"
-    say "  DENIED by $g:"
+    say "  ${RED}DENIED by $g:${R}"
     printf '%s\n' "$verdict" | sed 1d
   done
-  [ -z "$denied" ] && say "  allowed (analysis-gate, review-gate, verify-gate)"
+  [ -z "$denied" ] && say "  ${GRN}allowed${R} (analysis-gate, review-gate, verify-gate)"
   if [ "$expect" = allow ] && [ -n "$denied" ]; then say "  !! expected allow"; FAILED=1; fi
   if [ "$expect" != allow ] && [ "$denied" != " $expect" ]; then
     say "  !! expected a deny from $expect only"; FAILED=1; fi
@@ -133,8 +142,9 @@ sedi() { sed "$1" "$2" > "$2.tmp" && mv "$2.tmp" "$2"; }
 TASK="$P/docs/tasks/T-001.md"
 # move AGENT FROM TO EXPECT : an Edit of T-001's status; on allow it lands and is committed
 move() {
-  local agent="$1" from="$2" to="$3" expect="$4"
-  act "$agent: T-001 $from -> $to"
+  local agent="$1" from="$2" to="$3" expect="$4" name="$1"
+  [ "$agent" = main ] && name=orchestrator
+  act "$name: T-001 $from -> $to"
   if call "$expect" "$agent" Edit "file_path=$TASK" "old_string=status: $from" "new_string=status: $to"; then
     sedi "s/^status: $from\$/status: $to/" "$TASK"
     landed "$agent" Edit "$TASK"
@@ -199,8 +209,9 @@ act "python3 scripts/tw-install.py enforce        # gates block instead of warni
 python3 "$KIT/scripts/tw-install.py" --kit "$KIT" --project "$P" enforce > "$WORK/enforce.log" 2>&1 ||
   { cat "$WORK/enforce.log"; exit 1; }
 say "  mode: enforce"
-say "  installed: AGENTS.md, CLAUDE.md, PRINCIPLES.md, .claude/agents/*, .claude/settings.json (hooks),"
-say "             scripts/hooks/*, scripts/metrics/*, docs/ templates; git core.hooksPath = scripts/hooks"
+say "  installed: AGENTS.md, CLAUDE.md, PRINCIPLES.md, .claude/agents/*,"
+say "             .claude/settings.json (hooks), scripts/hooks/*, scripts/metrics/*,"
+say "             docs/ templates; git core.hooksPath = scripts/hooks"
 git add -A && commit "chore: adopt teamwright"
 
 # --------------------------------------------------------------------------------------
@@ -244,7 +255,8 @@ git add docs/tasks && commit "chore(task): T-001 →TODO"
 # --------------------------------------------------------------------------------------
 step "4. Analysis gate: no code before a written analysis"
 move problem-investigator TODO ANALYSIS allow
-act "developer edits src/slug.sh while T-001 is in ANALYSIS (session started with TEAMWRIGHT_TASK=T-001)"
+act "developer edits src/slug.sh while T-001 is in ANALYSIS"
+say "  (the session declared its task: TEAMWRIGHT_TASK=T-001)"
 TEAMWRIGHT_TASK=T-001 call analysis-gate developer Edit "file_path=$P/src/slug.sh" \
   "old_string=tr -cs" "new_string=tr -s" || true
 move developer ANALYSIS IN_PROGRESS analysis-gate
@@ -351,7 +363,18 @@ python3 -c "$PYHELP" hook "" "$SESSION" @hook_event_name=Stop \
 step "8. Metrics from git and the hook journals"
 act "python3 scripts/metrics/teamwright-metrics"
 python3 scripts/metrics/teamwright-metrics > "$WORK/metrics.md" 2>&1 || { cat "$WORK/metrics.md"; FAILED=1; }
-cat "$WORK/metrics.md"
+if [ "$FULL" -eq 1 ]; then
+  cat "$WORK/metrics.md"
+else
+  # a few rows of the real report (value with its n); --full prints all of it with sources
+  for m in "commits" "agent co-authored commits" "fix share" "tasks done" "review rounds mean" \
+      "approved without review record" "sessions with reviewer evidence" \
+      "approvals (-> CODE_COMPLETE) with a journaled reviewer spawn"; do
+    awk -F' [|] ' -v m="$m" '$1 == "| " m { printf "  %-62s %s\n", m, $2; exit }' "$WORK/metrics.md"
+  done
+  grep -E '^- (Session|Subagent) outcomes' "$WORK/metrics.md" | sed 's/^- /  /'
+  say "  (summary; --full prints the whole report with the source of every number)"
+fi
 
 say ""
 if [ "$KEEP" -eq 1 ]; then say "demo repository kept: $P"; fi

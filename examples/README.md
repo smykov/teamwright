@@ -5,6 +5,7 @@
 ```bash
 bash examples/demo.sh          # or: make demo
 bash examples/demo.sh --keep   # keep the demo repository and print its path
+bash examples/demo.sh --full   # the whole metrics report instead of a summary
 ```
 
 ## What it does
@@ -34,3 +35,12 @@ In Claude Code, every tool call goes through the hooks listed in the project's `
 What it does not show: the model's own work in a `/teamwright:flow` session (reading code, writing the analysis, choosing a fix). The gate decisions and the metrics are the real output of the kit.
 
 The script exits non-zero if any gate decides differently than the walkthrough expects. `tests/test-demo.sh` runs it as part of `make test`, so the demo breaks the build when the gates change.
+
+## The recording
+
+`docs/assets/demo.gif` is this demo, recorded with `make-cast.py` (it runs the demo once and adds reading pauses; the text is unchanged) and rendered with [agg](https://github.com/asciinema/agg):
+
+```bash
+python3 examples/make-cast.py demo.cast
+agg --font-size 14 --theme monokai --last-frame-duration 5 demo.cast docs/assets/demo.gif
+```
