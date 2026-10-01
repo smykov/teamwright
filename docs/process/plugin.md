@@ -1,6 +1,6 @@
 # Plugin packaging and the installer
 
-How teamwright ships as a Claude Code plugin, and what `scripts/tw-install.py` does. This page is about the kit itself; it is not copied into projects.
+How teamwright ships as a Claude Code plugin, and what `scripts/tw-install.py` does. This page is the installer and config reference; it stays in the kit and is not copied into projects.
 
 ## Layout
 
@@ -26,21 +26,7 @@ claude plugin install teamwright@teamwright
 
 The plugin registers **no hooks of its own** (no `hooks/hooks.json`, no `hooks` key). Gates are installed per project into `.claude/settings.json` and run from the project's `scripts/hooks/`, so a project works the same with or without the plugin installed.
 
-Check: `claude plugin validate .` (marketplace) and `claude plugin validate .claude-plugin/plugin.json` (plugin); both run in `make lint` when the `claude` CLI is present. The plugin check prints one expected warning: the kit's own `CLAUDE.md` at the root is not loaded as plugin context. That file is for developing the kit, not for users.
-
-### Facts from the Claude Code docs this layout relies on
-
-Checked on 2026-09-30 against code.claude.com/docs/en/plugins (create-marketplace, marketplace-reference, manifest-reference) and hooks; verified with `claude plugin validate` on Claude Code 2.1.285.
-
-- A marketplace is a directory with `.claude-plugin/marketplace.json`; required fields are `name`, `owner` (with `owner.name`) and `plugins`. Each entry needs `name` and `source`. A missing `description` is a validation warning.
-- A relative `source` resolves from the marketplace root (the directory that contains `.claude-plugin/`), must start with `./`, and `"."` on its own means the root itself. A path containing `..` fails validation.
-- The plugin manifest lives at `.claude-plugin/plugin.json`; only `name` is required (kebab-case, no spaces, `@`, `:` or path separators). Missing `version`, `description` or `author` are warnings. Setting `version` keeps users on that version until it changes.
-- Entry `name` and manifest `name` must match: the install id is `<entry-name>@<marketplace>`, and components are namespaced under the manifest name (`/teamwright:adopt`).
-- Default component locations at the plugin root: `skills/<name>/SKILL.md` (preferred for new plugins), `commands/*.md`, `agents/*.md`, `hooks/hooks.json`, `.mcp.json`. Other files such as `scripts/` are allowed. Setting `commands` or `agents` in the manifest replaces the default scan; `skills` adds to it — so the manifest declares no component keys and relies on the defaults.
-- `${CLAUDE_PLUGIN_ROOT}` is the absolute path of the installed plugin and is substituted in skill, command and agent Markdown bodies; it is not in the environment of the Bash tool, so commands write `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" ...` in their body. Do not write state there: it changes on update.
-- A `CLAUDE.md` at the plugin root is not loaded as context (`claude plugin validate` warns).
-- Marketplace names such as `claude-code-plugins`, `anthropic-*` variants, `github`, `npm` are reserved; `teamwright` is not.
-- PreToolUse hook output: `hookSpecificOutput.permissionDecision` is `allow | deny | ask | defer`; JSON **without** `permissionDecision` leaves the call to the normal permission flow, while top-level `systemMessage` (shown to the user) and `hookSpecificOutput.additionalContext` (given to the model) still apply. Gate-first mode uses exactly this: a warning without a decision.
+How the kit itself is checked and released, and the Claude Code plugin facts this layout relies on: [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## tw-install.py
 

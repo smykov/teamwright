@@ -9,6 +9,12 @@ All notable changes to teamwright. Versions follow [semantic versioning](https:/
 
 ### Added
 - `examples/demo.sh` (`make demo`): an offline walkthrough that installs the kit into a throwaway repository and moves one task through the analysis, review and verify gates, printing each gate decision, then runs the metrics. `tests/test-demo.sh` runs it in `make test`.
+- `docs/assets/demo.gif`, recorded from the demo with `examples/make-cast.py` and agg.
+- `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue and pull request templates.
+
+### Changed
+- README rewritten for a first read: what it is, quickstart, a short lifecycle diagram, real demo output instead of a sample from an empty repository, a first-day walkthrough and a glossary. Onboarding, gate modes, the flow router, runners, configuration, updating and manual install moved to `docs/usage.md`.
+- `docs/process/plugin.md` is the installer and config reference only; how the kit is checked, released and extended, and the plugin facts it relies on, moved to `CONTRIBUTING.md`.
 
 ## [0.3.1] - 2026-10-01
 

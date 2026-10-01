@@ -10,7 +10,8 @@ Guidance for agents working on **teamwright itself** — the Claude Code plugin 
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.
 - `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), release check.
 - `tests/` — regression tests in throwaway git repos (`tests/run.sh`).
-- `docs/design-decisions.md` — why the kit is shaped the way it is.
+- `examples/` — the offline demo (`make demo`, run by `tests/test-demo.sh`) and its recorder.
+- `docs/design-decisions.md` — why the kit is shaped the way it is; `docs/usage.md` — user guide; `CONTRIBUTING.md` — the same rules for people.
 
 ## Checks
 
