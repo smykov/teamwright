@@ -2,6 +2,24 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.3.3] - 2026-10-01
+
+Fixes from a documentation coverage audit and a practices review: the docs now say what the code does.
+
+### Fixed
+- Review gate: after two `REQUEST_CHANGES` rounds in a row, the third review record may only be `ESCALATE` or `REJECT_RECURRENCE`. It used to refuse only a third `REQUEST_CHANGES` and allowed `APPROVE`, contrary to `lifecycle.md`, the reviewer role and the README. Send-backs are counted per run: an `APPROVE` or `ESCALATE` ends it, so a task back from `VERIFY_FAIL` or an owner decision starts a new count.
+- rca analysis contract: the gate requires `root_cause`, `evidence`, `decision` for a `type: rca` task, but `lifecycle.md`, the problem-investigator's output block and the task template described the five feature fields, so an rca task filled per instructions could not enter `IN_PROGRESS`. The template carries a commented rca block, the investigator shows both blocks, and a test fills every documented block as written and passes the gate. `developer.md` no longer says three fields suffice for a feature.
+- Analysis gate exit text and `gates.md`: a root cause that cannot be proven yet goes to `BLOCKED` with `blocked_on`, as the lifecycle diagram says (was: stay `TODO`).
+
+### Changed
+- Tiers match the code: P-001 T1+T3 (analysis gate), P-003 T1+T3, P-004 T1 (no hook runs the gate), P-008 T0 (the journal records facts, nothing warns), P-009 T1+T3 with CI only if the project adds it, patch guard T2 everywhere. `gates.md` and the README state that Claude Code gate tiers apply in `enforce` mode.
+- The undefined "validator module" is gone: the task-validator writes the verify record the verify gate checks, and the orchestrator acts on its acceptance verdict (`FAIL` → `IN_PROGRESS`, `NEEDS_OWNER` → owner).
+- Lifecycle: sprints defined (active sprint, who opens and closes it; the sprint template no longer copies statuses); `class`, `implemented_by` (set by the orchestrator at `→ NEEDS_REVIEW`) and `review` in the field table; missing transitions on the diagram; how rca exits (b) and (c) reach `DONE`; `depends_on` is ready when `VERIFIED` or `DONE`, as the router computes.
+- Installed projects stand alone: the `CLAUDE.md` template points to `AGENTS.md` and `docs/process/`; `AGENTS.md` and every role file point to `gates.md` for refusals and mention `TEAMWRIGHT_PAUSE`; installed docs use project paths and name `tw-install.py` / `tw-next.py` as plugin scripts.
+- Consistency: test-writer runs after `ANALYSIS → IN_PROGRESS` and asks for characterization tests; `enforce` is run or approved by the owner, lowering is owner-only outside Claude Code; the `CLAUDE.md` budget is the hook's 40 KB; `gates.md` lists every environment variable the hooks read and explains patch-guard vs metrics areas; `decisions.md` has Task and Decided by columns; open-question status words match the router.
+- README: a Practices section, links from "What gets installed" to the template files, adapter links in Tools, a Commands table, more Known limitations; `docs/README.md` indexes the documentation.
+- `make lint` checks that relative links and anchors in all Markdown resolve (`scripts/check-links.py`).
+
 ## [0.3.2] - 2026-10-01
 
 ### Fixed

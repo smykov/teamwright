@@ -15,7 +15,7 @@ make check            # lint + tests + secret scan
 | Command | What it runs |
 |---|---|
 | `make test` | regression tests in throwaway git repositories (`tests/test-*.sh`), including the demo |
-| `make lint` | shellcheck, `bash -n`, Python syntax, JSON validity, plugin manifests, version consistency, a bash 3.2 check |
+| `make lint` | shellcheck, `bash -n`, Python syntax, Markdown links and anchors (`scripts/check-links.py`), JSON validity, plugin manifests, version consistency, a bash 3.2 check |
 | `make scan` | secret scan of the repository (gitleaks with `.gitleaks.toml`, else the built-in scanner) |
 | `make demo` | `examples/demo.sh`: one task through every gate |
 | `make release-check` | before tagging: the version was bumped since the last `v*` tag and the manifests and changelog agree |
