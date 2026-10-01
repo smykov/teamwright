@@ -24,7 +24,7 @@ The model is set explicitly in each role file and chosen by task class, not by p
 - **Investigator ≠ developer.** An agent that investigates and fixes in one go stops at the first plausible cause and patches the symptom. Forcing a written analysis (with evidence and an invariant) *before* code makes the cause checkable by someone else.
 - **Test-writer before developer.** A test written after the code tends to describe the code, not the guarantee. A test that was red first is proof it can fail.
 - **Review is a separate, fresh agent.** An author reviewing its own diff — or a fork that inherits the author's context — shares the author's blind spots and rationalisations. A reviewer that starts cold, reads the principles and the failure log, and runs the gate itself is the only review that counts.
-- **Validator ≠ reviewer.** Review asks "is the code right?"; validation asks "is every claim of the task backed by evidence?". The validator also applies 3–6 targeted mutations — on a throwaway copy of the tree, never in the working tree — to prove the tests actually bite. When the validator is enabled, its `PASS` is required for `DONE`.
+- **Validator ≠ reviewer.** Review asks "is the code right?"; validation asks "is every claim of the task backed by evidence?". The validator also applies 3–6 targeted mutations — on a throwaway copy of the tree, never in the working tree — to prove the tests actually bite. It writes the verify record the verify gate requires for `DONE` (T3); its acceptance verdict (`PASS` / `FAIL` / `NEEDS_OWNER`) is recorded in the task and acted on by the orchestrator (T1, no hook reads it).
 - **Verifier ≠ author, and never a fixer.** The validator runs verification of the running system in the VERIFY session — API tests for APIs, an end-to-end UI test run for UI (with the project's configured UI runner), smoke for deploys — and writes a verify record. It never edits code or tests: a verifier that may fix what it finds starts adjusting the check to the system instead of the other way round.
 - **Owner decides levels above the task.** The investigator may *recommend* an architecture review or a process amendment; only the owner chooses between architectures or changes the rules. An agent that rewrites its own constitution to make a failure go away removes the signal, not the defect.
 - **Writer inside the task.** Docs updated "later" drift, and the next agent reads the drift as truth.
@@ -62,9 +62,10 @@ sequenceDiagram
 
     O->>I: T-042 (ANALYSIS)
     I-->>O: analysis block: cause, evidence, invariant, seam
+    O->>O: status IN_PROGRESS (analysis gate checks the block)
     O->>T: write red tests per guarantee
     T-->>O: tests fail for the right reason
-    O->>D: implement (IN_PROGRESS)
+    O->>D: implement until the tests are green
     D-->>O: gate green
     O->>W: sync docs
     W-->>O: docs updated
@@ -78,7 +79,7 @@ sequenceDiagram
         O->>V: VERIFY session for T-042
         V->>V: smoke + API tests / e2e UI run incl. failure branch
         V->>V: write docs/tasks/T-042.verify/<n>.md, acceptance + mutations
-        V-->>O: PASS → VERIFIED → DONE / FAIL → VERIFY_FAIL
+        V-->>O: verify PASS + acceptance PASS → VERIFIED → DONE<br/>verify FAIL → VERIFY_FAIL · acceptance FAIL → IN_PROGRESS
     else REQUEST_CHANGES
         R-->>O: verdict REQUEST_CHANGES + findings
         O->>O: status IN_PROGRESS (round = number of review records)
@@ -91,7 +92,7 @@ sequenceDiagram
             O->>OW: arch-review options / proposed amendment
             OW-->>O: decision → docs/decisions.md
         end
-    else ESCALATE (would be round 3, or needs a decision)
+    else ESCALATE (third record after two send-backs, or needs a decision)
         R-->>O: verdict ESCALATE
         O->>O: status BLOCKED, blocked_on: owner decision
     end

@@ -7,7 +7,7 @@ Splitting them is what makes review real and pushes safe.
 flowchart LR
     Q[(Ready queue<br/>readiness rule)] --> DEV
     subgraph DEV[DEV session]
-        P[Plan batch] --> A[Analysis block] --> I[Implement] --> G{Gate<br/>make test}
+        P[Plan batch] --> A[Analysis block<br/>problem-investigator] --> IP[IN_PROGRESS<br/>analysis gate] --> RT[Red tests<br/>test-writer] --> I[Implement<br/>developer] --> G{Gate<br/>make test}
         G -- red --> I
         G -- green --> D[Docs] --> C[Local commit<br/>NEEDS_REVIEW]
     end
@@ -38,7 +38,7 @@ After an interruption the next `/teamwright:flow` gets `resume`: it reconstructs
 
 | Session | Actor | Does | Never does |
 |---|---|---|---|
-| **DEV** | developer agent(s) | Pick batch → fill `analysis` → implement → gate → update docs → local commit → `NEEDS_REVIEW` | Push; mark its own work reviewed |
+| **DEV** | orchestrator with role subagents: `problem-investigator`, `test-writer`, `developer`, `technical-writer` | Pick batch → `ANALYSIS`: investigator fills `analysis` → `IN_PROGRESS` (analysis gate) → test-writer: red tests → developer: implement until green → gate → technical-writer: docs → orchestrator: local commit, `NEEDS_REVIEW` | Push; mark its own work reviewed |
 | **REVIEW** | `code-reviewer` subagent, fresh context (spawned by the orchestrator, never a fork of the author) | Read diff + task + principles + failures; run the gate; detect recurrence (opening the `rca` task file); write the review record `docs/tasks/<ID>.reviews/<n>.md` with one verdict | Edit code, tests or docs — every finding, however small, goes back to DEV; change task statuses; review code it wrote |
 | **DRAIN** | orchestrator | Push only when every task referenced in the unpushed tail is `CODE_COMPLETE`, `DEPLOYED`, `VERIFIED` or `DONE` (or carries `tail_code: ratified`); flip to `DEPLOYED` | Push selectively (a push ships the whole tail) |
 | **VERIFY** | `task-validator` agent, fresh context | Run the verification suites per `surface` against the running system (API tests; end-to-end UI run with the configured UI runner; deploy smoke), failure branch included; write the verify record `docs/tasks/<ID>.verify/<n>.md`; acceptance check (DoD evidence, mutations) | Edit code or tests to make a run pass; accept a happy-path run, an interactive exploration or the system's own text as proof |
@@ -71,6 +71,8 @@ A session that ends without an outcome is a defect in the process — the next s
 | **A red gate fails the whole batch** | The batch shares one gate run; no task in it moves to `NEEDS_REVIEW` until all are green |
 | Group by seam and deploy unit | One push ships the batch; mixing units smears it across pipelines |
 | Each task keeps its own acceptance, commit line, status and review record | Batching shares execution, not accountability |
+
+These are written rules (T0): neither the router nor `/teamwright:flow` checks a batch's priorities or blockers; `--tasks N` only sets how many tasks the session may take.
 
 ## 4. Stop and check with the owner
 

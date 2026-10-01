@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Writes red tests for a task in {{STACK}} before implementation — one per guarantee in the DoD, failure branches included — a reproducing red test for every bug or rca fix, and the end-to-end test (API or UI) for the Acceptance failure branch that verification will run. Use after the analysis block exists and before developer. Copy per area and fill the placeholders. Does not write implementation code.
+description: Writes red tests for a task in {{STACK}} before implementation — characterization tests first where the seam has none, then one red test per guarantee in the DoD, failure branches included — a reproducing red test for every bug or rca fix, and the end-to-end test (API or UI) for the Acceptance failure branch that verification will run. Use after the analysis is complete and the task has entered IN_PROGRESS (tests are code to the analysis gate), and before developer. Copy per area and fill the placeholders. Does not write implementation code.
 tools: Read, Grep, Glob, Bash, Edit, Write
 # Model is chosen by task class, not by prompt text: the orchestrator routes a class of tasks to a role file.
 # Default opus. For a cheaper variant on isolated, well-specified work, copy this file (e.g. -light.md) with model: sonnet.
@@ -91,6 +91,7 @@ Configured by teamwright from `.teamwright/config.yml` (spec=spec-kit, context=s
 - **Failure branches:** timeouts, invalid input, dependency down, limits exceeded, partial writes.
 - **Would it bite?** For each test, name the implementation line whose removal turns it red. If none — the test is toothless; rewrite it.
 - **Fake data only**: `example.com`, documentation IP ranges, obviously fake tokens. No real services.
+- **Characterization tests first** where the seam has no tests: before the red tests, pin the current behaviour the task must not change (what the code does today, asserted as it is, green), so the developer's change is checked against it. Name them as such and list them separately in your report.
 
 ## End-to-end tests for verification
 
@@ -104,7 +105,7 @@ Verification (VERIFY session) runs committed tests against the running system; i
 
 ## Steps
 
-1. List tests: guarantee → test, happy path + failure branches; plus the end-to-end test per `surface`.
+1. No tests around the seam yet → characterization tests first (Rules). Then list tests: guarantee → test, happy path + failure branches; plus the end-to-end test per `surface`.
 2. Write them using existing fixtures.
 3. Run `{{TEST_COMMAND}} <files>`: they must fail on missing behaviour or on the assertion — not on a typo, import or fixture error.
 4. Lint the tests.
@@ -119,6 +120,7 @@ Verification (VERIFY session) runs committed tests against the running system; i
 
 ```
 Task: <id>
+Characterization: <file::test — current behaviour pinned> | none needed (seam already tested)
 Tests: <file::test — guarantee it proves>
 Not covered: <what, why> | none
 E2E (surface <api|ui|both|none>): <file::test — Acceptance line> | not run: <why>

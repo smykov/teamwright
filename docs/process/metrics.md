@@ -56,7 +56,10 @@ Area = the file (`--area file`, default) or its directory (`--area dir`, optiona
 to `--area-depth N` components; a root-level file is its own area). Directory areas
 were the old default and proved useless on a real history: in a monorepo with a few
 large services almost every fix lands in a directory fixed the month before, and the
-rate sat at ~95% before and after a process change.
+rate sat at ~95% before and after a process change. The patch guard keeps the directory
+as its default area (`PG_AREA=dir`): it asks a narrower question at commit time — "was
+this neighbourhood patched recently?" — where a fix in a sibling file counts and a false
+warning is cheap ([gates.md](gates.md#patch-guard)).
 
 Paths matching `--exclude-regex` count for nothing — neither areas, churn nor
 recurrence. Default: `docs/`, every Markdown / reStructuredText / AsciiDoc file

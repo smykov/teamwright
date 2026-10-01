@@ -13,8 +13,8 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 
 ### P-001 — Fix the root cause, not the symptom
 - **Why:** a defect class was patched point by point for months, each patch passing review, until splitting the recurrences out exposed several times more root-cause work than the plan showed.
-- **Tier:** T1 + T2
-- **How checked:** `analysis.root_cause` + `evidence` required before `IN_PROGRESS` (T2 hook); reviewer asks "what caused this, and does the change remove it?" A deliberate workaround is marked temporary with a linked root task.
+- **Tier:** T1 + T3
+- **How checked:** the `analysis` block (`root_cause`, `evidence`, …) is required before `IN_PROGRESS` and before code edits of the active task (analysis gate, T3; it warns instead while `mode: gate-first`); reviewer asks "what caused this, and does the change remove it?" A deliberate workaround is marked temporary with a linked root task.
 
 ### P-002 — An invariant, not an allowlist
 - **Why:** a recurring defect was "fixed" by adding one more regex or allowlist entry each time — once even under a commit message claiming the list had been replaced by an invariant.
@@ -28,13 +28,13 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 
 ### P-004 — A guarantee without a failing test doesn't exist
 - **Why:** a guarantee stated only in a doc, comment or prompt was ignored by the first cheap code path that came along.
-- **Tier:** T1 + T3
-- **How checked:** every new invariant ships with a test that fails when the invariant is removed (red-before-fix); gate blocks on red.
+- **Tier:** T1
+- **How checked:** every new invariant ships with a test that fails when the invariant is removed (red-before-fix); the reviewer and the validator re-run the gate and do not accept a red one. No hook runs the gate: a project that wants it blocking adds the gate command to its CI.
 
 ### P-005 — Tests must bite
 - **Why:** green, happy-path-only tests kept passing while the code they were meant to guard was broken on the failure branch.
 - **Tier:** T1
-- **How checked:** reviewer names the line whose removal turns each test red; the task-validator (when enabled) applies targeted mutations on a throwaway copy of the tree and fails the task if one survives; acceptance includes the failure branch (empty result, partial write, timeout, duplicate), not only the happy path.
+- **How checked:** reviewer names the line whose removal turns each test red; the task-validator applies targeted mutations on a throwaway copy of the tree and fails the task if one survives; acceptance includes the failure branch (empty result, partial write, timeout, duplicate), not only the happy path.
 
 ### P-006 — Verify against data and logs, not against the system's own words
 - **Why:** a pipeline reported success while every deploy job had been skipped, and the failed delivery went unnoticed because nobody checked the running version.
@@ -48,13 +48,13 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 
 ### P-008 — Measure from git and logs, not self-reports
 - **Why:** agents reported "idle" while the queue had ready work, and a required tool silently disappeared behind a permission change for weeks — both visible only in logs, not in self-reports.
-- **Tier:** T2
-- **How checked:** hooks journal tool calls and session outcomes into `.teamwright/logs/`; metrics (rework rate, review rounds, recurrence count, cycle time) are computed from commit history, review records and those logs using the commit convention. No single metric is a target. A zero reading is first checked for a broken extractor.
+- **Tier:** T0
+- **How checked:** nothing warns or blocks; the rule is kept by where the numbers come from. Hooks journal tool calls and session outcomes into `.teamwright/logs/`; metrics (rework rate, review rounds, recurrence count, cycle time) are computed from commit history, review records and those logs using the commit convention. No single metric is a target. A zero reading is first checked for a broken extractor.
 
 ### P-009 — Secrets never reach logs, commits or docs
 - **Why:** keys reached plaintext logs through a third-party library's request logging and through exception text, not through the project's own log lines.
-- **Tier:** T3
-- **How checked:** secret scanner in pre-commit and CI (blocks); log context is an allowlist; before promising "not logged", name **every** path (own logs, libraries, exception handlers). The component that holds a secret masks it — callers don't.
+- **Tier:** T1 + T3
+- **How checked:** secret scanner in the `pre-commit` hook (blocks; `git commit --no-verify` skips it, so a project that needs a backstop runs the same scan in its CI, e.g. `gitleaks git --redact .`); log context is an allowlist; before promising "not logged", name **every** path (own logs, libraries, exception handlers). The component that holds a secret masks it — callers don't.
 
 ### P-010 — One source of truth per cross-cutting value
 - **Why:** a cross-cutting value computed by two separate chains gave two different answers inside one response.
@@ -92,15 +92,15 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 
 | ID | Principle | Tier | Status |
 |---|---|---|---|
-| P-001 | Root cause, not symptom | T1+T2 | Accepted |
+| P-001 | Root cause, not symptom | T1+T3 | Accepted |
 | P-002 | Invariant, not allowlist | T1+T2 | Accepted |
 | P-003 | Escalate instead of patching twice | T1+T3 | Accepted |
-| P-004 | Guarantee needs a failing test | T1+T3 | Accepted |
+| P-004 | Guarantee needs a failing test | T1 | Accepted |
 | P-005 | Tests must bite | T1 | Accepted |
 | P-006 | Verify the running system against data/logs | T1+T3 | Accepted |
 | P-007 | Self-review doesn't count | T3 | Accepted |
-| P-008 | Measure from git/logs | T2 | Accepted |
-| P-009 | Secrets never in logs | T3 | Accepted |
+| P-008 | Measure from git/logs | T0 | Accepted |
+| P-009 | Secrets never in logs | T1+T3 | Accepted |
 | P-010 | Single source of truth | T1 | Accepted |
 | P-011 | One shared seam | T1 | Accepted |
 | P-012 | Invariant before rewriting dangerous code | T0+T1 | Accepted |

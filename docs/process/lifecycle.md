@@ -27,14 +27,14 @@ Template: `template/docs/tasks/_task-template.md`.
 | `status` | always | See the status machine below |
 | `sprint` | always | Sprint the task was **created** in; never changes |
 | `priority` | always | `P0`…`P3` by observable effect, not by importance to the author |
-| `depends_on` | optional | Task ids that must be `DONE` first |
+| `depends_on` | optional | Task ids that must be `VERIFIED` or `DONE` first (the router's readiness rule, section 4) |
 | `deploys` | optional | `false` for work with no deployable artifact (docs, scripts, config) |
 | `surface` | always | What verification must exercise: `api` · `ui` · `both` · `none` (section 7). Left empty, the task cannot reach `VERIFIED` or `DONE` |
 | `verify_exception` | optional | One line: why the change cannot be checked by an api/ui test; the only thing that allows a `kind: manual` verify record. Reviewed like code |
 | `design_ref` | when created from a spec | Link to the spec/plan section the task implements (relative path + anchor) |
 | `recurrence_of` | when detected | Earlier tasks that fixed the same class of defect |
 | `absorbed_by` | when deferred into a root task | Id of the `rca` task that now owns this scope |
-| `blocked_on` | optional | Soft hold: free text (waiting for evidence or a person), or open-question ids (`OQ-02`, `OQ-02, OQ-05`) when the task must not be analysed before they are answered — a sentence in the body is not enough, the router reads only this field. Free text holds until cleared to `""`; OQ ids hold until each is `answered` or `dropped` in `docs/open-questions.md` |
+| `blocked_on` | optional | Soft hold: free text (waiting for evidence or a person), or open-question ids (`OQ-02`, `OQ-02, OQ-05`) when the task must not be analysed before they are answered — a sentence in the body is not enough, the router reads only this field. Free text holds until cleared to `""`; OQ ids hold until each is resolved in `docs/open-questions.md` (its Status starts with `answered` or `dropped`; `closed`, `resolved` and `done` are read the same way) |
 | `analysis` | before `IN_PROGRESS` | `root_cause`, `evidence`, `invariant`, `seam`, `approach` for `feature`, `bug` and `chore`. `type: rca` needs `root_cause`, `evidence`, `decision` instead (the chosen exit and what it changes; `invariant` and `seam` are expected for exit (a)). Checked by the analysis gate |
 | `tail_code` | optional | `ratified` — the owner explicitly accepts that this task's code is pushed although the task is not in an approved status (for example a patch kept as a marked temporary workaround in a `DEFERRED` task) |
 
@@ -92,7 +92,7 @@ stateDiagram-v2
 | `NEEDS_REVIEW → CODE_COMPLETE` | Latest review record `APPROVE` from the `code-reviewer` agent; findings fixed or filed; no principle violated without a recorded exception |
 | `CODE_COMPLETE → DEPLOYED` | Pushed during DRAIN; pipeline green |
 | `DEPLOYED → VERIFIED` | A `PASS` verify record of each kind `surface` requires, for the deployed commit (section 7): API tests and/or an end-to-end UI test run per `surface`, including the **failure branch** from Acceptance, checked against data/logs — not against the system's own text output |
-| `VERIFIED → DONE` (or `CODE_COMPLETE → DONE` when `deploys: false`) | A `PASS` verify record for the current code per `surface` (with `deploys: false` the system is started locally; `deploys: false` + `surface: none` needs none); nothing left in the task that is "temporary" without a linked follow-up; **when the validator module is enabled, the latest `task-validator` verdict is `PASS`** (`FAIL` goes back to `IN_PROGRESS`, `NEEDS_OWNER` waits for the owner) |
+| `VERIFIED → DONE` (or `CODE_COMPLETE → DONE` when `deploys: false`) | A `PASS` verify record for the current code per `surface` (with `deploys: false` the system is started locally; `deploys: false` + `surface: none` needs none); nothing left in the task that is "temporary" without a linked follow-up; the latest `task-validator` acceptance verdict in `## Validation` is `PASS` (`FAIL` → back to `IN_PROGRESS` with its findings; `NEEDS_OWNER` → waits for the owner). The verify gate checks the verify record (T3); the acceptance verdict is checked by the orchestrator, not by a hook (T1) |
 
 Per type, in addition:
 
@@ -108,8 +108,10 @@ Per type, in addition:
 The "what next" list is derived, never curated by hand:
 
 ```
-ready = { status: TODO, every depends_on is DONE,
-          blocked_on is empty or names only OQ-NN that are answered/dropped }
+ready = { status: TODO, every depends_on is VERIFIED or DONE,
+          blocked_on is empty or names only OQ-NN that are resolved }
+resolved = the question's Status cell in docs/open-questions.md starts with
+           answered, dropped, closed, resolved or done
 order = effective priority (P0 > P1 > P2 > P3) → number of open tasks it blocks (desc) → id (asc)
 effective priority = the highest priority of the task itself and of every open task
                      that depends on it, directly or transitively

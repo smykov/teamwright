@@ -3,7 +3,8 @@
 <!--
 This file is a MAP, not an encyclopedia. It is loaded into every session in full,
 so every line is paid for on every run.
-Size budget: keep it under ~150 lines. A hook warns when it exceeds 40 KB (default, configurable).
+Size budget: a hook warns when it exceeds 40 KB (TEAMWRIGHT_CLAUDE_MD_MAX_KB in
+.claude/settings.json). That is a ceiling, not a target: a map is usually far shorter.
 Put in here only what costs you BEFORE you'd think to open a file.
 Everything else goes to docs/decisions/<area>.md and is linked from the index below.
 Replace every <placeholder>; delete sections that don't apply.

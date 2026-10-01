@@ -5,7 +5,15 @@ pressure, late in a long session, by an agent that is sure it is right. Gates tu
 few rules that must hold into checks that run on their own.
 
 Tiers (same scale as `PRINCIPLES.md`): **T0** written guidance · **T1** reviewer
-checklist · **T2** hook warns · **T3** hook/CI blocks.
+checklist · **T2** hook warns · **T3** hook/CI blocks. The tiers below are those of
+`enforce` mode: while a project runs in `gate-first`, the analysis, review and verify
+gates warn instead (T2) until `enforce` is switched on. Git hooks, the deny list and
+the state guard behave the same in both modes.
+
+`tw-install.py` and `tw-next.py` live in the plugin (the kit), not in the project. Run
+them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin directory
+(`/teamwright:status` prints the full path), or through the skills that call them:
+`/teamwright:status`, `/teamwright:flow`, `/teamwright:reconfigure`.
 
 ## Overview
 
@@ -16,9 +24,9 @@ checklist · **T2** hook warns · **T3** hook/CI blocks.
 | [Verify gate](#verify-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) | T3 | "Done" that does not work in the running system |
 | [Journal](#journal) | Claude Code tool, permission and stop events | — (facts) | Metrics and gates built on self-report |
 | [Deny list](#deny-list) | `.claude/settings.json` permissions | T3 | Destroying uncommitted work or shared history |
-| [Patch guard](#patch-guard) | git `commit-msg` | T2 (T3 opt-in) | "One more `if`" fixes in an area already fixed before |
+| [Patch guard](#patch-guard) | git `commit-msg` | T2 (warns; blocking is opt-in) | "One more `if`" fixes in an area already fixed before |
 | [DRAIN / pause](#drain-and-pause) | git `pre-push` | T3 | Unapproved work leaving the machine; pushes during a pause |
-| [Secret scan](#secret-scan) | git `pre-commit` + CI | T3 | Tokens, keys, `.env`, local settings in history |
+| [Secret scan](#secret-scan) | git `pre-commit` (CI only if the project adds it) | T3 | Tokens, keys, `.env`, local settings in history |
 | [CLAUDE.md budget](#claudemd-budget) | Claude Code `SessionStart` + git `pre-commit` | T2 | A context file that grows into a second docs folder |
 
 All files live in `scripts/hooks/`. Install the git hooks once per clone:
@@ -51,6 +59,13 @@ value means `enforce`. The gates read the file with the installer's own parser
 mode the gates apply. `TEAMWRIGHT_GATE_MODE=warn|enforce`, set by whoever starts Claude
 Code, overrides the file.
 
+**Who switches the mode.** Raising strictness (`gate-first → enforce`) is the owner's
+call: the owner runs `python3 <kit>/scripts/tw-install.py enforce`, or explicitly
+approves the main session running it (`/teamwright:status` and `/teamwright:flow` ask
+first). Lowering it (`enforce → gate-first`) is owner-only and happens outside Claude
+Code: the installer refuses it inside any Claude Code tool call (see the owner override
+below).
+
 **State guard** (in `review-gate.sh`, `_hookio.guard_state`). The mode switch, the
 install manifest and the ledgers are not the agents' to change:
 
@@ -69,7 +84,7 @@ install manifest and the ledgers are not the agents' to change:
   and blocked an agent from committing the config it had been asked to change.
 - Config changes, by any agent, at any time: write the proposal to
   `.teamwright/config.next.yml` (allowed, gitignored), then the main session runs
-  `tw-install.py apply --config .teamwright/config.next.yml`. The installer validates
+  `python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml`. The installer validates
   it, prints the diff, applies it and removes the proposal. Lowering the mode
   (`enforce → gate-first`) is still refused inside Claude Code.
 - Edit/Write to the ledgers and journal (`.teamwright/sessions/`, `.teamwright/logs/`,
@@ -77,7 +92,7 @@ install manifest and the ledgers are not the agents' to change:
   are covered by the review gate (5).
 - `tw-install.py` runs only from the main session (a subagent is denied; it hands the
   proposal file to the main session).
-- Owner override: a person runs `TEAMWRIGHT_OWNER=1 python3 .../tw-install.py apply ...`
+- Owner override: a person runs `TEAMWRIGHT_OWNER=1 python3 <kit>/scripts/tw-install.py apply ...`
   outside Claude Code, or edits the file by hand. The variable is ignored when
   `CLAUDECODE` is set (every Claude Code tool call), and agent commands that mention
   `TEAMWRIGHT_OWNER` or `CLAUDECODE` are denied.
@@ -124,7 +139,7 @@ file when that task leaves `IN_PROGRESS`. A denied or failed edit never changes 
 One active task per working tree: parallel sessions need separate worktrees.
 
 Configuration: `TEAMWRIGHT_ANALYSIS_FIELDS`, `TEAMWRIGHT_RCA_FIELDS`,
-`TEAMWRIGHT_CODE_STATUSES`, `TEAMWRIGHT_NONCODE_RE` (environment).
+`TEAMWRIGHT_CODE_STATUSES`, `TEAMWRIGHT_NONCODE_RE` ([environment](#environment-variables)).
 
 ## Review gate
 
@@ -183,7 +198,10 @@ rca_task: T-050             # required with REJECT_RECURRENCE
 `reviewer: human:<name>` and commits it. The gate accepts that record only when no agent
 wrote the round; agents cannot write the marker.
 
-**Deliberate exit:** `review: skipped:trivial` in the task record.
+**Deliberate exit:** `review: skipped:trivial` in the task record. Any agent that edits
+the task record can write it, the author included; it stays in the record, the
+validator checks it (acceptance step "Review"), and metrics count tasks that reached
+`CODE_COMPLETE` without a review record.
 
 ## Verify gate
 
@@ -314,7 +332,7 @@ usual form of an accident, not a determined bypass.
 
 ## Patch guard
 
-`scripts/hooks/patch-guard.sh` (called from `commit-msg`) · T2 anywhere, T3 in patched areas
+`scripts/hooks/patch-guard.sh` (called from `commit-msg`) · T2 (warns by default; `PG_MODE=block` is opt-in)
 
 **Incident it prevents.** A recurring defect class was "fixed" by adding one more
 recogniser regex or allowlist entry each time. One author honestly wrote "replaced the
@@ -335,8 +353,14 @@ commits, and a guard that blocks everything is switched off within a week.
   signatures are tuned to your stack — and not while adopting a legacy codebase.
 - The `literal-branch` signature (`if x == "foo"`) is off by default because it fires
   on ordinary code; enable it with `PG_SIG_LITERAL_BRANCH` (see `patch-guard.conf`).
-- Area = the file's directory (`PG_AREA=dir`) or the file (`PG_AREA=file`). A file at
-  the repository root is always its own area, never `.` (the whole repository).
+- Area = the file's directory (`PG_AREA=dir`, default) or the file (`PG_AREA=file`). A
+  file at the repository root is always its own area, never `.` (the whole repository).
+  The metrics tool uses the file as its default area (`--area file`, see
+  [metrics.md](metrics.md#1-git-history-works-on-any-repository)), and the two defaults differ on purpose: the
+  guard asks "was this neighbourhood patched recently?", where a directory catches a
+  fix in a sibling file, and a warning costs little; a recurrence *rate* over a whole
+  history needs a narrow area, because almost every directory of a large codebase has a
+  fix in the previous month.
 
 **Deliberate overrides** (all stay in history):
 
@@ -347,7 +371,8 @@ commits, and a guard that blocks everything is switched off within a week.
 - One-off, human only: `PATCH_GUARD=off git commit ...`
 
 Tuning: copy `scripts/hooks/patch-guard.conf` to `.teamwright/patch-guard.conf` and
-edit `PG_SIGNATURES`, `PG_EXCLUDE_RE`, `PG_PRIOR_FIXES`, `PG_LOOKBACK_DAYS`, `PG_MODE`.
+edit `PG_SIGNATURES`, `PG_EXCLUDE_RE`, `PG_PRIOR_FIXES`, `PG_LOOKBACK_DAYS`, `PG_MODE`,
+`PG_AREA`, `PG_FIX_SUBJECT_RE` (the subject pattern that makes a commit "a fix").
 Noisy signatures teach people to ignore the guard — trim them to your stack.
 
 The same hook prints a note when a task status changes without a
@@ -386,7 +411,7 @@ in history); human, one-off: `TEAMWRIGHT_ALLOW_PUSH=1 git push`.
 
 ## Secret scan
 
-`scripts/hooks/pre-commit`, `.gitleaks.toml`, CI · T3
+`scripts/hooks/pre-commit`, `.gitleaks.toml` · T3 (CI only if the project adds it)
 
 **Incident it prevents.** Agents paste config values, tokens seen in logs, or local
 settings files into commits. Once pushed, a secret has to be rotated, not deleted.
@@ -406,12 +431,14 @@ settings files into commits. Once pushed, a secret has to be rotated, not delete
   token) is secret-like wherever it is, unless the line marks it as an example or fake.
   Why: a first scan of a real project gave 93 findings and 0 real secrets; a scan that
   cries wolf gets bypassed. gitleaks, when installed, applies its own rules unchanged.
-  `tw-install.py scan` reports the same classes with a summary and fails only on
+  `python3 <kit>/scripts/tw-install.py scan` reports the same classes with a summary and fails only on
   secret-like findings.
 
 **False positive:** add `teamwright:allow-secret` (or `gitleaks:allow`) to the line.
 **Deliberate bypass** (human, rare): `git commit --no-verify` — and say why in review.
-CI should run gitleaks over the full history as the backstop.
+The kit installs no CI workflow. `--no-verify` skips the hook, so a project that wants a
+backstop adds the scan to its own CI, for example a `make scan` target that runs
+`gitleaks git --config .gitleaks.toml --redact .` over the full history.
 
 ## CLAUDE.md budget
 
@@ -426,6 +453,32 @@ set in `.claude/settings.json` → `env`). Fix: move decisions to
 `docs/decisions/<area>.md`, verbatim, in a separate commit.
 
 ---
+
+## Environment variables
+
+Set by the person who starts Claude Code or runs git; agents cannot change the state
+guard's variables. Unset means the default.
+
+| Variable | Read by | Effect (default) |
+|---|---|---|
+| `TEAMWRIGHT_GATE_MODE` | Claude Code gates | `warn` or `enforce`; overrides `mode:` in `.teamwright/config.yml` |
+| `TEAMWRIGHT_TASK` | analysis gate | the active task, instead of `.teamwright/current-task` |
+| `TEAMWRIGHT_TASK_ID_RE` | hooks that find task ids in commits and prompts (`_task.py`: journal, patch guard, `pre-push`) | task id format (`[A-Z][A-Z0-9]*-\d+`: `T-042`, `API-7`) |
+| `TEAMWRIGHT_ANALYSIS_FIELDS` | analysis gate | required analysis fields (`root_cause evidence invariant seam approach`) |
+| `TEAMWRIGHT_RCA_FIELDS` | analysis gate, patch guard (the `RCA:` trailer's task) | required fields for `type: rca` (`root_cause evidence decision`) |
+| `TEAMWRIGHT_CODE_STATUSES` | analysis gate | statuses of the active task in which code may be edited (`IN_PROGRESS`) |
+| `TEAMWRIGHT_NONCODE_RE` | analysis gate | paths that are not code (`docs/`, `.claude/`, `.github/`, `.teamwright/`, top-level `*.md`) |
+| `TEAMWRIGHT_REVIEWER_AGENT` | review gate | the reviewer's `agent_type` (`code-reviewer`) |
+| `TEAMWRIGHT_ESCALATE_AFTER` | review gate | `REQUEST_CHANGES` rounds in a row before the next record must escalate (`2`) |
+| `TEAMWRIGHT_LOG_DIR` | journal, review gate | journal directory (`.teamwright/logs`) |
+| `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
+| `TEAMWRIGHT_PAUSE_FILE` | `pre-push`, router | pause file (`TEAMWRIGHT_PAUSE` at the repository root) |
+| `TEAMWRIGHT_PUSH_STATUSES` | `pre-push` | statuses whose code may be pushed (`CODE_COMPLETE DEPLOYED VERIFIED DONE`) |
+| `TEAMWRIGHT_ALLOW_PUSH=1` | `pre-push` | one-off human override of DRAIN |
+| `PATCH_GUARD=off` | patch guard | one-off human override |
+| `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
+| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run` | another project root or config file |
+| `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 
 ## Overriding deliberately
 
@@ -448,6 +501,12 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
   file like code (it is committed), and `tw-install.py` refuses lowering the mode.
 - The review gate trusts `agent_type`: anyone who can edit `.claude/agents/` can name
   an agent `code-reviewer`. Review changes to agent definitions like code.
+- `review: skipped:trivial` is declared in the task record by whoever edits it, the
+  author included. It is visible to the validator, to later reviews of the history and
+  to metrics, not prevented.
+- Role limits are written rules, not hooks: the reviewer and the validator have
+  Edit/Write and no hook stops them from editing code, and no hook stops an agent from
+  editing `PRINCIPLES.md`. Review the diff of every role's work.
 - `git commit --no-verify` / `git push --no-verify` skip all git hooks; CI must repeat
   the checks that matter (secret scan, tests).
 - Patch-guard signatures are heuristics: expect false positives until tuned.

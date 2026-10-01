@@ -22,7 +22,7 @@ Hooks written to `.claude/settings.json` take effect in the same Claude Code ses
 
 ## Gate modes: gate-first, then enforce
 
-Gates start in **gate-first** mode: the analysis, review and verify gates warn (a message to you and to the model) instead of blocking. Once the project's own gate command is green, switch them to blocking, outside Claude Code:
+Gates start in **gate-first** mode: the analysis, review and verify gates warn (a message to you and to the model) instead of blocking. Once the project's own gate command is green, switch them to blocking — run it yourself, or approve Claude Code running it when `/teamwright:status` or `/teamwright:flow` offers to:
 
 ```bash
 python3 <kit>/scripts/tw-install.py enforce
@@ -30,7 +30,7 @@ python3 <kit>/scripts/tw-install.py enforce
 
 `<kit>` is the plugin's directory (or a checkout of this repository); `/teamwright:status` prints the command with the full path.
 
-Agents cannot lower the mode back to gate-first; the state guard denies writes to `.teamwright/config.yml` from inside Claude Code. Git hooks behave the same in both modes. `/teamwright:status` shows the mode, the tasks and the next action.
+Lowering the mode back to gate-first is yours alone, outside Claude Code: the installer refuses it inside any Claude Code tool call, and the state guard denies writes to `.teamwright/config.yml` from agents. Git hooks behave the same in both modes. `/teamwright:status` shows the mode, the tasks and the next action.
 
 ## `/teamwright:flow`
 

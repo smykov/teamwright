@@ -2,8 +2,10 @@
 
 <!-- Append-only. A new decision is a new row; old rows are never edited.
      A reversed decision gets a new row whose "Was" references the old #.
-     "Proposed by" is who suggested the option; the owner decides forks. -->
+     "Task" is the task the decision came from (the rca task for a recurrence exit), or —.
+     "Proposed by" is who suggested the option; "Decided by" is who chose (the owner decides forks,
+     escalations, architecture reviews and amendments of PRINCIPLES.md). -->
 
-| # | Date | Question | Was | Decided | Why | Proposed by |
-|---|---|---|---|---|---|---|
-| 1 | <YYYY-MM-DD> | <topic> | <previous state or the options offered> | **<the decision>** | <one line> | agent / owner |
+| # | Date | Task | Question | Was | Decided | Why | Proposed by | Decided by |
+|---|---|---|---|---|---|---|---|---|
+| 1 | <YYYY-MM-DD> | <T-NNN or —> | <topic> | <previous state or the options offered> | **<the decision>** | <one line> | agent / owner | owner |
