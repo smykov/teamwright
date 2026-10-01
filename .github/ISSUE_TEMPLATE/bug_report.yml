@@ -1,0 +1,58 @@
+name: Bug report
+description: A gate blocks what it should allow, lets through what it should block, or the installer, router or metrics misbehave.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems (a way around a gate that is not in the known limitations, a leak into the journal) go through private reporting instead: see SECURITY.md.
+        Please remove hosts, paths, names and secrets from anything you paste.
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is affected
+      options:
+        - A gate blocks something it should allow (false positive)
+        - A gate allows something it should block (false negative)
+        - Installer (/teamwright:adopt, /teamwright:init, tw-install.py)
+        - Flow router (/teamwright:flow, tw-next.py)
+        - Metrics (teamwright-metrics)
+        - Git hooks (pre-commit, commit-msg, patch guard, pre-push)
+        - Docs or something else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: teamwright version
+      description: "`version` in .claude-plugin/plugin.json of the installed plugin, or the tag you cloned"
+      placeholder: "0.3.2"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Claude Code version, OS, bash version, gate mode (gate-first or enforce)
+      placeholder: "Claude Code 2.x, macOS 15, bash 3.2, enforce"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: |
+        For a gate decision, the hook input is the best reproduction: the tool call (tool, file path, old/new text, agent type) and the relevant task, review or verify record front matter. The gate's message helps too.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The gate message, installer output or metrics row
+      render: text

@@ -1,0 +1,33 @@
+name: Feature request or tool adapter
+description: Propose a change to the process, a new gate exit, or an adapter for another tool.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - New tool adapter (spec, context, docs, ui_verify, api_verify)
+        - Process or gate change
+        - Installer, router or metrics
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong today, ideally an incident or a concrete case. The process changes when a rule fails in practice.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: For an adapter, the tool, its official docs, how it is installed and detected, and the rules agents should follow with it (see CONTRIBUTING.md, "Adding a tool adapter").
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

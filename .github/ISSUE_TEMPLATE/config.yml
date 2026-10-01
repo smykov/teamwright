@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem privately
+    url: https://github.com/smykov/teamwright/security/advisories/new
+    about: Ways around a gate that are not in the known limitations, leaks into the journal, installer writing where it should not.
+  - name: Usage guide
+    url: https://github.com/smykov/teamwright/blob/main/docs/usage.md
+    about: Onboarding, gate modes, /teamwright:flow, runners, configuration and updating.
