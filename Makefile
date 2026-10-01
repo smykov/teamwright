@@ -2,14 +2,18 @@
 SHELL := /usr/bin/env bash
 HOOKS := template/scripts/hooks
 SH_FILES := $(wildcard $(HOOKS)/*.sh) $(HOOKS)/pre-commit $(HOOKS)/commit-msg $(HOOKS)/pre-push \
-            template/scripts/install-hooks.sh template/scripts/tw-run scripts/release-check.sh $(wildcard tests/*.sh)
+            template/scripts/install-hooks.sh template/scripts/tw-run scripts/release-check.sh $(wildcard tests/*.sh) \
+            examples/demo.sh
 GITLEAKS_CONFIG := .gitleaks.toml
 METRICS := template/scripts/metrics/teamwright-metrics
 
-.PHONY: test lint scan check release-check
+.PHONY: test lint scan check release-check demo
 
-test:            ## run hook, installer and metrics regression tests (temp git repos)
+test:            ## run hook, installer and metrics regression tests (temp git repos), incl. the demo
 	@bash tests/run.sh
+
+demo:            ## one task through every gate in a throwaway repo, then metrics (examples/demo.sh)
+	@bash examples/demo.sh
 
 lint:            ## shellcheck + python syntax + JSON validity
 	@if command -v shellcheck >/dev/null 2>&1; then \
