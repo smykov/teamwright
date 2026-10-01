@@ -29,16 +29,23 @@ Requires Claude Code, `bash`, `git` and `python3` on Linux or macOS (Docker opti
 
 ```mermaid
 flowchart TD
-    T[TODO] --> A[ANALYSIS]
-    A -- "analysis gate" --> I["IN_PROGRESS: failing test, then fix"]
-    I --> R[NEEDS_REVIEW]
-    R -- "changes requested" --> I
-    R -- "review gate: separate reviewer approves" --> C[CODE_COMPLETE]
-    C -- "verify gate: PASS record for this commit" --> D[DONE]
-    R -. "same bug class again: new root-cause task" .-> T
+    SPEC["Large work: spec tool<br/>specify → plan → tasks"] -. "design_ref" .-> T
+    T["TODO · task record"] --> A["ANALYSIS · problem-investigator<br/>root cause, evidence, seam, recurrence check"]
+    A -- "analysis gate" --> RED["IN_PROGRESS 1 · test-writer<br/>a test that fails (red)"]
+    RED --> GREEN["IN_PROGRESS 2 · developer<br/>smallest fix, tests green, local commit"]
+    GREEN --> NR["NEEDS_REVIEW · code-reviewer<br/>fresh agent: diff, principles, recurrence"]
+    NR -- "changes requested, max 2 rounds" --> GREEN
+    NR -- "approve · review gate" --> CC["CODE_COMPLETE"]
+    CC -- "push · pre-push gate" --> DEP["DEPLOYED"]
+    CC -. "nothing to deploy" .-> VAL
+    DEP --> VAL["task-validator<br/>API / UI tests on the running system"]
+    VAL -- "PASS · verify gate" --> DONE["VERIFIED → DONE"]
+    VAL -- "FAIL: re-analyse, do not re-patch" --> A
+    NR -. "same bug class again" .-> RCA["root-cause task:<br/>code invariant, arch review or principle change"]
+    RCA -.-> T
 ```
 
-A task that ships a deployable artifact also goes through push (only approved tasks may leave the machine) and `DEPLOYED → VERIFIED` against the running system. When a reviewer sees the same class of bug patched again, the patch is rejected and the task is deferred to a root-cause task, which ends in a code invariant, an architecture decision or a process change. Full lifecycle with every status and exit: [docs/process/lifecycle.md](docs/process/lifecycle.md).
+Every arrow marked *gate* is a hook that blocks the status change when its record is missing. Test first: the test-writer's tests are run and shown to fail for the right reason, and committed, before the developer touches the code; the reviewer checks that each guarantee has a test that fails without the change. A reviewer that sees the same class of bug patched again rejects the patch; the task waits for a root-cause task, which ends in a code invariant, an architecture decision or a process change. Full lifecycle with every status and exit: [docs/process/lifecycle.md](docs/process/lifecycle.md).
 
 ## What the demo shows
 
