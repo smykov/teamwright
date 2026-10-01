@@ -66,7 +66,9 @@ first). Lowering it (`enforce → gate-first`) is owner-only and happens outside
 Code: the installer refuses it inside any Claude Code tool call (see the owner override
 below).
 
-**State guard** (in `review-gate.sh`, `_hookio.guard_state`). The mode switch, the
+### State guard
+
+In `review-gate.sh` (`_hookio.guard_state`), T3 in every mode. The mode switch, the
 install manifest and the ledgers are not the agents' to change:
 
 - Edit/Write to `.teamwright/config.yml` or `.teamwright/installed.json`, from any agent
