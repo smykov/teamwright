@@ -1,14 +1,37 @@
 # teamwright
 
-A Claude Code plugin that installs a team process into your repository: AI agents work on recorded tasks, and hooks block the steps they tend to skip — analysis, independent review, verification.
+**A team process for AI coding agents, enforced by hooks.** teamwright is a Claude Code plugin. It installs a fixed way of working into your repository — recorded tasks, analysis before code, tests first, review by a separate agent, verification against the running system — plus git and Claude Code hooks that block a step when its evidence is missing.
 
 [![ci](https://github.com/smykov/teamwright/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/smykov/teamwright/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/tag/smykov/teamwright?label=release&sort=semver)](CHANGELOG.md)
 
-- **Analysis before code.** A task cannot start until the root cause, the evidence and the place of the change are written down; while it is the active task, code edits are checked against that analysis.
-- **Review that actually ran.** Only a separate reviewer agent, logged when it was started, can approve a task. It also checks whether the same kind of bug was patched before.
-- **Done means verified.** A task closes only with a recorded passing test run for the current commit. The process is measured from git and hook logs, not from what agents report.
+## Why
+
+AI agents write plausible code fast and fail in a few predictable ways. They stop at the first plausible cause. They mark their own work as reviewed. They patch the same class of bug again and again, each patch fine in its own diff. They call a feature done after clicking through it once. They lose half-finished tasks between sessions. Written instructions do not hold: as the context grows, agents drift from them. teamwright turns each of these steps into a record that a hook checks.
+
+| Agent failure | What teamwright does | Enforced by |
+|---|---|---|
+| fixes the first plausible cause | root cause, evidence and the place of the change are written down before any code edit | analysis gate |
+| writes code without a test that fails | a test-writer adds failing tests first; the reviewer checks every guarantee has a test that fails without the change | flow order, reviewer |
+| reviews its own work | approval only from a code-reviewer that did not implement the task and whose start is logged | review gate |
+| patches the same bug class again | a recurrence verdict sends it to a root-cause task: a code invariant, an architecture review or a principle change | reviewer, review gate |
+| "done" after a manual check | `DONE` needs a passing test run against the running system, recorded for the current commit | verify gate |
+| switches off its own guardrails to get green | the process config cannot be written from inside Claude Code; strictness only goes up there | state guard |
+| wipes other sessions' uncommitted work | `git stash`, `reset --hard`, `checkout --`, force-push and `rm -rf` are denied | Claude Code permissions |
+| reports instead of facts | metrics come from git and hook journals, including declared vs actual review; missing data prints `no data`, never `0` | metrics CLI |
+| loses tasks between sessions | the next step is computed from git and task records; every session ends with an outcome line | `/teamwright:flow` |
+
+## What's in the box
+
+- **6 role agents:** problem-investigator, test-writer, developer, technical-writer, code-reviewer, task-validator.
+- **9 hooks:** analysis, review and verify gates with a state guard, a session journal, a `CLAUDE.md` size check, and git hooks — secret scan, commit message, pre-push, patch guard.
+- **15 principles**, each with how it is checked.
+- **5 commands:** `adopt`, `init`, `flow`, `status`, `reconfigure`.
+- **Tool adapters per capability:** Spec Kit, OpenSpec, Serena, CodeGraphContext, Context7, Playwright, Patrol, Flutter `integration_test`, Maestro, Espresso / XCUITest, your own test runner — or none. Docker runners for toolchains you do not want on the host.
+- **Metrics CLI**, an **offline demo**, **650+ regression checks** of the hooks, installer, router and metrics.
+
+For developers using Claude Code on a real codebase, for teams bringing agents into an existing project (gates warn first and block once the project's checks are green), and for anyone who wants to measure whether agents help — from git and logs rather than impressions.
 
 ## Quickstart
 
@@ -242,4 +265,6 @@ Early: 0.x, built and tried by its author on real projects — so far adoption o
 
 ## Author and license
 
-Konstantin Smykov ([@smykov](https://github.com/smykov)). MIT — see [LICENSE](LICENSE).
+Konstantin Smykov ([@smykov](https://github.com/smykov)) — agent teamwright: an engineering lead who builds software with AI agent teams. The principles come from incidents in a year of running an agent team on a live multi-service project.
+
+MIT — see [LICENSE](LICENSE).
