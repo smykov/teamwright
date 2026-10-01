@@ -16,8 +16,10 @@ MSG_FILE="${1:-}"
 bash "$HERE/patch-guard.sh" "$MSG_FILE" || exit 1
 
 if [ -n "$MSG_FILE" ] && [ -f "$MSG_FILE" ]; then
-  if git diff --cached --unified=0 -- 'docs/tasks/*.md' 2>/dev/null | grep -qE '^\+status:'; then
-    if ! grep -v '^#' "$MSG_FILE" | grep -qE '^chore\(task\): [A-Z][A-Z0-9]*-[0-9]+ [A-Z_]+(→|->)[A-Z_]+'; then
+  # templates (docs/tasks/_*.md) are not tasks; a new task has no FROM: `T-001 →TODO`
+  if git diff --cached --unified=0 -- 'docs/tasks/*.md' ':(exclude)docs/tasks/_*' 2>/dev/null |
+      grep -qE '^\+status:'; then
+    if ! grep -v '^#' "$MSG_FILE" | grep -qE '^chore\(task\): [A-Z][A-Z0-9]*-[0-9]+ [A-Z_]*(→|->)[A-Z_]+'; then
       echo "commit-msg: note - task status changed; preferred subject:" >&2
       echo "  chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE" >&2
     fi

@@ -2,6 +2,14 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.3.2] - 2026-10-01
+
+### Fixed
+- `commit-msg`: no "preferred subject" note for a new task committed as `chore(task): T-001 →TODO` (no FROM status, as documented), or for templates in `docs/tasks/_*.md`.
+
+### Added
+- `examples/demo.sh` (`make demo`): an offline walkthrough that installs the kit into a throwaway repository and moves one task through the analysis, review and verify gates, printing each gate decision, then runs the metrics. `tests/test-demo.sh` runs it in `make test`.
+
 ## [0.3.1] - 2026-10-01
 
 ### Fixed

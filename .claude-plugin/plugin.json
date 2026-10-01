@@ -1,7 +1,7 @@
 {
   "name": "teamwright",
   "displayName": "teamwright",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A fixed team process for AI coding agents (task lifecycle, TDD, separate review with recurrence checks, recorded verification, metrics) with pluggable tools, installed per project as hooks, role files and docs.",
   "author": {
     "name": "Konstantin Smykov",

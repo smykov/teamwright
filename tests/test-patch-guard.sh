@@ -95,4 +95,10 @@ task_file docs/tasks/T-9.md T-9 TODO bug full; git add -A; git commit -qm "chore
 sedi 's/^status: TODO/status: IN_PROGRESS/' docs/tasks/T-9.md; git add -A
 commit "update" >/dev/null
 grep -q "chore(task)" "$TMP/err" && ok "status change with free-form subject gets a note" || bad "status-commit note"
+task_file docs/tasks/T-10.md T-10 TODO bug full; git add -A
+commit "chore(task): T-10 →TODO" >/dev/null
+grep -q "preferred subject" "$TMP/err" && bad "a new task (no FROM status) gets no note" || ok "a new task (no FROM status) gets no note"
+task_file docs/tasks/_task-template.md T-NNN TODO bug full; git add -A
+commit "docs: task template" >/dev/null
+grep -q "preferred subject" "$TMP/err" && bad "templates in docs/tasks/_*.md are not tasks" || ok "templates in docs/tasks/_*.md are not tasks"
 finish
