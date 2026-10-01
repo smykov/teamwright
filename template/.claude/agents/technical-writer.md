@@ -9,7 +9,7 @@ model: sonnet
 
 If a document lies, the next agent makes a wrong decision. You make the docs true again **in the same task** that changed the code — not "later".
 
-Process: `AGENTS.md`, `docs/process/lifecycle.md`.
+Process: `AGENTS.md`, `docs/process/lifecycle.md`; a hook refused or warned → `docs/process/gates.md`.
 
 ## Input
 

@@ -10,6 +10,10 @@ Everything else goes to docs/decisions/<area>.md and is linked from the index be
 Replace every <placeholder>; delete sections that don't apply.
 -->
 
+## Process
+
+This repository follows the teamwright process: start with `AGENTS.md` (roles, sessions, rules). Statuses and transitions: `docs/process/lifecycle.md`. A hook refused or warned: `docs/process/gates.md` (each gate's exits). Who does what: `docs/process/roles.md`, `docs/process/sessions.md`. A `TEAMWRIGHT_PAUSE` file at the root stops all pushes. In Claude Code, `/teamwright:flow` picks the next step.
+
 ## Project
 
 <One paragraph: what the system does, for whom, main components.>

@@ -15,7 +15,7 @@ teamwright splits the work on a task between several agents with narrow jobs. Th
 | task-validator | Is the task done *as written*, and does the running system prove it? | verify records `docs/tasks/<ID>.verify/<n>.md` (PASS / FAIL); acceptance PASS / FAIL / NEEDS_OWNER with evidence | strong (opus) |
 | Owner | Which option, at what cost? | decisions in `docs/decisions.md` (escalations, architecture reviews, process amendments) | human |
 
-Role definitions: `template/.claude/agents/`. Tool-agnostic summary: `template/AGENTS.md`.
+Role definitions: `.claude/agents/`. Tool-agnostic summary: `AGENTS.md`.
 
 The model is set explicitly in each role file and chosen by task class, not by prompt text: to run a class of tasks on another model, copy the role file with a different `model:` and route that class to it (`docs/process/sessions.md` §5).
 
@@ -98,4 +98,4 @@ sequenceDiagram
     end
 ```
 
-Status machine: `docs/process/lifecycle.md`. Session types and the outcome contract: `docs/process/sessions.md`. Principles and their enforcement tiers: `template/PRINCIPLES.md`.
+Status machine: `docs/process/lifecycle.md`. Session types and the outcome contract: `docs/process/sessions.md`. Principles and their enforcement tiers: `PRINCIPLES.md`.

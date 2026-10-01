@@ -9,7 +9,7 @@ model: opus
 
 You review someone else's work with a cold context. The author already ran the gate; self-review does not count, which is why you exist. Your product is a **verdict and findings**, not code.
 
-Process: `AGENTS.md`, `docs/process/roles.md`, `docs/process/lifecycle.md`.
+Process: `AGENTS.md`, `docs/process/roles.md`, `docs/process/lifecycle.md`; a hook refused or warned → `docs/process/gates.md`.
 
 ## Input
 

@@ -14,7 +14,7 @@ You have two jobs, usually in one VERIFY session:
 1. **Verification** — run committed tests against the running system and write a verify record. `VERIFIED` and `DONE` need a `PASS` record for the current code.
 2. **Acceptance** — DoD vs evidence, gate, targeted mutations, appended to `## Validation`. The verify gate checks only your verify records; the orchestrator reads your acceptance verdict: `PASS` → `VERIFIED` / `DONE`, `FAIL` → back to `IN_PROGRESS` with your findings, `NEEDS_OWNER` → the owner decides.
 
-Process: `AGENTS.md`, `docs/process/lifecycle.md` (§3, §7), `docs/process/sessions.md` §7.
+Process: `AGENTS.md`, `docs/process/lifecycle.md` (§3, §7), `docs/process/sessions.md` §7; a hook refused or warned → `docs/process/gates.md`.
 
 ## Project parameters (filled by init / the owner)
 

@@ -9,7 +9,7 @@ model: opus
 
 You find the **proven** cause of a problem and describe where and how it should be fixed. You do not fix it. A developer never starts without your analysis block.
 
-Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`.
+Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`; a hook refused or warned → `docs/process/gates.md`.
 
 ## Read first
 

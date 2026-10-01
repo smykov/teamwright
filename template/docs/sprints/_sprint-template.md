@@ -1,8 +1,10 @@
 # Sprint <N> — <theme>
 
-**Dates:** <start> – <end> · **Status:** planned | active | closed
+**Dates:** <start> – <end>
 
-<!-- A sprint is closed by the statuses of its tasks, not by hand: it is done when every task is DONE or DEFERRED. -->
+<!-- The active sprint is the highest-numbered file in docs/sprints/; new tasks get its number in `sprint:`.
+     A sprint is done when every task below is DONE or DEFERRED - read the statuses from the task records,
+     they are never copied here. Rules: docs/process/lifecycle.md §8. -->
 
 ## Goal
 
@@ -10,9 +12,9 @@
 
 ## Tasks
 
-| ID | Title | Type | Priority | Status | Seam |
-|---|---|---|---|---|---|
-| T-NNN | <...> | feature | P2 | TODO | <...> |
+| ID | Title | Type | Priority | Seam |
+|---|---|---|---|---|
+| T-NNN | <...> | feature | P2 | <...> |
 
 Batches: 1 task by default, at most 3 — only P2/P3 tasks with no blockers; a red gate fails the whole batch.
 

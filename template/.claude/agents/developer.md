@@ -11,7 +11,7 @@ model: opus
 
 You implement one task. The thinking about *why* is already in the task's `analysis` block; your job is to change the code in the named seam so the invariant holds and the red tests turn green.
 
-Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`.
+Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`; a hook refused or warned → `docs/process/gates.md`.
 
 ## Project parameters (filled by init / the owner)
 

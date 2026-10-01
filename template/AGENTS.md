@@ -2,7 +2,7 @@
 
 Entry point for any AI coding agent working in this repository (Claude Code, OpenCode, others). Tool-specific role files (`.claude/agents/*.md`) implement the roles below; the rules here apply to all of them.
 
-**Read before any work:** `PRINCIPLES.md` (engineering rules with IDs `P-NNN`), `docs/process/lifecycle.md` (task statuses and transitions), `docs/failures.md` (what went wrong in this project and the rule it produced; starts empty).
+**Read before any work:** `PRINCIPLES.md` (engineering rules with IDs `P-NNN`), `docs/process/lifecycle.md` (task statuses and transitions), `docs/failures.md` (what went wrong in this project and the rule it produced; starts empty). When a hook refuses or warns: `docs/process/gates.md` — what each gate checks and its deliberate exits. A `TEAMWRIGHT_PAUSE` file at the repository root means the owner paused the team: no push, finish the current local commit and stop.
 
 ## Gate
 
@@ -41,7 +41,7 @@ Why these roles and how they hand over: `docs/process/roles.md`.
 | VERIFY | `task-validator`: deploy smoke + API tests / end-to-end UI run per the task's `surface`, failure branch included | verify record `docs/tasks/<id>.verify/<n>.md` with `result: PASS \| FAIL` → `VERIFIED` or `VERIFY_FAIL` |
 | ARCH-REVIEW (on demand) | `/arch-review` with the owner, for a recurrence whose exit is architecture | owner decision in `docs/decisions.md`; spec/plan or tasks |
 
-**Where to start:** `/teamwright:flow` (Claude Code) computes the next action deterministically — resume an interrupted task, continue, review, verify, re-analyse, ask the owner, or start the next ready task — and drives the lifecycle from there. Other runtimes: `python3 <kit>/scripts/tw-next.py --json` prints the same decision.
+**Where to start:** `/teamwright:flow` (Claude Code) computes the next action deterministically — resume an interrupted task, continue, review, verify, re-analyse, ask the owner, or start the next ready task — and drives the lifecycle from there. Other runtimes: `python3 <kit>/scripts/tw-next.py --json` prints the same decision (`<kit>` = the plugin directory or a checkout of the kit; the router is not copied into the project).
 
 Every session ends with an outcome: `barrier | idle | escalate | interrupted`; hooks journal tool calls and outcomes into `.teamwright/logs/`. Details: `docs/process/sessions.md` §2.
 
@@ -74,7 +74,7 @@ Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-w
 8. **Push only in DRAIN.** Never push unreviewed work.
 9. **Verify the running system, don't fix it.** The verifier runs committed tests against the running system and records the result; it never edits code or tests. A `FAIL` goes to `VERIFY_FAIL` → `ANALYSIS`, not to a quick patch.
 10. **Never roll back with destructive git.** No `git stash`, `checkout -- <path>`, `restore`, `clean`, `reset --hard` or forced push to undo an experiment: in a shared working tree they silently destroy uncommitted work of other sessions (this has wiped large parts of a test file before). Experiment on a throwaway copy (`cp -a` into a temp dir, or `git worktree add`) and discard the copy. These commands are in the deny list.
-11. **Config is changed only through the installer.** Nobody edits `.teamwright/config.yml` by hand: the orchestrator writes `.teamwright/config.next.yml` and runs `tw-install.py apply --config .teamwright/config.next.yml` (validates, shows the diff, applies). Staging and committing `config.yml` is allowed. Lowering `enforce` to `gate-first` is the owner's step, outside the agent runtime.
+11. **Config is changed only through the installer.** Nobody edits `.teamwright/config.yml` by hand: the orchestrator writes `.teamwright/config.next.yml` and runs `python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml` (the installer lives in the plugin, `<kit>` = its directory; `/teamwright:reconfigure` does this; it validates, shows the diff, applies). Staging and committing `config.yml` is allowed. Lowering `enforce` to `gate-first` is the owner's step, outside the agent runtime.
 12. **Stage by path** (`git add <path>`), not `git add -A`, when other sessions may be working in the same tree.
 13. **Gather context with the configured tools** (Tools, below; no hook depends on them). Navigate code with the context tool before plain text search, and check a package API against the pinned version's documentation through the docs tool instead of relying on memory. An empty result from any tool is not proof that something does not exist; say where you looked. Tools are chosen per project in `.teamwright/config.yml`; the process above does not change with them.
 

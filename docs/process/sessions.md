@@ -30,7 +30,7 @@ flowchart LR
 
 ## 0. Starting and resuming
 
-`/teamwright:flow` is the entry point for every working session in Claude Code. It asks the router (`scripts/tw-next.py --json`, see `lifecycle.md` §4) for the next action, shows a one-screen status, and runs the matching session below — DEV, REVIEW, DRAIN or VERIFY — with fresh role subagents. It asks the owner only at decision points (task choice when asked, large work → spec tool, escalation and recurrence exits (b)/(c), push, `NEEDS_OWNER`), stops on escalation, a `TEAMWRIGHT_PAUSE` file or its budget (`--tasks N`, default 1), and ends with a summary and an `Outcome:` line.
+`/teamwright:flow` is the entry point for every working session in Claude Code. It asks the router (`tw-next.py --json` in the plugin, see `lifecycle.md` §4; other runtimes run `python3 <kit>/scripts/tw-next.py --json`) for the next action, shows a one-screen status, and runs the matching session below — DEV, REVIEW, DRAIN or VERIFY — with fresh role subagents. It asks the owner only at decision points (task choice when asked, large work → spec tool, escalation and recurrence exits (b)/(c), push, `NEEDS_OWNER`), stops on escalation, a `TEAMWRIGHT_PAUSE` file or its budget (`--tasks N`, default 1), and ends with a summary and an `Outcome:` line.
 
 After an interruption the next `/teamwright:flow` gets `resume`: it reconstructs the step from the task record, `git status`, the diff and the last `chore(task)` commit — never from a previous session's memory — and continues from there. Changes in the tree that do not belong to the task are left alone and reported.
 
@@ -97,7 +97,7 @@ Record the owner's answer in `docs/decisions.md` (proposed-by: agent / decided: 
 | DEV on isolated, well-specified feature work | Mid tier |
 | Docs sync, formatting, status flips, log summarisation, search | Cheap tier is fine |
 
-The model is fixed in each role file's front matter (`model:`), and the orchestrator picks the role file by the task's class (type, priority, seam) — not by asking for a model in the prompt text. A model requested in prose is a hint that can silently fall back to a weaker default; a role file per class is a fact. Defaults in `template/.claude/agents/`: `problem-investigator`, `code-reviewer`, `task-validator`, `developer`, `test-writer` — `opus`; `technical-writer` — `sonnet`. For a cheaper developer on isolated work, copy the role file (e.g. `developer-light.md`) with another `model:` and route that class to it.
+The model is fixed in each role file's front matter (`model:`), and the orchestrator picks the role file by the task's class (type, priority, seam) — not by asking for a model in the prompt text. A model requested in prose is a hint that can silently fall back to a weaker default; a role file per class is a fact. Defaults in `.claude/agents/`: `problem-investigator`, `code-reviewer`, `task-validator`, `developer`, `test-writer` — `opus`; `technical-writer` — `sonnet`. For a cheaper developer on isolated work, copy the role file (e.g. `developer-light.md`) with another `model:` and route that class to it.
 
 A cheap model is **not** used for DEV or REVIEW of risky seams. If you find yourself adding deterministic scaffolding to make a cheap model behave on a critical step, the tier is wrong — raise it instead.
 

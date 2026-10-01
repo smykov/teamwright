@@ -52,10 +52,10 @@ areas:
 
 - `scripts/tw-run <area> -- <cmd>` (installed into the project) runs `<cmd>` on the host or in `docker run --rm` with the caller's uid/gid, the repository mounted, `workdir` as the working directory and the caches as volumes, and exits with the command's code. Rendered commands in `AGENTS.md` and the role files already go through it; `gate_command` is the aggregate and calls `scripts/tw-run` itself for docker areas.
 - **Same image as CI.** When CI runs an area in a container, that image is the default for `runner: docker`, so a local green means a CI green. Otherwise the official image pinned to the version in the manifest or lock file, or a host install — the owner chooses at onboarding.
-- **The gate does not modify tracked files.** Code generation that rewrites tracked files goes into `generate_command`, run separately; `tw-install.py check-commands` runs every configured command once and reports pass / fail / not runnable and whether `git status` changed.
+- **The gate does not modify tracked files.** Code generation that rewrites tracked files goes into `generate_command`, run separately; `python3 <kit>/scripts/tw-install.py check-commands` (the installer lives in the plugin; `/teamwright:status --gate` runs it) runs every configured command once and reports pass / fail / not runnable and whether `git status` changed.
 - **No bare command that does not run.** A command is in the config only after it ran once, or it is marked not runnable with a first-sprint task.
 - **UI runs need a device.** A container rarely has an emulator: `e2e_ui_command` usually runs on the host with a device or emulator attached; without one it is a first-sprint task, not a silent gap.
-- Runner and image changes go through `.teamwright/config.next.yml` + `tw-install.py apply --config` like any config change (`/teamwright:reconfigure`).
+- Runner and image changes go through `.teamwright/config.next.yml` + `python3 <kit>/scripts/tw-install.py apply --config` like any config change (`/teamwright:reconfigure`).
 
 ## Choosing a UI runner
 

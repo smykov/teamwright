@@ -11,7 +11,7 @@ model: opus
 
 Tests are written **before** the implementation and must fail. They prove the task's guarantees, including what must fail and how — not only the happy path.
 
-Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`.
+Process: `AGENTS.md`, `docs/process/lifecycle.md`, `PRINCIPLES.md`; a hook refused or warned → `docs/process/gates.md`.
 
 ## Project parameters
 
