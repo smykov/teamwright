@@ -1,0 +1,13 @@
+# .gitleaks.toml — secret scan of the kit repository itself (`make scan`, CI).
+# Projects get template/.gitleaks.toml; this file only adds the kit's own allowlist.
+
+title = "teamwright kit"
+
+[extend]
+path = "template/.gitleaks.toml"
+
+[allowlist]
+description = "Synthetic secrets in the kit's regression tests and scanner rules"
+paths = [
+  '''^tests/''',
+]

@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: Lint
+        run: make lint
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Hook regression tests
+        run: make test
+
+  # bash 3.2 is the macOS default; this catches its parser differences in a minute on Linux
+  test-bash32:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tests under bash 3.2
+        run: |
+          docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c '
+            apk add -q git python3 make coreutils >/dev/null &&
+            cp -r /src /w && cd /w &&
+            git config --global user.email ci@example.invalid && git config --global user.name ci &&
+            git config --global init.defaultBranch main &&
+            bash tests/run.sh'
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.21.2"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # scan the whole history, not just the tip
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tgz gitleaks && sudo mv gitleaks /usr/local/bin/ && rm gitleaks.tgz
+      - name: Scan the kit repository
+        run: make scan

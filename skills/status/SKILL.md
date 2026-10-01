@@ -1,0 +1,20 @@
+---
+name: status
+description: Show the teamwright state of the current project — config (mode, tools, areas and their runners), install drift, hooks, tasks by status, active task and pause, the router's next action, and whether the project is ready to switch from gate-first to enforce. Use when asked about teamwright setup or process state.
+argument-hint: "[--gate]"
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" inventory *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan *) Bash(bash scripts/install-hooks.sh --check) Bash(git status *) Bash(git log *)
+---
+
+# /teamwright:status
+
+Read-only. Arguments: `$ARGUMENTS` (`--gate` also runs the gate).
+
+1. **Config**: `.teamwright/config.yml` — `mode`, `process_version`, `tools`, areas with their commands and `runner` (`host`, or `docker` + `image`), `gate_command`. For a docker area, compare its `image` with the image the CI job for that area uses: a mismatch is a finding (local results may differ from CI). Missing → say teamwright is not installed and suggest `/teamwright:adopt` or `/teamwright:init`; stop.
+2. **Install drift**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan --json` — kit updates available, tool blocks out of date, `kept-local` files, conflicts, unresolved placeholders. Nothing to do → "in sync". A conflict on a file the owner already merged by hand → suggest `tw-install.py apply --accept <path>` so it stops reappearing.
+3. **Hooks and MCP**: `bash scripts/install-hooks.sh --check`; the teamwright hook commands present in `.claude/settings.json`; `.mcp.json` servers vs the chosen tools, and whether each chosen MCP server is actually connected in this session (its tools are available) — configured but not connected → "restart Claude Code and approve <name>".
+4. **Tasks**: count `docs/tasks/T-*.md` by `status:` in the front matter; list `BLOCKED`, `VERIFY_FAIL`, `NEEDS_REVIEW`; the active task from `.teamwright/current-task`; a `TEAMWRIGHT_PAUSE` file means pushes are paused.
+5. **Next action**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json` — show `action`, `task`, `reason`, the first alternatives and any `warnings`; `/teamwright:flow` executes it.
+6. **Gate** (only with `--gate`, or after asking): `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" check-commands` — every configured command through its runner, pass / fail / not runnable per area, and whether tracked files changed.
+7. **Ready to enforce?** In `gate-first`: yes when the gate is green and no first-sprint gate task is open → suggest `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" enforce` (the owner runs or approves it).
+
+Output: one short table (config · runners · drift · hooks · tasks · router decision · gate · next step). Metrics are separate: `python3 scripts/metrics/teamwright-metrics`.

@@ -1,0 +1,18 @@
+{
+  "name": "teamwright",
+  "description": "teamwright: a team process for AI coding agents, installed into your project by /teamwright:adopt or /teamwright:init.",
+  "owner": {
+    "name": "Konstantin Smykov",
+    "url": "https://github.com/smykov"
+  },
+  "plugins": [
+    {
+      "name": "teamwright",
+      "source": ".",
+      "version": "0.3.1",
+      "description": "Adopt the teamwright process in a new or existing project: gates as hooks, role files, docs templates, metrics; tools chosen per capability.",
+      "category": "development",
+      "tags": ["process", "agents", "review", "tdd"]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+# teamwright project config - copy to .teamwright/config.yml (or let /teamwright:adopt write it).
+# Schema: docs/process/plugin.md. YAML subset: maps, "- " lists, [a, b] lists, quoted strings,
+# comments; no block scalars (| >) or anchors. A JSON file with the same keys also works.
+version: 1
+process_version: 1.0.0         # teamwright process/principles version
+mode: gate-first               # gate-first (gates warn) | enforce (gates block)
+areas:                         # one or more code areas; developer/test-writer roles are rendered per area
+  - name: backend
+    source_dirs: [backend/src]
+    test_command: "npm --prefix backend test"
+    lint_command: "npm --prefix backend run lint && npx --prefix backend tsc --noEmit"
+    api_test_command: "npm --prefix backend run test:e2e"
+    e2e_ui_command: ""
+    stack: "TypeScript, Node.js"            # optional: {{STACK}}
+    test_framework: "Jest + supertest"      # optional: {{TEST_FRAMEWORK}}
+    test_dirs: [backend/test]               # optional: {{TEST_DIRS}}
+  - name: app
+    source_dirs: [app/lib]
+    runner: docker                          # host (default) | docker: commands run via scripts/tw-run
+    image: "ghcr.io/cirruslabs/flutter:3.38.0"   # required with docker; prefer the image CI uses
+    cache: [".pub-cache"]                   # relative: kept in the container's $HOME between runs
+    workdir: app                            # commands run here (repo-relative)
+    test_command: "flutter test"            # bare command: placeholders render scripts/tw-run app -- ...
+    lint_command: "flutter analyze"
+    generate_command: "flutter gen-l10n"    # optional codegen, run before checks; checks must not modify tracked files
+    e2e_ui_command: "patrol test"
+    stack: "Dart, Flutter"
+gate_command: "make check"     # aggregate gate, {{GATE_COMMAND}}; not wrapped: chain scripts/tw-run calls or a Makefile target
+version_check: "GET /version returns the deployed commit"   # optional: {{VERSION_CHECK}}
+verify_environments: "local, staging"                        # optional: {{VERIFY_ENVIRONMENTS}}
+tools:                         # one provider per capability; "none" = no tool
+  spec: spec-kit               # spec-kit | openspec | none
+  context: serena              # serena | codegraph | builtin
+  docs: context7               # context7 | none
+  ui_verify: patrol            # playwright | patrol | flutter-integration-test | maestro | espresso-xcuitest | none
+  api_verify: project-runner   # project-runner
+language: en                   # language of generated project docs
