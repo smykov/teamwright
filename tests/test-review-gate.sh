@@ -111,6 +111,28 @@ expect_deny "third REQUEST_CHANGES is denied (escalate instead)" "$out" "ESCALAT
 out="$(write_review T-2 3 ESCALATE "${REV[@]}")"
 expect_allow "ESCALATE after two rounds is allowed" "$out"
 out="$(to_cc T-2)"; expect_deny "ESCALATE is not an approval" "$out" "not APPROVE"
+expect_deny "after ESCALATE the message names the owner decision" "$out" "owner decides"
+
+# ---- the third record of a run of send-backs: only ESCALATE or REJECT_RECURRENCE
+task_file "$(tf T-7)" T-7 NEEDS_REVIEW bug full
+spawn code-reviewer "Review T-7"
+write_review T-7 1 REQUEST_CHANGES "${REV[@]}" >/dev/null
+write_review T-7 2 REQUEST_CHANGES "${REV[@]}" >/dev/null
+out="$(write_review T-7 3 APPROVE "${REV[@]}")"
+expect_deny "APPROVE as the third record after two send-backs is denied" "$out" "third"
+out="$(to_cc T-7)"; expect_deny "so the task cannot reach CODE_COMPLETE on round 3" "$out" "not APPROVE"
+task_file "$(tf T-70)" T-70 TODO rca rca
+out="$(run Write "$S" "file_path=$(rd T-7)/3.md" "content=$(review_text T-7 REJECT_RECURRENCE T-70)" "${REV[@]}")"
+expect_allow "REJECT_RECURRENCE as the third record is allowed" "$out"
+# an APPROVE or ESCALATE ends a run: a task back after VERIFY_FAIL starts a new count
+task_file "$(tf T-8)" T-8 NEEDS_REVIEW bug full
+spawn code-reviewer "Review T-8"
+write_review T-8 1 REQUEST_CHANGES "${REV[@]}" >/dev/null
+write_review T-8 2 APPROVE "${REV[@]}" >/dev/null
+write_review T-8 3 REQUEST_CHANGES "${REV[@]}" >/dev/null
+out="$(write_review T-8 4 APPROVE "${REV[@]}")"
+expect_allow "after an APPROVE the send-backs are counted afresh" "$out"
+out="$(to_cc T-8)"; expect_allow "round 4 APPROVE in a new run moves the task to CODE_COMPLETE" "$out"
 
 # ---- human review outside Claude Code ------------------------------------------
 task_file "$(tf T-3)" T-3 NEEDS_REVIEW bug full

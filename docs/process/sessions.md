@@ -76,7 +76,7 @@ A session that ends without an outcome is a defect in the process — the next s
 
 Stop the session (outcome `escalate` or a `BLOCKED` task + question) when:
 - the task needs a product decision or a fork between approaches with different costs;
-- review has returned the task twice (two review records exist);
+- review has returned the task twice in a row (two `REQUEST_CHANGES` records): the third record is `ESCALATE` or `REJECT_RECURRENCE`;
 - an `rca` task itself shows a recurrence;
 - the fix requires rewriting a function marked dangerous in `CLAUDE.md` / `docs/decisions/`;
 - the change touches secrets, auth, money, data deletion or migrations and the task did not say so;

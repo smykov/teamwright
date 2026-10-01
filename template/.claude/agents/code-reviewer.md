@@ -80,9 +80,9 @@ Each finding: severity, category, `file:line`, what is wrong, impact, what to do
 | `APPROVE` | no Critical/High; Medium fixed or justified | `CODE_COMPLETE` |
 | `REQUEST_CHANGES` | Critical/High, or unjustified Medium — any finding at all that needs a code change | `IN_PROGRESS` |
 | `REJECT_RECURRENCE` | recurrence detected (section 1) | original task `DEFERRED` with `absorbed_by: <rca id>` — never `BLOCKED` |
-| `ESCALATE` | would be the 3rd round (two review records already exist), or the fix needs a decision above the task | `BLOCKED` with `blocked_on: owner decision — <question>` |
+| `ESCALATE` | this is the 3rd round after two `REQUEST_CHANGES` in a row, or the fix needs a decision above the task | `BLOCKED` with `blocked_on: owner decision — <question>` |
 
-No third patch: when two records already exist, escalate instead of requesting changes again. Use these four verdict strings exactly — the review gate rejects anything else.
+No third patch: when the two previous records are `REQUEST_CHANGES`, the only verdicts left are `ESCALATE` and `REJECT_RECURRENCE` — not another send-back, and not `APPROVE` of the third attempt (the review gate refuses both). Use these four verdict strings exactly — the review gate rejects anything else.
 
 ## Report — append to the task file before returning
 

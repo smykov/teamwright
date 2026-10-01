@@ -77,7 +77,7 @@ stateDiagram-v2
 
 - `ANALYSIS` and `IN_PROGRESS` are transient: a task should not survive a session boundary in them.
 - Review verdicts are exactly `APPROVE | REQUEST_CHANGES | REJECT_RECURRENCE | ESCALATE`. The reviewer writes the record; the **orchestrator** changes the status according to it. `NEEDS_REVIEW → CODE_COMPLETE` requires a latest record with `APPROVE` written by the `code-reviewer` agent, never by the author (review gate).
-- Two review records already exist → stop. The task is not returned to the same author a third time; the verdict is `ESCALATE` (owner) or `REJECT_RECURRENCE` (section 6).
+- Two `REQUEST_CHANGES` records in a row → stop. The task is not returned to the same author a third time, and the third attempt is not approved either: the third record's verdict is `ESCALATE` (owner) or `REJECT_RECURRENCE` (section 6) — the review gate refuses anything else. An `APPROVE` or `ESCALATE` ends the run, so a task back from `VERIFY_FAIL` or from an owner decision starts a new count.
 - **A recurrence never parks the original task in `BLOCKED`.** It goes to `DEFERRED` with `absorbed_by: <rca id>`. `BLOCKED` is reserved for "waiting for a person or for evidence". When escalated patches were parked as `BLOCKED`, nothing owned them: they piled up next to the root task, each was retried on its own, and the queue grew faster than it could be worked. `DEFERRED + absorbed_by` gives every such task an owner and a single exit — the root task.
 - `VERIFY_FAIL` goes back to `ANALYSIS`, not `IN_PROGRESS`: a failed verify means the analysis was wrong.
 - When a root task reaches `DONE`, tasks it absorbed are **re-checked**, not auto-closed: close them only if their reproduction no longer fires.

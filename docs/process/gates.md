@@ -170,9 +170,12 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    approval does.
 3. A review with `REJECT_RECURRENCE` whose `rca_task` does not point to an existing
    `docs/tasks/<ID>.md` with `type: rca`.
-4. Any verdict outside the four above, and a third `REQUEST_CHANGES`: review rounds are
-   counted from the `.reviews/<n>.md` files (never from a field in the task), and after
-   two rounds of changes the next verdict is `ESCALATE` (`TEAMWRIGHT_ESCALATE_AFTER`).
+4. Any verdict outside the four above. After two `REQUEST_CHANGES` rounds in a row
+   (`TEAMWRIGHT_ESCALATE_AFTER`), the third record may only say `ESCALATE` or
+   `REJECT_RECURRENCE` — neither another send-back nor an `APPROVE` of the third
+   attempt. Rounds are counted from the `.reviews/<n>.md` files (never from a field in
+   the task). An `APPROVE` or `ESCALATE` ends a run: a task that comes back after
+   `VERIFY_FAIL`, or after the owner's decision on an escalation, starts a new count.
    Deny messages quote the counted rounds.
 5. Shell commands that write review records or the `.teamwright/` ledgers and journal.
 

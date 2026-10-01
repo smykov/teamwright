@@ -32,9 +32,12 @@
 #      orchestrator); who wrote the approval does.
 #   3. A review record with verdict REJECT_RECURRENCE that does not link an
 #      existing `type: rca` task via `rca_task:`.
-#   4. Any verdict outside the four above; a 3rd REQUEST_CHANGES (review rounds are
-#      counted from the .reviews/ files, never from the task's own field) - after 2
-#      rounds of changes the next verdict is ESCALATE, not another send-back.
+#   4. Any verdict outside the four above; and, after 2 rounds of REQUEST_CHANGES in
+#      a row, any verdict but ESCALATE or REJECT_RECURRENCE for the third record -
+#      neither another send-back nor an APPROVE of the third attempt. Rounds are
+#      counted from the .reviews/ files, never from the task's own field; an APPROVE
+#      or ESCALATE ends a run (a task back after VERIFY_FAIL or an owner decision
+#      starts a new count).
 #   5. Shell commands that write review records or the local ledgers/journal.
 #   0. (state guard, _hookio.guard_state) Edit/Write by any agent to
 #      .teamwright/config.yml or installed.json, and shell commands that actually
@@ -155,6 +158,14 @@ def rca_ok(rca):
 def is_human(reviewer):
     return reviewer.strip().lower().startswith("human")
 
+def changes_in_a_row(recs):
+    """REQUEST_CHANGES rounds since the last APPROVE / ESCALATE / REJECT_RECURRENCE:
+    the send-backs of the current review run."""
+    k = 0
+    for rec in recs:
+        k = k + 1 if task.first_word(rec.get("verdict")) == "REQUEST_CHANGES" else 0
+    return k
+
 RCA_MSG = ("A recurrence is not fixed with another patch: open a separate task with "
            "`type: rca` (root cause + architectural decision in docs/decisions), link "
            "it here with `rca_task: <ID>`, and set `recurrence_of:` on the original task.")
@@ -189,13 +200,12 @@ if m and rel.startswith("docs/tasks/"):
         io.deny("REVIEW GATE: verdict REJECT_RECURRENCE without a linked rca task "
                 "(rca_task: %r does not point to an existing docs/tasks/<ID>.md with "
                 "`type: rca`). %s" % (rv.get("rca_task", ""), RCA_MSG), "review-gate")
-    prior_rc = sum(1 for r, rec in task.review_rounds(root, tid)
-                   if r != n and task.first_word(rec.get("verdict")) == "REQUEST_CHANGES")
-    if verdict == "REQUEST_CHANGES" and prior_rc >= ESCALATE_AFTER:
-        io.deny("REVIEW GATE: %s already has %d review round(s) with REQUEST_CHANGES "
-                "(counted from docs/tasks/%s.reviews/). No further send-back to the "
-                "author: write verdict ESCALATE (a human decides) or APPROVE."
-                % (tid, prior_rc, tid), "review-gate")
+    prior_rc = changes_in_a_row([rec for r, rec in task.review_rounds(root, tid) if r < n])
+    if verdict not in ("ESCALATE", "REJECT_RECURRENCE") and prior_rc >= ESCALATE_AFTER:
+        io.deny("REVIEW GATE: %s already has %d review round(s) with REQUEST_CHANGES in a "
+                "row (counted from docs/tasks/%s.reviews/), so round %d is the third "
+                "attempt: write verdict ESCALATE (the owner decides) or REJECT_RECURRENCE, "
+                "not %s." % (tid, prior_rc, tid, n, verdict), "review-gate")
     io.state_dir(data, "sessions")
     io.append_jsonl(review_ledger(tid), dict(who, ts=io.now(), round=n, verdict=verdict))
     sys.exit(0)
@@ -227,7 +237,7 @@ if not rounds:
             "changes: `review: skipped:trivial`." % (tid, tid, REVIEWER, tid), "review-gate")
 n, rv = rounds[-1]
 computed = len(rounds)
-changes = sum(1 for _, r in rounds if task.first_word(r.get("verdict")) == "REQUEST_CHANGES")
+changes = changes_in_a_row([r for _, r in rounds])
 verdict = task.first_word(rv.get("verdict"))
 if verdict == "REJECT_RECURRENCE":
     extra = "" if rca_ok(rv.get("rca_task")) else " The review also lacks a linked rca task."
@@ -235,11 +245,14 @@ if verdict == "REJECT_RECURRENCE":
             "task goes to DEFERRED with `absorbed_by: <rca task>`. %s"
             % (n, computed, tid, extra, RCA_MSG), "review-gate")
 if verdict != "APPROVE":
-    nxt = ("escalate to a human: the next review must be ESCALATE, not another send-back"
-           if changes >= ESCALATE_AFTER else
-           "fix the findings (status back to IN_PROGRESS) and request round %d" % (computed + 1))
+    if verdict == "ESCALATE":
+        nxt = "the owner decides: move the task to BLOCKED with the question in blocked_on"
+    elif changes >= ESCALATE_AFTER:
+        nxt = "escalate to a human: the next review must be ESCALATE, not another send-back"
+    else:
+        nxt = "fix the findings (status back to IN_PROGRESS) and request round %d" % (computed + 1)
     io.deny("REVIEW GATE: latest review (round %d) of %s is %r, not APPROVE. Review rounds "
-            "so far: %d, of them REQUEST_CHANGES: %d (counted from docs/tasks/%s.reviews/, "
+            "so far: %d, REQUEST_CHANGES in a row: %d (counted from docs/tasks/%s.reviews/, "
             "not from the task's review_rounds field); %s."
             % (n, tid, verdict, computed, changes, tid, nxt), "review-gate")
 reviewer = (rv.get("reviewer") or "").strip()

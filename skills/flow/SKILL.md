@@ -92,7 +92,7 @@ Spawn each role as a **fresh subagent by its role file name** (`problem-investig
 5. **Gate** — run `generate_command` first when the area has one, then the gate (`gate_command` from `AGENTS.md`; per area through `scripts/tw-run`). Compare `git status` before and after: the gate must not change tracked files. Red → back to the developer; a red gate fails the whole batch. Green → `technical-writer` syncs the docs the change touched, local commit (`<type>(<scope>): T-NNN <what>`), `IN_PROGRESS → NEEDS_REVIEW`. **No push.**
 6. **Review** — spawn a **fresh `code-reviewer`** subagent with the task id and the commit range. It writes `docs/tasks/T-NNN.reviews/<n>.md`; you read its verdict and change the status:
    - `APPROVE` → `NEEDS_REVIEW → CODE_COMPLETE`;
-   - `REQUEST_CHANGES` → `IN_PROGRESS`, back to step 4 with the findings (at most two rounds; the reviewer escalates a third);
+   - `REQUEST_CHANGES` → `IN_PROGRESS`, back to step 4 with the findings (after two send-backs in a row the reviewer's third record is `ESCALATE` or `REJECT_RECURRENCE`; the review gate refuses an `APPROVE` there);
    - `REJECT_RECURRENCE` → task `DEFERRED` with `absorbed_by: <rca id>`; the rca task enters the queue; the investigator's recommended exit (b) or (c) is a decision point;
    - `ESCALATE` → `BLOCKED`, decision point.
 7. **Push (DRAIN)** — every task in the unpushed tail is `CODE_COMPLETE` or later (or `tail_code: ratified`) → decision point "push now?". On "yes": `git push`; the pre-push hook re-checks; tasks that deploy → `DEPLOYED`. `TEAMWRIGHT_PAUSE` present → no push, say so. `deploys: false` → no push needed for verification; go to step 8 against a locally started system (or straight to `DONE` when `surface: none`).
@@ -128,7 +128,7 @@ Record each answer in `docs/decisions.md` (proposed-by: agent / decided: owner).
 
 Stop at the next safe point (after the current commit, never mid-edit) when any of these holds:
 
-- **Escalation** — a decision point the owner has not answered, a `BLOCKED` task with nothing else ready, two review records already on the task, an rca task that shows a recurrence itself.
+- **Escalation** — a decision point the owner has not answered, a `BLOCKED` task with nothing else ready, two `REQUEST_CHANGES` records in a row on the task, an rca task that shows a recurrence itself.
 - **Pause** — `TEAMWRIGHT_PAUSE` appears at the repository root: finish the current local commit, push nothing, stop.
 - **Budget** — the `--tasks` budget is used up, or the session context is getting long (large diffs, many tool outputs): stop at the next barrier rather than continuing on a crowded context; the next `/teamwright:flow` resumes cleanly.
 - **Gate infrastructure broken** — a command that worked before is now `not runnable` (image missing, toolchain gone): report it; fixing the config goes through `config.next.yml` + `apply --config` with the owner.

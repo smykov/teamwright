@@ -23,8 +23,8 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 
 ### P-003 — Escalate instead of patching a second time
 - **Why:** tasks returned by review were retried by the same author in the same framing, and each retry produced another variant of the same patch.
-- **Tier:** T1
-- **How checked:** two review records already returned the task → next verdict is `ESCALATE` (owner); a detected recurrence → `REJECT_RECURRENCE`, task `DEFERRED` into an `rca` task (`absorbed_by`). `rca` depth ≤ 1.
+- **Tier:** T1 + T3
+- **How checked:** two review records in a row returned the task (`REQUEST_CHANGES`) → the third record is `ESCALATE` (owner) or `REJECT_RECURRENCE`, and the review gate refuses any other verdict for it; a detected recurrence → `REJECT_RECURRENCE`, task `DEFERRED` into an `rca` task (`absorbed_by`). `rca` depth ≤ 1.
 
 ### P-004 — A guarantee without a failing test doesn't exist
 - **Why:** a guarantee stated only in a doc, comment or prompt was ignored by the first cheap code path that came along.
@@ -94,7 +94,7 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 |---|---|---|---|
 | P-001 | Root cause, not symptom | T1+T2 | Accepted |
 | P-002 | Invariant, not allowlist | T1+T2 | Accepted |
-| P-003 | Escalate instead of patching twice | T1 | Accepted |
+| P-003 | Escalate instead of patching twice | T1+T3 | Accepted |
 | P-004 | Guarantee needs a failing test | T1+T3 | Accepted |
 | P-005 | Tests must bite | T1 | Accepted |
 | P-006 | Verify the running system against data/logs | T1+T3 | Accepted |

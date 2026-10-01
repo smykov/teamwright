@@ -112,7 +112,7 @@ Paths are in your repository after install.
 | Component | What it does | Tier |
 |---|---|---|
 | `scripts/hooks/analysis-gate.sh` | no `IN_PROGRESS` and no code edits without a filled analysis block | T3 |
-| `scripts/hooks/review-gate.sh` | review records only from a code-reviewer that did not implement the task; `CODE_COMPLETE` only with an approval and a logged reviewer start; a third round of changes must escalate | T3 |
+| `scripts/hooks/review-gate.sh` | review records only from a code-reviewer that did not implement the task; `CODE_COMPLETE` only with an approval and a logged reviewer start; after two send-backs in a row the third record must escalate (or reject a recurrence), never approve | T3 |
 | `scripts/hooks/verify-gate.sh` | `VERIFIED` / `DONE` only with a `PASS` verify record for the current code, of the kind the task's `surface` needs | T3 |
 | `scripts/hooks/journal.sh` | logs tool calls, permission events and session outcomes to `.teamwright/logs/` | facts |
 | `scripts/hooks/pre-push` | pushes only code of approved tasks; a `TEAMWRIGHT_PAUSE` file stops all pushes | T3 |

@@ -68,7 +68,7 @@ Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-w
 2. **Red test first** for every guarantee and every bug.
 3. **Self-review does not count.** Review is a fresh agent, never a fork of the author.
 4. **Recurrence → rca task, not another patch.** Same class of bug again (one more `if`, one more allowlist entry, same area for the same reason) → reviewer returns `REJECT_RECURRENCE` and opens a `type: rca` task with `recurrence_of: [...]`; the original task goes to `DEFERRED` with `absorbed_by: <rca id>` (never `BLOCKED`). A workaround commit that links a root task carries an `RCA: T-NNN` trailer. The investigator recommends one of three exits: **(a)** root cause in code — the rca task is fixed in one seam; **(b)** architecture review — `/arch-review`, owner decides, a change spanning more than one seam or service goes through the spec tool as a new spec/plan → tasks with `design_ref`; **(c)** process amendment — the owner amends `PRINCIPLES.md` in a separate commit with a version bump. Every exit is recorded in `docs/decisions.md`.
-5. **Two review rounds max.** A third would be `ESCALATE` to a human. The reviewer never edits code: every finding goes back to the author.
+5. **Two review rounds max.** After two `REQUEST_CHANGES` in a row the third record is `ESCALATE` to a human (or `REJECT_RECURRENCE`), never another send-back or an `APPROVE`; the review gate enforces it. The reviewer never edits code: every finding goes back to the author.
 6. **Docs in the same task.** Drift between `docs/` and code is a review finding.
 7. **No secrets or personal data** in code, logs, fixtures, docs or commit messages.
 8. **Push only in DRAIN.** Never push unreviewed work.
