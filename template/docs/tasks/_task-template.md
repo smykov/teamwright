@@ -36,13 +36,22 @@ absorbed_by: ""
 blocked_on: ""
 # REQUIRED before IN_PROGRESS, or `analysis: skipped:trivial` for a change with no design freedom.
 # evidence: file:line, log line, failing test · invariant: what must stay true · seam: where the change goes
-# type: rca uses a different block (no skipped:trivial): root_cause, evidence, decision
 analysis:
   root_cause: ""
   evidence: ""
   invariant: ""
   seam: ""
   approach: ""
+# type: rca replaces the block above with this one (required: root_cause, evidence, decision;
+# no skipped:trivial). decision = the exit and what it changes: for (a) code, the invariant and
+# the seam; for (b) architecture or (c) process, the owner's decision (docs/decisions.md row).
+# invariant and seam stay useful for exit (a).
+# analysis:
+#   root_cause: ""
+#   evidence: ""
+#   decision: ""
+#   invariant: ""
+#   seam: ""
 # agent or person who implemented the task; the reviewer must differ (checked by the review gate)
 implemented_by: ""
 # Review rounds are not a field: the gates count docs/tasks/<ID>.reviews/<n>.md files.

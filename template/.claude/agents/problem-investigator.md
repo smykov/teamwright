@@ -111,11 +111,23 @@ analysis:
   approach: <recommended option + red test to write first>
 ```
 
-For an rca task add, under `## Investigation`: `**Recommended exit**: (a) code | (b) architecture | (c) process — <why, evidence>`.
+For a `type: rca` task the analysis gate requires `root_cause`, `evidence` and `decision` instead (`skipped:trivial` never applies):
+
+```yaml
+# type: rca
+analysis:
+  root_cause: <the mechanism behind the whole class, one sentence>
+  evidence: <earlier tasks and commits of the class; file:line; failing test>
+  decision: <recommended exit (a) code | (b) architecture | (c) process, and what it changes>
+  invariant: <closed condition; needed for exit (a)>
+  seam: <exit (a): where the change goes>
+```
+
+`decision` names the exit you recommend and what it changes: for (a), the invariant and the seam; for (b) or (c), what the owner is asked to decide. Exits (b) and (c) are owner decisions: before the task enters `IN_PROGRESS` the orchestrator replaces your recommendation with the owner's decision and its `docs/decisions.md` row. Add, under `## Investigation`: `**Recommended exit**: (a) code | (b) architecture | (c) process — <why, evidence>`.
 
 ## Limits
 
-- Change nothing except the task file's `analysis` block and `## Investigation` section.
+- Change nothing except the task file's `analysis` block and `## Investigation` section (for an rca task, `decision` holds your recommendation until the owner decides (b) or (c)).
 - No hypothesis presented as a cause: no evidence → it stays a hypothesis, and the analysis says what is missing.
 - Do not change status, commit or spawn agents. No secrets or personal data.
 

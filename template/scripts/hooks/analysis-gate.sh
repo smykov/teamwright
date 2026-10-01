@@ -28,7 +28,7 @@
 #     not accepted for `type: rca`;
 #   * `type: rca` tasks need their own block: root_cause, evidence, decision
 #     (TEAMWRIGHT_RCA_FIELDS) - declaring a task rca is not a way around analysis;
-#   * cannot prove the root cause yet -> keep TODO, set `blocked_on: <reason>`.
+#   * cannot prove the root cause yet -> BLOCKED with `blocked_on: <reason>`.
 #
 # SAFETY: fail-open on any internal error; silent on allow.
 set -uo pipefail
@@ -54,7 +54,7 @@ root = io.project_root(data)
 
 EXITS = ("Exits: fill the block; `analysis: skipped:trivial` if the change has no "
          "design freedom (not for rca tasks); if the root cause cannot be proven yet, "
-         "keep the task TODO with `blocked_on: <reason>`; for a recurring class, open a "
+         "move the task to BLOCKED with `blocked_on: <reason>`; for a recurring class, open a "
          "`type: rca` task.")
 TEMPLATE = ("analysis:\n  root_cause: <what breaks + why>\n  evidence: <file:line, log line, "
             "failing test>\n  invariant: <what must stay true afterwards>\n  seam: <where "
@@ -62,8 +62,8 @@ TEMPLATE = ("analysis:\n  root_cause: <what breaks + why>\n  evidence: <file:lin
             "what was rejected>")
 RCA_TEMPLATE = ("analysis:\n  root_cause: <the class, not the instance: why it keeps "
                 "coming back>\n  evidence: <the recurrences: task ids, file:line, logs>\n"
-                "  decision: <the structural change that removes the class; "
-                "docs/decisions entry>")
+                "  decision: <the exit and what it changes: (a) invariant + seam, or the "
+                "owner's (b)/(c) decision in docs/decisions.md>")
 
 def template_for(rec):
     return RCA_TEMPLATE if task.is_rca(rec) else TEMPLATE

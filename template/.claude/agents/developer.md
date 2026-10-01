@@ -83,7 +83,7 @@ Configured by teamwright from `.teamwright/config.yml` (spec=spec-kit, context=s
 
 ## Preconditions — stop if any is missing
 
-- [ ] `analysis:` in `docs/tasks/<id>.md` is filled (root cause / goal, invariant, seam, approach). For a feature, invariant + seam + approach are enough. Missing → return to the orchestrator: "needs analysis".
+- [ ] `analysis:` in `docs/tasks/<id>.md` is filled — `root_cause`, `evidence`, `invariant`, `seam`, `approach` for every type but rca (the analysis gate requires all five; for a feature, `root_cause` states the goal and `evidence` the requirement or spec section), or `analysis: skipped:trivial` for a change with no design freedom; an rca task carries `root_cause`, `evidence`, `decision` and, for exit (a), the invariant and seam. Missing → return to the orchestrator: "needs analysis".
 - [ ] Every guarantee in the DoD has a red test (written by `test-writer`), including the end-to-end test for the Acceptance failure branch when `surface` is not `none`. Missing → return: "needs red test for <guarantee>".
 - [ ] Task created from a spec → `design_ref` read; the change stays within what the spec/plan section decides. A needed deviation is reported, not made silently.
 

@@ -35,7 +35,7 @@ Template: `template/docs/tasks/_task-template.md`.
 | `recurrence_of` | when detected | Earlier tasks that fixed the same class of defect |
 | `absorbed_by` | when deferred into a root task | Id of the `rca` task that now owns this scope |
 | `blocked_on` | optional | Soft hold: free text (waiting for evidence or a person), or open-question ids (`OQ-02`, `OQ-02, OQ-05`) when the task must not be analysed before they are answered — a sentence in the body is not enough, the router reads only this field. Free text holds until cleared to `""`; OQ ids hold until each is `answered` or `dropped` in `docs/open-questions.md` |
-| `analysis` | before `IN_PROGRESS` | `root_cause`, `evidence`, `invariant`, `seam`, `approach` — for every type, `rca` included |
+| `analysis` | before `IN_PROGRESS` | `root_cause`, `evidence`, `invariant`, `seam`, `approach` for `feature`, `bug` and `chore`. `type: rca` needs `root_cause`, `evidence`, `decision` instead (the chosen exit and what it changes; `invariant` and `seam` are expected for exit (a)). Checked by the analysis gate |
 | `tail_code` | optional | `ratified` — the owner explicitly accepts that this task's code is pushed although the task is not in an approved status (for example a patch kept as a marked temporary workaround in a `DEFERRED` task) |
 
 Review records live next to the task: `docs/tasks/T-NNN.reviews/<n>.md`, one file per round, written only by the `code-reviewer` agent (the review gate checks the agent type). The number of review rounds is **the number of those files** — hooks and metrics count them; no agent maintains a counter by hand.
@@ -43,10 +43,10 @@ Review records live next to the task: `docs/tasks/T-NNN.reviews/<n>.md`, one fil
 Verification records live next to them: `docs/tasks/T-NNN.verify/<n>.md`, one file per verification run (section 7). Template: `template/docs/tasks/_verify-template.md`.
 
 Rules:
-- `evidence` is concrete: `file:line`, a log line, a failing test name. "I think" is not evidence.
+- `evidence` is concrete: `file:line`, a log line, a failing test name. "I think" is not evidence. For a feature, `root_cause` states the need the change answers and `evidence` the requirement, spec section or failing acceptance test behind it.
 - `invariant` states what must stay true after the change, phrased so a test can check it.
 - A `chore` with no degrees of freedom may write `analysis: skipped:trivial` — anything touching behaviour may not.
-- `type: rca` is not an exemption: the investigation fills the analysis block first, and code under an `rca` task is edited only after it is complete.
+- `type: rca` is not an exemption: the investigation fills the analysis block (`root_cause`, `evidence`, `decision`) first, and code under an `rca` task is edited only after it is complete. For exits (b) and (c), `decision` holds the owner's decision, not the investigator's recommendation, before the task enters `IN_PROGRESS`.
 - Entering `IN_PROGRESS` makes the task the active one: the analysis gate writes its id to `.teamwright/current-task`, and code edits are checked against that task.
 - New tasks go into the **active** sprint only.
 

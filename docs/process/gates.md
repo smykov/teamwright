@@ -114,7 +114,7 @@ root cause cost a full review round; the same seam was reopened five times in a 
 |-----------|------|
 | Root cause proven | Fill the block, then move to `IN_PROGRESS` |
 | No design freedom (typo, version bump, docs) | `analysis: skipped:trivial` |
-| Root cause cannot be proven with current evidence | Stay `TODO`, set `blocked_on: <reason>` |
+| Root cause cannot be proven with current evidence | `ANALYSIS → BLOCKED` with `blocked_on: <reason>` (what evidence or person it waits for) |
 | Instance of a known root | `absorbed_by: <rca task>` + `DEFERRED` |
 | The task *is* the investigation | `type: rca` with root cause + evidence + decision |
 

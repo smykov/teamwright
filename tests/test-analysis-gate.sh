@@ -30,6 +30,7 @@ expect_allow "analysis: skipped:trivial is an accepted exit" "$out"
 task_file "$T" T-1 TODO rca none
 out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
 expect_deny "type: rca is not exempt: its analysis is required" "$out" "decision"
+expect_deny "no evidence yet: the exit is BLOCKED with blocked_on (lifecycle)" "$out" "BLOCKED with \`blocked_on"
 task_file "$T" T-1 TODO rca trivial
 out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
 expect_deny "type: rca cannot use analysis: skipped:trivial" "$out" "root_cause"
@@ -109,6 +110,42 @@ out="$(run Bash s1 "command=sed -i 's/status: TODO/status: IN_PROGRESS/' docs/ta
 expect_deny "sed -i on a task status is denied" "$out" "Edit/Write"
 out="$(run Bash s1 "command=grep status docs/tasks/T-1.md")"
 expect_allow "reading task status via shell is allowed" "$out"
+
+# ---- the documented analysis blocks pass the gate, filled exactly as written ----
+# The task template (active block, and the commented rca block) and every analysis
+# block in the problem-investigator's output section are filled in place (placeholders
+# replaced, nothing added) and moved ANALYSIS -> IN_PROGRESS.
+IFS= read -r -d '' _docs_py <<'PY' || true
+import os, re, sys
+kit, out = sys.argv[1], sys.argv[2]
+tpl = open(os.path.join(kit, "template/docs/tasks/_task-template.md")).read()
+fm, rest = tpl.split("\n---\n", 1)
+rca_fm = re.sub(r"(?m)^analysis:\n(  .*\n)+", "", fm)
+rca_fm = re.sub(r"(?m)^# (analysis:|  \w+: \"\")$", r"\1", rca_fm)
+rca_fm = re.sub(r"(?m)^type: feature$", "type: rca", rca_fm)
+cases = [("template", "bug", fm), ("template-rca", "rca", rca_fm)]
+inv = open(os.path.join(kit, "template/.claude/agents/problem-investigator.md")).read()
+section = inv.split("## Output", 1)[1].split("\n## ", 1)[0]
+for i, block in enumerate(re.findall(r"```yaml\n(.*?)```", section, re.S)):
+    typ = "rca" if "# type: rca" in block else "bug"
+    cases.append(("investigator-%d" % (i + 1), typ,
+                  "---\nid: T-9\ntitle: x\ntype: %s\nstatus: ANALYSIS\n%s" % (typ, block)))
+for name, typ, text in cases:
+    text = re.sub(r'(?m)^(  \w+: )(""|<[^>\n]*>)$', r"\1filled from the evidence", text)
+    text = re.sub(r"(?m)^status: \w+", "status: ANALYSIS", text).replace("id: T-NNN", "id: T-9")
+    with open(os.path.join(out, name + "." + typ), "w") as fh:
+        fh.write(text.rstrip("\n") + "\n---\nbody\n")
+    print(name + "." + typ)
+PY
+mkdir -p "$TMP/docs-blocks"
+n=0
+for f in $(python3 -c "$_docs_py" "$KIT" "$TMP/docs-blocks"); do
+  n=$((n + 1))
+  cp "$TMP/docs-blocks/$f" "$P/docs/tasks/T-9.md"
+  out="$(run Edit s1 "file_path=$P/docs/tasks/T-9.md" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+  expect_allow "documented analysis block ($f) filled as written passes the gate" "$out"
+done
+[ "$n" -ge 4 ] && ok "found the template and investigator blocks ($n)" || bad "found the template and investigator blocks" "only $n"
 
 # fail-open
 out="$(printf 'not json' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"

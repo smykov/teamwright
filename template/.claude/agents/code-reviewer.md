@@ -41,7 +41,7 @@ Ask: *if tomorrow one more input / tool / route of this class appears, will the 
 On a recurrence the fix is **not** accepted as another patch, however correct it looks locally. Verdict `REJECT_RECURRENCE`, and in the report:
 
 - list the earlier tasks / commits / failure entries of this class → these go into `recurrence_of`;
-- instruct: open a new `type: rca` task linked via `recurrence_of`, owner: `problem-investigator`; its result is an invariant + an architectural decision recorded in `docs/decisions/`;
+- instruct: open a new `type: rca` task linked via `recurrence_of`, owner: `problem-investigator`; its analysis ends in one of three exits (`docs/process/lifecycle.md` §6) — code, architecture review or process amendment;
 - say whether the current patch is reverted or kept **explicitly marked as a temporary workaround** pointing to the rca task;
 - note the signals you saw for the exit — class crosses seams or services, area is a hotspot, or a process gap allowed it — so the investigator can recommend (a) code, (b) architecture review or (c) process amendment. You do not choose the exit.
 
