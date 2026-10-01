@@ -30,16 +30,15 @@ def main():
         sys.exit("demo failed, no cast written")
     lines = run.stdout.decode("utf-8").splitlines()
 
-    t, events = 0.5, []
+    t, events = 0.0, []
 
     def out(text, delay):
         nonlocal t
         t += delay
         events.append([round(t, 3), "o", text])
 
-    for ch in "$ bash examples/demo.sh":
-        out(ch, 0.06)
-    out("\r\n", 0.4)
+    # the first frame is also the still preview: show the command, not an empty screen
+    out("$ bash examples/demo.sh\r\n", 0.0)
     in_deny = False                     # inside a gate's DENIED block
     chunk, pending = [], 0.0
 
@@ -48,9 +47,13 @@ def main():
             out("".join(x + "\r\n" for x in chunk), pending)
             del chunk[:]
 
+    headers = 0
     for line in lines:
         plain = ANSI.sub("", line)
-        if in_deny and plain.startswith("      "):
+        headers += plain.startswith("== ")
+        if headers < 2:
+            delay = 0.0                                   # intro and step 1: part of the first frame
+        elif in_deny and plain.startswith("      "):
             delay = 0.35                                  # the gate's reason
         elif in_deny:
             delay, in_deny = 2.4, False                   # time to read it
@@ -65,7 +68,7 @@ def main():
         if "DENIED by" in plain:
             in_deny = True
         # fewer, larger frames keep the GIF small: short delays join the pending chunk
-        if delay < 0.5 and chunk:
+        if (delay < 0.5 or headers < 2) and chunk:
             chunk.append(line)
             pending += delay
         else:

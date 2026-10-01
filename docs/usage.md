@@ -28,6 +28,8 @@ Gates start in **gate-first** mode: the analysis, review and verify gates warn (
 python3 <kit>/scripts/tw-install.py enforce
 ```
 
+`<kit>` is the plugin's directory (or a checkout of this repository); `/teamwright:status` prints the command with the full path.
+
 Agents cannot lower the mode back to gate-first; the state guard denies writes to `.teamwright/config.yml` from inside Claude Code. Git hooks behave the same in both modes. `/teamwright:status` shows the mode, the tasks and the next action.
 
 ## `/teamwright:flow`

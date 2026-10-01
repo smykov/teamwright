@@ -1,6 +1,6 @@
 # teamwright
 
-A Claude Code plugin that installs a fixed team process into your repository: AI agents work on recorded tasks, and hooks block the steps agents tend to skip.
+A Claude Code plugin that installs a team process into your repository: AI agents work on recorded tasks, and hooks block the steps they tend to skip — analysis, independent review, verification.
 
 [![ci](https://github.com/smykov/teamwright/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/smykov/teamwright/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -12,7 +12,7 @@ A Claude Code plugin that installs a fixed team process into your repository: AI
 
 ## Quickstart
 
-Requires Claude Code, `bash`, `git` and `python3`. Commit your work, then in Claude Code at the repository root:
+Requires Claude Code, `bash`, `git` and `python3` on Linux or macOS (Docker optional, for toolchains you do not want on the host). Commit your work, then in Claude Code at the repository root:
 
 ```text
 /plugin marketplace add smykov/teamwright
@@ -58,7 +58,7 @@ A task that ships a deployable artifact also goes through push (only approved ta
       it.
 ```
 
-and the metrics it ends with, from that demo repository (one task, 13 commits):
+and the metrics report it ends with. The numbers are synthetic — the demo scripts its own commits — and show the format, not results:
 
 | Metric | Value | Source |
 |---|---|---|
@@ -74,7 +74,7 @@ Every number carries its n and source; a missing source prints `no data`, never 
 ## Your first day
 
 1. **`/teamwright:adopt`** looks at the repository, asks what the next release should achieve and which tools to use, and proposes the test and lint commands for each code area. It writes `.teamwright/config.yml`, installs the hooks, runs every command once and proposes a first sprint of tasks in `docs/tasks/`. Your `CLAUDE.md` and agents are kept, merged with you where they conflict.
-2. **Gates warn first.** Until your checks are green, the gates report what they would block. Then run `tw-install.py enforce` outside Claude Code and they block.
+2. **Gates warn first.** Until your checks are green, the gates report what they would block. `/teamwright:status` tells you when the project is ready and prints the `enforce` command; you run it yourself, outside Claude Code, and from then on the gates block.
 3. **`/teamwright:flow`** picks the first ready task. A problem-investigator writes the analysis; a test-writer adds a failing test; a developer makes it pass and commits locally.
 4. **Review.** A fresh code-reviewer reads the diff, the task and the principles and writes a review record. Up to two rounds of changes, then it escalates to you.
 5. **Push and verify.** You decide when to push. A task-validator runs the tests against the running system and writes a verify record; with a `PASS` for the current commit the task is `DONE`.
@@ -153,6 +153,10 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 - [docs/process/](docs/process/) — the process reference installed into projects: [lifecycle](docs/process/lifecycle.md), [gates](docs/process/gates.md), [roles](docs/process/roles.md), [sessions](docs/process/sessions.md), [principles](docs/process/principles.md), [metrics](docs/process/metrics.md), [tools](docs/process/tools.md); installer and config schema in [plugin.md](docs/process/plugin.md)
 - [examples/](examples/) — the offline demo
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+## Status
+
+Early: 0.x, built and tried by its author on real projects — so far adoption of one existing project and the task loop on it. Bug reports from other stacks are the most useful contribution.
 
 ## Roadmap
 
