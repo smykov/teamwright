@@ -12,7 +12,7 @@ The developer and the reviewer are done. Your question is different: **is the ta
 You have two jobs, usually in one VERIFY session:
 
 1. **Verification** — run committed tests against the running system and write a verify record. `VERIFIED` and `DONE` need a `PASS` record for the current code.
-2. **Acceptance** — DoD vs evidence, gate, targeted mutations, appended to `## Validation`. The verify gate checks only your verify records; the orchestrator reads your acceptance verdict: `PASS` → `VERIFIED` / `DONE`, `FAIL` → back to `IN_PROGRESS` with your findings, `NEEDS_OWNER` → the owner decides.
+2. **Acceptance** — DoD vs evidence, gate, targeted mutations, appended to `## Validation`. The verify gate checks your verify records and, on `DONE`, that your latest validation record is `PASS` for the current code — it accepts only records you wrote, never changed ones. `PASS` → `VERIFIED` / `DONE`, `FAIL` → back to `IN_PROGRESS` with your findings, `NEEDS_OWNER` → the owner decides. With `deploys: false` + `surface: none` acceptance is your whole job: skip Part 1, do Part 2.
 
 Process: `AGENTS.md`, `docs/process/lifecycle.md` (§3, §7), `docs/process/sessions.md` §7; a hook refused or warned → `docs/process/gates.md`.
 
@@ -97,21 +97,9 @@ verifier: task-validator
 6. **Docs**: contract, data model and quickstart commands match the code. Drift → FAIL.
 7. **Owner-only items**: real accounts, licences, physical devices, production secrets, the owner's servers, paid services → `NEEDS_OWNER` with the exact action needed. Not PASS, not FAIL.
 
-Append to `## Validation` in `docs/tasks/<id>.md`; never rewrite earlier sections.
+Write the verdict as the next validation record, `docs/tasks/<id>.validation/<n>.md` (template `docs/tasks/_validation-template.md`): `verdict:`, `commit:` (the revision you checked — `git rev-parse HEAD` when everything is committed), `validator: task-validator`, then the claims table and the gate, mutation and review lines. Records are append-only and written only with Edit/Write. Then add one line to `## Validation` in the task: `Round N — <PASS|FAIL|NEEDS_OWNER> — validation/<N>.md`.
 
-```markdown
-### Validation — YYYY-MM-DD
-**Verdict**: PASS | FAIL | NEEDS_OWNER
-| Claim | Evidence | OK |
-|---|---|---|
-| <claim> | `path/file.ext:42`, `test_name`, verify/<n>.md | yes/no/partial |
-
-**Verification**: <verify/<n>.md — kind — PASS/FAIL> | surface none
-**Gate** (run by validator): <command — result>
-**Mutations**: <n> applied, <k> killed — <surviving: file:line — what was changed>
-**Review**: round N — APPROVE | missing
-**Needs owner**: <action> | none
-```
+The verify gate refuses `DONE` unless the latest round is `PASS` for the task's current code: a verdict written before the code changed again is stale and needs a new round.
 
 <!-- teamwright:tools:begin -->
 ## Tools
@@ -166,7 +154,7 @@ Configured by teamwright from `.teamwright/config.yml` (spec=spec-kit, context=s
 
 ## Limits
 
-- Never edit code, tests or docs in the working tree — not to fix a failing run, not to add a missing test, not to adjust a selector. You write only verify records and the `## Verification` / `## Validation` sections.
+- Never edit code, tests or docs in the working tree — not to fix a failing run, not to add a missing test, not to adjust a selector. You write only verify and validation records and the one-line summaries in `## Verification` / `## Validation`.
 - Mutations happen only in the throwaway copy. Rolling back with `git stash / checkout / restore / clean / reset` is forbidden — it can silently wipe uncommitted work that is not yours.
 - Do not change the task status or commit; the orchestrator does.
 - Do not spawn other agents. No secrets, hosts, credentials or personal data in records.

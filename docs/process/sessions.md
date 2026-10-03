@@ -59,7 +59,7 @@ Every session ends with exactly one outcome, written in its final message. The s
 | `interrupted` | Stopped mid-step (owner interrupt, a role agent that crashed without a result, context limit near) — written by the session when it still can; a session cut off without a final message is journaled as `none`, and the router resumes the current task either way |
 
 One blocked task is **not** `escalate`: mark it `BLOCKED` with a reason, report it, keep picking other ready tasks.
-A session that ends without an outcome is a defect in the process — the next session cannot route. The `Outcome:` line is the last line of the final message, in plain text; the Stop hook reads it from the message, or from the transcript when the runtime does not pass the message. A session never ends its turn while a role agent it spawned is still running: role agents run in the foreground, and each result is committed before the next step.
+A session that ends without an outcome is a defect in the process — the next session cannot route. The `Outcome:` line is the last line of the final message, in plain text; the Stop hook reads it from the message, or from the transcript when the runtime does not pass the message. A session never ends its turn while a role agent it spawned is still running: role agents run in the foreground, and each result is committed before the next step. When the runtime runs a role in the background and the turn ends anyway, the hook journals `waiting`; only the session's last turn counts as its outcome.
 
 ## 3. Batching
 

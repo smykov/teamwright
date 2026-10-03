@@ -306,6 +306,34 @@ expect_rc "upper bound: any subagent in all 3 joined claims" "[3, 3]" "$(q "[${G
 expect_rc "sessions: the fixed label is not a session" 3 "$(q "${G3}['sessions']['value']")"
 expect_rc "journal without task ids: approvals match is no data" null "$(q "${G3}['approvals_with_reviewer_spawn']['value']")"
 
+# echo-me-shaped session: background roles end turns with `waiting`, runtime helper
+# SubagentStops (no type, 0 calls) every half minute, the last Stop carries the outcome
+A4="$TMP/waitlogs"; mkdir -p "$A4"
+cat > "$A4/tools.jsonl" <<'EOF'
+{"ts":"2026-03-21T09:00:00Z","event":"pre","session_id":"w1","agent_id":"","agent_type":"","tool":"Bash","detail":"git status"}
+EOF
+cat > "$A4/outcomes.jsonl" <<'EOF'
+{"ts":"2026-03-21T09:01:00Z","event":"Stop","session_id":"w1","agent_id":"","agent_type":"","outcome":"waiting","tool_calls":1}
+{"ts":"2026-03-21T09:01:30Z","event":"SubagentStop","session_id":"w1","agent_id":"x1","agent_type":"","outcome":"none","tool_calls":0}
+{"ts":"2026-03-21T09:02:00Z","event":"SubagentStop","session_id":"w1","agent_id":"x2","agent_type":"","outcome":"none","tool_calls":0}
+{"ts":"2026-03-21T09:03:00Z","event":"SubagentStop","session_id":"w1","agent_id":"a1","agent_type":"developer","outcome":"none","tool_calls":12}
+{"ts":"2026-03-21T09:04:00Z","event":"Stop","session_id":"w1","agent_id":"","agent_type":"","outcome":"barrier","tool_calls":3}
+{"ts":"2026-03-21T10:00:00Z","event":"Stop","session_id":"w2","agent_id":"","agent_type":"","outcome":"waiting","tool_calls":1}
+EOF
+cat > "$A4/gates.jsonl" <<'EOF'
+{"ts":"2026-03-21T09:02:30Z","event":"gate","gate":"analysis-gate","decision":"warn","session_id":"w1","agent_id":"","agent_type":"","tool":"Edit","reason":"ANALYSIS GATE: T-1"}
+{"ts":"2026-03-21T09:02:40Z","event":"gate","gate":"verify-gate","decision":"deny","session_id":"w1","agent_id":"","agent_type":"","tool":"Edit","reason":"VERIFY GATE: T-1"}
+EOF
+J="$TMP/waitlogs.json"
+python3 "$M" --json --logs "$A4" > "$J"
+G4='r["journal"]["summary"]["all"]'
+B4='r["journal"]["breakdown"]["all"]'
+expect_rc "sessions without outcome: by the last Stop (w1 barrier, w2 still waiting)" "[1, 2]" "$(q "[${G4}['sessions_without_outcome']['num'], ${G4}['sessions_without_outcome']['n']]")"
+expect_rc "runtime helper SubagentStops are left out of subagent outcomes" "[1, 2]" "$(q "[${B4}['n_subagent_stop_records'], ${B4}['n_runtime_subagent_stops']]")"
+expect_rc "gate warnings and denials counted" "[1, 1]" "$(q "[${G4}['gate_warnings']['value'], ${G4}['gate_denials']['value']]")"
+expect_rc "gate denials are not permission denials" '{}' "$(q "${B4}['denials_by_tool']")"
+python3 "$M" --logs "$A4" | grep -q "Gate decisions: " && ok "markdown shows gate decisions" || bad "markdown shows gate decisions"
+
 # --- config file
 python3 "$M" --config "$KIT/template/scripts/metrics/metrics.example.json" >/dev/null; rc=$?
 expect_rc "example config is accepted" 0 "$rc"

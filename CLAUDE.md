@@ -4,7 +4,7 @@ Guidance for agents working on **teamwright itself** — the Claude Code plugin 
 
 ## Layout
 
-- `skills/` — plugin commands (`/teamwright:adopt`, `init`, `flow`, `status`, `reconfigure`).
+- `skills/` — plugin commands (`/teamwright:adopt`, `init`, `requirements`, `flow`, `status`, `reconfigure`).
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — process reference; copied into projects on install, linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.

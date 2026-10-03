@@ -276,6 +276,15 @@ may be empty).
    agent that did not implement the task (`.teamwright/sessions/<ID>.dev`,
    `implemented_by`) or from a person.
 5. Shell commands that write verify records.
+6. Acceptance verdicts are validation records, `docs/tasks/<ID>.validation/<n>.md`
+   (`verdict: PASS | FAIL | NEEDS_OWNER`, `commit:`, `validator: task-validator`,
+   template `docs/tasks/_validation-template.md`): written only by `task-validator`,
+   only with Edit/Write, append-only, next round only, commit must resolve; ledger
+   `.teamwright/sessions/<ID>.validation.jsonl`. Entering `DONE` needs the latest round
+   `PASS`, matching its ledger entry, for the task's current code (same freshness rule as
+   verify records) — for every `surface`, including `deploys: false` + `surface: none`,
+   where it is the only check. A round whose file is gone while the ledger has it blocks
+   `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`).
 
 **Deliberate exits** (all stay visible in the task file)
 
@@ -302,10 +311,11 @@ the agent's report.
 
 | Event | File (`.teamwright/logs/`) | One line per |
 |---|---|---|
-| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `tools.jsonl` | tool call: `ts`, `event` (`pre`/`post`/`failure`), `session_id`, `agent_id`, `agent_type`, `tool`, `detail`; Agent calls add `subagent_type`, `task_ids` |
+| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `tools.jsonl` | tool call: `ts`, `event` (`pre`/`post`/`failure`), `session_id`, `agent_id`, `agent_type`, `tool`, `detail`; Agent calls add `subagent_type`, `task_ids` (ids in the spawn description, else the first id in the prompt) |
 | `PermissionRequest`, `PermissionDenied` | `perms.jsonl` | permission decision needed / call denied (`PermissionDenied` fires for auto-mode denials; a deny-rule refusal shows as a `pre` line with no `post`) |
 | `PostToolUse` of Edit/Write on `docs/tasks/<ID>.verify/<n>.md` | `verify.jsonl` | verify record landed: task, round, kind, tool, environment, result, commit (never the command or the body) |
-| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none) — active task and its status, the agent's tool-call count |
+| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`) — active task and its status, the agent's tool-call count |
+| any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
 
 `detail` classifies a call, it never replays it: program + subcommand of a shell command
 (no arguments, no `VAR=value`), a repo-relative path, an agent type, a skill name, a URL
@@ -454,6 +464,20 @@ prints a warning, when `CLAUDE.md` exceeds `TEAMWRIGHT_CLAUDE_MD_MAX_KB` (defaul
 set in `.claude/settings.json` → `env`). Fix: move decisions to
 `docs/decisions/<area>.md`, verbatim, in a separate commit.
 
+## Session check
+
+`scripts/hooks/session-check.sh` · T2 (reports, never blocks)
+
+**Incident it prevents.** A repository cloned on a second machine had the gates and
+the tasks but no plugin and no git hooks: `/teamwright:flow` was unknown, commits ran
+without the secret scan, and nothing said why.
+
+On `SessionStart` it checks that `core.hooksPath` is `scripts/hooks` and that the plugin
+recorded in `.teamwright/installed.json` (`@kit`) is installed for this project at that
+version (Claude Code's plugin registry; a registry it cannot read is skipped). Anything
+missing goes to the owner (`systemMessage`) and to the agent's context, with the
+commands that fix it. `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
+
 ---
 
 ## Environment variables
@@ -479,6 +503,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_ALLOW_PUSH=1` | `pre-push` | one-off human override of DRAIN |
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
+| `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
 | `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run` | another project root or config file |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 

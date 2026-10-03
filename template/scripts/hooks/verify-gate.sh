@@ -42,14 +42,21 @@
 #      `kind: manual` counts only with `verify_exception`, and at least one fresh manual
 #      PASS must come from an agent that did not implement the task (or a person).
 #   4. Shell commands that write verify records.
+#   5. Acceptance verdicts - validation records docs/tasks/<ID>.validation/<n>.md
+#      (verdict PASS|FAIL|NEEDS_OWNER, commit, validator) - written by anyone but
+#      task-validator, by a shell command, out of round order, or over an existing round.
+#      Entering DONE needs the latest round PASS, written through this gate (ledger),
+#      fresh for the task's code - for every surface, including `deploys: false` +
+#      `surface: none`, where it is the only check.
 #
 # FRESHNESS. The task's code commits are commits whose message names the task id
 # (subject, body or trailer - the commit convention requires it) and that touch files
 # outside docs/tasks/. The newest of them must be contained in the verified commit.
-# If no commit names the task, the verified commit must equal HEAD.
+# If no commit names the task, the verified commit must equal HEAD, or every change
+# since it must be under docs/tasks/ (records committed after the check).
 #
 # LEDGER (local, gitignored): .teamwright/sessions/<ID>.verify.jsonl - who wrote which
-# round, kind, result, commit. Implementers: .teamwright/sessions/<ID>.dev (review gate).
+# round, kind, result, commit; <ID>.validation.jsonl - acceptance verdicts. Implementers: .teamwright/sessions/<ID>.dev (review gate).
 # SAFETY: fail-open on any internal error; silent on allow. Freshness is skipped when
 # git is unavailable.
 set -uo pipefail
@@ -69,7 +76,9 @@ except Exception:
 KINDS = ("api", "ui", "smoke", "manual")
 ENVS = ("local", "staging", "production-like")
 RESULTS = ("PASS", "FAIL")
+VERDICTS = ("PASS", "FAIL", "NEEDS_OWNER")
 SURFACES = ("ui", "api", "both", "none")
+VALIDATOR = os.environ.get("TEAMWRIGHT_VALIDATOR_AGENT", "task-validator")
 REQUIRED = {"ui": [("ui",)], "api": [("api",)], "both": [("api",), ("ui",)],
             "none": [("api", "ui", "smoke")]}
 SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
@@ -92,13 +101,13 @@ def deny(msg):
 # ---- 4. shell writes into verify records -----------------------------------------
 if tool == "Bash":
     cmd = ti.get("command") or ""
-    target = r"docs/tasks/[^\s'\"]*\.verify(/|\b)"
+    target = r"docs/tasks/[^\s'\"]*\.(verify|validation)(/|\b)"
     if re.search(target, cmd) and (
             re.search(r">\s*['\"]?\S*" + target, cmd)
             or re.search(r"\b(tee|cp|mv|rm|truncate|touch|ln|install|rsync)\b", cmd)
             or re.search(r"\b(sed|perl)\s+-[a-zA-Z]*i", cmd)):
-        deny("verify records are written only through Edit/Write, one new round per "
-             "run, never by shell commands - otherwise the gate cannot check who wrote "
+        deny("verify and validation records are written only through Edit/Write, one new "
+             "round per run, never by shell commands - otherwise the gate cannot check who wrote "
              "them or keep them append-only.")
     sys.exit(0)
 
@@ -132,6 +141,12 @@ def last_code_commit(tid):
             return sha
     return ""
 
+def records_only_since(c):
+    """True when every change between c and HEAD is under docs/tasks/ (task records,
+    review / verify / validation rounds): the code that was checked is still HEAD's."""
+    out = git("diff", "--name-only", c, "HEAD")
+    return out is not None and all(f.startswith("docs/tasks/") for f in out.splitlines() if f)
+
 def sessions_dir():
     return os.path.join(root, ".teamwright", "sessions")
 
@@ -143,6 +158,9 @@ def dev_keys(tid):
 
 def ledger(tid):
     return os.path.join(sessions_dir(), tid + ".verify.jsonl")
+
+def validation_ledger(tid):
+    return os.path.join(sessions_dir(), tid + ".validation.jsonl")
 
 def ledger_entry(tid, n):
     hit = None
@@ -253,6 +271,48 @@ if m and rel.startswith("docs/tasks/"):
                                       result=w(rec, "result"), commit=commit))
     sys.exit(0)
 
+# ---- 6. validation record (acceptance verdict) being written ---------------------------
+m = io.VALIDATION_FILE_RE.search(rel)
+if m and rel.startswith("docs/tasks/"):
+    tid, n = m.group(1), int(m.group(2))
+    existing = [r for r, _ in task.validation_rounds(root, tid)]
+    if os.path.exists(os.path.join(root, rel)):
+        deny("docs/tasks/%s.validation/%d.md already exists. Acceptance verdicts are "
+             "append-only: a new check is a new round, %s.validation/%d.md."
+             % (tid, n, tid, max(existing + [n]) + 1))
+    nxt = (max(existing) + 1) if existing else 1
+    if n != nxt:
+        deny("the next validation round of %s is %d, not %d (rounds are consecutive files)."
+             % (tid, nxt, n))
+    if (who["agent_type"] or "") != VALIDATOR:
+        deny("acceptance verdicts are written by a fresh %s, not by %s. Spawn it with "
+             "the task id." % (VALIDATOR, who["agent_type"] or "the main session"))
+    _, after = io.before_after(data)
+    if after is None:
+        sys.exit(0)
+    rec = task.parse(after)
+    p = []
+    if (rec.get("task") or "").strip() != tid:
+        p.append("`task:` must be %s" % tid)
+    if (rec.get("round") or "").strip() != str(n):
+        p.append("`round:` must equal the file name (%d)" % n)
+    if w(rec, "verdict") not in VERDICTS:
+        p.append("`verdict:` one of %s" % " | ".join(VERDICTS))
+    if not SHA.match(w(rec, "commit")):
+        p.append("`commit:` the sha of the revision that was checked (7-40 hex)")
+    if w(rec, "validator") != VALIDATOR:
+        p.append("`validator: %s`" % VALIDATOR)
+    if p:
+        deny("validation record %s round %d is incomplete: %s. Template: "
+             "docs/tasks/_validation-template.md." % (tid, n, "; ".join(p)))
+    if resolve(w(rec, "commit")) == "":
+        deny("commit %s does not resolve in this repository; check a committed revision "
+             "and record its sha." % w(rec, "commit"))
+    io.state_dir(data, "sessions")
+    io.append_jsonl(validation_ledger(tid), dict(who, ts=io.now(), round=n,
+                                                 verdict=w(rec, "verdict"), commit=w(rec, "commit")))
+    sys.exit(0)
+
 # ---- 3. task record entering VERIFIED / DONE ---------------------------------------
 m = io.TASK_FILE_RE.search(rel)
 if not (m and rel.startswith("docs/tasks/")):
@@ -263,14 +323,71 @@ if after is None:
     sys.exit(0)
 rb, ra = task.parse(before or ""), task.parse(after)
 sb, sa = task.status(rb), task.status(ra)
+
 if sa == sb or sa not in ("VERIFIED", "DONE"):
     sys.exit(0)
+head = resolve("HEAD")
+last_code = last_code_commit(tid) if head else ""
+
+def stale(n, sha, what):
+    """'' if the revision `sha` covers the task's current code; otherwise the reason."""
+    if head is None or head == "":
+        return ""  # git unusable or no commits: freshness cannot be checked
+    c = resolve(sha)
+    if not c:
+        return "round %d: commit %s does not resolve" % (n, sha)
+    if not is_ancestor(c, head):
+        return "round %d: commit %s is not in the current history (HEAD)" % (n, c[:12])
+    if last_code:
+        if not is_ancestor(last_code, c):
+            return ("round %d is stale: it %s %s, but the task's code changed later in %s. "
+                    "Check the current revision as a new round" % (n, what, c[:12], last_code[:12]))
+    elif c != head and not records_only_since(c):
+        return ("round %d %s %s, not HEAD %s, and no commit names %s to tell whether the "
+                "code changed since. Check HEAD, or name the task id in its commits"
+                % (n, what, c[:12], head[:12], tid))
+    return ""
+
+def acceptance_check():
+    """Entering DONE: the latest acceptance verdict is PASS, written by task-validator
+    through this gate, for the task's current code."""
+    if sa != "DONE":
+        return
+    vrounds = task.validation_rounds(root, tid)
+    how = ("Spawn a fresh %s: it checks every Acceptance item against evidence and writes "
+           "docs/tasks/%s.validation/<n>.md - with `deploys: false` and `surface: none` that "
+           "is its whole job, no verify record needed" % (VALIDATOR, tid))
+    written = [r.get("round") for r in io.read_jsonl(validation_ledger(tid))]
+    if not vrounds:
+        deny("%s cannot become DONE without an acceptance verdict PASS (no validation "
+             "record). %s." % (tid, how))
+    n, rec = vrounds[-1]
+    later = [x for x in written if isinstance(x, int) and x > n]
+    if later:
+        deny("validation round %d of %s was written but its file is gone; records are "
+             "append-only. %s." % (max(later), tid, how))
+    if w(rec, "verdict") != "PASS":
+        deny("%s cannot become DONE: latest acceptance verdict (round %d) is %s. %s."
+             % (tid, n, w(rec, "verdict") or "missing", how))
+    entry = None
+    for r in io.read_jsonl(validation_ledger(tid)):
+        if r.get("round") == n:
+            entry = r
+    if entry is None or (entry.get("verdict"), entry.get("commit")) != ("PASS", w(rec, "commit")):
+        deny("validation round %d of %s was not written by %s through this gate, or was "
+             "changed after it was written (ledger .teamwright/sessions/%s.validation.jsonl). "
+             "%s." % (n, tid, VALIDATOR, tid, how))
+    why = stale(n, w(rec, "commit"), "accepted")
+    if why:
+        deny("%s cannot become DONE: acceptance %s." % (tid, why))
+
 surface = w(ra, "surface")
 deploys_false = w(ra, "deploys").lower() == "false"
 if surface not in SURFACES:
     deny("%s has no valid `surface:` (ui | api | both | none); the gate cannot tell "
          "which verification it needs. Set it in docs/tasks/%s.md." % (tid, tid))
 if surface == "none" and deploys_false:
+    acceptance_check()
     sys.exit(0)
 rounds = task.verify_rounds(root, tid)
 how = ("run the system and record the result in docs/tasks/%s.verify/<n>.md "
@@ -287,8 +404,6 @@ if w(last, "result") != "PASS":
 exc = exception_of(ra)
 devs = dev_keys(tid)
 impl = (ra.get("implemented_by") or "").strip()
-head = resolve("HEAD")
-last_code = last_code_commit(tid) if head else ""
 
 def check_record(n, rec):
     """'' if the record is a valid, genuine, fresh PASS; otherwise the reason."""
@@ -310,23 +425,7 @@ def check_record(n, rec):
         return ("round %d was changed after it was written (ledger: %s/%s/%s); records are "
                 "append-only - run again as a new round"
                 % (n, entry.get("kind"), entry.get("result"), entry.get("commit")))
-    if head is None or head == "":
-        return ""  # git unusable or no commits: freshness cannot be checked
-    c = resolve(w(rec, "commit"))
-    if not c:
-        return "round %d: commit %s does not resolve" % (n, w(rec, "commit"))
-    if not is_ancestor(c, head):
-        return "round %d: commit %s is not in the current history (HEAD)" % (n, c[:12])
-    if last_code:
-        if not is_ancestor(last_code, c):
-            return ("round %d is stale: it verified %s, but the task's code changed later "
-                    "in %s. Verify the current revision as a new round"
-                    % (n, c[:12], last_code[:12]))
-    elif c != head:
-        return ("round %d verified %s, not HEAD %s, and no commit names %s to tell whether "
-                "the code changed since. Verify HEAD, or name the task id in its commits"
-                % (n, c[:12], head[:12], tid))
-    return ""
+    return stale(n, w(rec, "commit"), "verified")
 
 def author_is_impl(n, rec):
     if is_human(rec.get("verifier")):
@@ -362,6 +461,7 @@ if manual_used:
              "was written by an agent that implemented the task. A manual check needs a "
              "second pair of eyes: another agent (not the author) or a person "
              "(`verifier: human:<name>`) records it as a new round." % (tid, exc))
+acceptance_check()
 PY
 python3 -c "$_tw_py"
 exit 0

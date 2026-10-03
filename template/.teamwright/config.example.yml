@@ -34,4 +34,6 @@ tools:                         # one provider per capability; "none" = no tool
   docs: context7               # context7 | none
   ui_verify: patrol            # playwright | patrol | flutter-integration-test | maestro | espresso-xcuitest | none
   api_verify: project-runner   # project-runner
+# ui_verify_deferred: "decisions.md #6"  # owner decided: no UI verification yet (check-commands notes it)
+# no_mcp: [ui_verify]          # capabilities whose tool is used without its MCP server (not added to .mcp.json)
 language: en                   # language of generated project docs

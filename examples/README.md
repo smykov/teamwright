@@ -24,7 +24,9 @@ bash examples/demo.sh --full   # the whole metrics report instead of a summary
 | The developer writes the review record for its own task | developer | **denied** by the review gate |
 | A journaled code-reviewer writes `APPROVE`, then `CODE_COMPLETE` | code-reviewer, orchestrator | allowed |
 | `CODE_COMPLETE → DONE` without a verify record | orchestrator | **denied** by the verify gate |
-| A `PASS` verify record for the current commit, then `DONE` | task-validator, orchestrator | allowed |
+| A `PASS` verify record for the current commit | task-validator | allowed |
+| `DONE` with a verify record but no acceptance verdict | orchestrator | **denied** by the verify gate |
+| task-validator writes acceptance `PASS` (`T-001.validation/1.md`), then `DONE` | task-validator, orchestrator | allowed |
 
 4. Runs `scripts/metrics/teamwright-metrics` on the result: git history, task transitions, review records and hook journals.
 

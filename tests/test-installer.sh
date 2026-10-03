@@ -8,7 +8,7 @@ FIX="$KIT/tests/fixtures/providers"
 # tools markers even while the role templates are still being wired.
 K="$TMP/kit"
 mkdir -p "$K"
-cp -R "$KIT/template" "$KIT/docs" "$KIT/scripts" "$K/"
+cp -R "$KIT/template" "$KIT/docs" "$KIT/scripts" "$KIT/.claude-plugin" "$K/"
 for f in "$K/template/AGENTS.md" "$K/template/.claude/agents/code-reviewer.md"; do
   grep -q 'teamwright:tools:begin' "$f" ||
     printf '\n<!-- teamwright:tools:begin -->\n<!-- teamwright:tools:end -->\n' >> "$f"
@@ -90,6 +90,13 @@ has "area placeholder rendered" "$G/.claude/agents/developer-backend.md" "| Stac
 has "list placeholder joined" "$G/.claude/agents/developer-app.md" "app/lib, app/test"
 has "multi-area value in global file" "$G/.claude/agents/task-validator.md" "backend: scripts/tw-run backend -- make api"
 has "area command wrapped with tw-run" "$G/.claude/agents/test-writer-app.md" "scripts/tw-run app -- flutter test"
+has "requirements-reviewer role installed" "$G/.claude/agents/requirements-reviewer.md" "name: requirements-reviewer"
+python3 - "$G/docs/requirements.md" <<'PY2' && ok "requirements template has the ten sections" || bad "requirements template has the ten sections"
+import re, sys
+heads = re.findall(r"(?m)^## (\d+)\. ", open(sys.argv[1]).read())
+assert heads == [str(i) for i in range(1, 11)], heads
+assert "| UI verification |" in open(sys.argv[1]).read()
+PY2
 has "top-level gate_command not wrapped" "$G/AGENTS.md" "make check"
 hasnt "top-level gate_command: no tw-run" "$G/AGENTS.md" "tw-run backend -- make check"
 [ -x "$G/scripts/tw-run" ] && ok "tw-run installed executable" || bad "tw-run installed executable"
@@ -497,6 +504,36 @@ u = json.load(open(sys.argv[1]))["unfilled_docs"]
 assert "docs/requirements.md" in u and "docs/open-questions.md" in u and "docs/plan.md" not in u, u
 PY
 
+# ---- inventory: repository kind decides init vs adopt -------------------------------
+kind_of() { tw inventory --project "$1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["kind"], ",".join(d["requirement_docs"]))'; }
+KE="$TMP/kind-empty"; mkdir -p "$KE/.claude"; git -C "$KE" init -q -b main
+printf 'MIT\n' > "$KE/LICENSE"; printf 'node_modules/\n' > "$KE/.gitignore"; printf '{}\n' > "$KE/.claude/settings.json"
+expect_rc "kind: LICENSE, .gitignore and .claude/ only -> empty" "empty " "$(kind_of "$KE")"
+KD="$TMP/kind-docs"; mkdir -p "$KD/docs/brief"; git -C "$KD" init -q -b main
+REQDOC="docs/brief/ТЗ_мобильное_приложение.docx"
+printf '# Idea\n' > "$KD/README.md"; printf 'x\n' > "$KD/$REQDOC"
+printf 'x\n' > "$KD/docs/notes.md"; printf 'x\n' > "$KD/docs/mockup.png"
+expect_rc "kind: documents only -> docs-only, requirement docs found (non-ASCII names too)" \
+  "docs-only $REQDOC,README.md" "$(kind_of "$KD")"
+printf 'node_modules/\n' > "$KD/.gitignore"; mkdir -p "$KD/node_modules"; printf 'x\n' > "$KD/node_modules/a.js"
+expect_rc "kind: ignored files do not count" "docs-only $REQDOC,README.md" "$(kind_of "$KD")"
+printf '{}\n' > "$KD/package.json"
+expect_rc "kind: a build manifest -> code" "code $REQDOC,README.md" "$(kind_of "$KD")"
+KN="$TMP/kind-nogit"; mkdir -p "$KN"; printf 'print(1)\n' > "$KN/main.py"
+expect_rc "kind: works without git" "code " "$(kind_of "$KN")"
+KF="$TMP/kind-names"; mkdir -p "$KF/docs" "$KF/vendor/lib"; git -C "$KF" init -q -b main
+for f in "отзывы_клиентов.md" "inspection-notes.md" "revision-history.md" "docs/product-brief.md" \
+  "docs/Техническое_задание.pdf" "vendor/lib/README.md" "docs/README.md"; do printf 'x\n' > "$KF/$f"; done
+expect_rc "kind: whole words only, nested READMEs left out, named documents first" \
+  "docs-only docs/product-brief.md,docs/Техническое_задание.pdf,docs/README.md" "$(kind_of "$KF")"
+KB="$TMP/kind-badgit"; mkdir -p "$KB"; git -C "$KB" init -q -b main; printf 'print(1)\n' > "$KB/main.py"
+printf 'garbage' > "$KB/.git/index"
+expect_rc "kind: a failing git listing falls back to the tree, not to empty" "code " "$(kind_of "$KB")"
+KI="$TMP/kind-installed"; mkdir -p "$KI/scripts/hooks" "$KI/.teamwright"; git -C "$KI" init -q -b main
+printf '#!/bin/sh\n' > "$KI/scripts/hooks/pre-commit"; printf '# Requirements\n' > "$KI/README.md"
+printf '{"scripts/hooks/pre-commit": "x"}\n' > "$KI/.teamwright/installed.json"
+expect_rc "kind: files teamwright installed do not make it code (interrupted init)" "docs-only README.md" "$(kind_of "$KI")"
+
 # ---- scan: classified findings, only secret-like ones fail -----------------------
 C="$TMP/classes"; mkdir -p "$C/tests" "$C/docs"; git -C "$C" init -q -b main
 PW="Zx9!hunter2hunter2"
@@ -559,6 +596,42 @@ has "timeout is a failure with a reason" "$TMP/out" "timeout after 1s"
 printf 'version: 1\nareas:\n  - name: d\n    runner: docker\n    image: "x:1"\n    test_command: "true"\n' > "$TMP/dk.yml"
 TW_DOCKER=no-such-docker-xyz tw check-commands --project "$X" --config "$TMP/dk.yml" > "$TMP/out" 2>&1
 has "docker missing: not runnable" "$TMP/out" "not-runnable  d"
+tw check-commands --project "$X" --config "$TMP/slow.yml" > /dev/null 2>&1
+tw --json check-commands --project "$X" --config "$TMP/x.yml" --area other > "$TMP/out" 2>&1
+python3 - "$TMP/out" <<'PY2' && ok "results carry runner and duration" || bad "results carry runner and duration" "$(cat "$TMP/out")"
+import json, sys
+r = json.load(open(sys.argv[1]))["results"][0]
+assert r["runner"] == "host" and isinstance(r["duration_s"], float), r
+PY2
+printf 'version: 1\nareas:\n  - name: web\n    test_command: "true"\n    e2e_ui_command: ""\ntools:\n  ui_verify: playwright\n' > "$TMP/ui.yml"
+tw check-commands --project "$X" --config "$TMP/ui.yml" > "$TMP/out" 2>&1
+expect_rc "a UI runner without an e2e_ui_command is not a pass" 1 "$?"
+has "...reported as not runnable" "$TMP/out" "tools.ui_verify is playwright but no area has an e2e_ui_command"
+
+# ---- documents written before install are the project's, not conflicts ----------------
+D="$TMP/predocs"; mkdir -p "$D/docs"; git -C "$D" init -q -b main
+printf '# Requirements\n\nVersion: 2 - Status: approved\n' > "$D/docs/requirements.md"
+printf '# Open questions\n\n| OQ-01 | x |\n' > "$D/docs/open-questions.md"
+write_cfg "$TMP/predocs.yml" fake-spec one
+tw plan --project "$D" --config "$TMP/predocs.yml" > "$TMP/out" 2>&1
+has "filled requirements kept as the project's" "$TMP/out" "kept-project    docs/requirements.md"
+has "no conflict for project documents" "$TMP/out" "0 conflict(s)"
+tw apply --project "$D" --config "$TMP/predocs.yml" > /dev/null 2>&1
+has "apply leaves the filled requirements as they were" "$D/docs/requirements.md" "Status: approved"
+
+# ---- no_mcp: a tool used without its MCP server -------------------------------------------
+N="$TMP/nomcp"; mkdir -p "$N"; git -C "$N" init -q -b main
+write_cfg "$TMP/nomcp.yml" fake-spec one; printf 'no_mcp: [ui_verify]\n' >> "$TMP/nomcp.yml"
+tw apply --project "$N" --config "$TMP/nomcp.yml" > /dev/null 2>&1
+python3 - "$N" <<'PY2' && ok "no_mcp leaves the tool's MCP server out of .mcp.json" || bad "no_mcp leaves the tool's MCP server out of .mcp.json"
+import json, os, sys
+p = os.path.join(sys.argv[1], ".mcp.json")
+m = json.load(open(p))["mcpServers"] if os.path.exists(p) else {}
+assert "fake-ui" not in m and "fake-nav" in m, m
+PY2
+printf 'no_mcp: [browser]\n' >> "$TMP/nomcp.yml"
+tw plan --project "$N" --config "$TMP/nomcp.yml" > "$TMP/out" 2>&1
+has "no_mcp with an unknown capability is rejected" "$TMP/out" "no_mcp must be a list of capabilities"
 
 # ---- check-commands: changes outside the area's workdir are notes; environment errors ----
 echo "o1" > "$X/outside.txt"; git -C "$X" add -A; git -C "$X" commit -qm outside
@@ -582,6 +655,19 @@ has "environment reason names the line" "$TMP/out" "environment (service not rea
 has "Prisma P1001: not runnable" "$TMP/out" "not-runnable  app        api_test_command"
 has "no device for UI e2e: not runnable" "$TMP/out" "environment (no device): No devices found"
 has "a real assertion failure stays fail" "$TMP/out" "fail          web        test_command"
+printf 'version: 1\nareas:\n  - name: ui\n    e2e_ui_command: "echo npm error npx canceled due to missing packages and no YES option: [\\"playwright\\"]; exit 1"\n' > "$TMP/npx.yml"
+tw check-commands --project "$X" --config "$TMP/npx.yml" > "$TMP/out" 2>&1
+has "npx refusing to download: not runnable (environment), not fail" "$TMP/out" "environment (package not installed)"
+printf 'version: 1\nareas:\n  - name: web\n    test_command: "true"\ntools:\n  ui_verify: playwright\nui_verify_deferred: "decisions.md #6"\n' > "$TMP/ui2.yml"
+tw check-commands --project "$X" --config "$TMP/ui2.yml" > "$TMP/out" 2>&1
+expect_rc "deferred UI verification: check-commands passes" 0 "$?"
+has "...and says it is deferred" "$TMP/out" "note: UI verification deferred by the owner (decisions.md #6)"
+printf 'version: 1\nareas:\n  - name: web\n    test_command: "true"\ntools:\n  ui_verify: none\nui_verify_deferred: "decisions.md #2"\n' > "$TMP/ui3.yml"
+tw check-commands --project "$X" --config "$TMP/ui3.yml" > "$TMP/out" 2>&1
+has "deferral is noted with ui_verify: none too" "$TMP/out" "note: UI verification deferred by the owner (decisions.md #2): tools.ui_verify is none"
+printf 'ui_verify_deferred: ""\n' >> "$TMP/ui2.yml"
+tw check-commands --project "$X" --config "$TMP/ui2.yml" > "$TMP/out" 2>&1
+has "an empty deferral reason is rejected" "$TMP/out" "ui_verify_deferred must be a non-empty reason"
 git -C "$X" checkout -q -- outside.txt
 tw --json check-commands --project "$X" --config "$TMP/env.yml" --area app > "$TMP/out" 2>&1
 python3 -c '
@@ -593,5 +679,63 @@ assert r["test_command"]["changed_outside_workdir"] == ["outside.txt"], r
 assert "modifies" not in r["test_command"], r
 ' "$TMP/out" && ok "json: environment kind and changed_outside_workdir" || bad "json: environment kind and changed_outside_workdir" "$(cat "$TMP/out")"
 git -C "$X" checkout -q -- outside.txt
+
+
+# ---- the plugin travels with the project --------------------------------------
+KV="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$KIT/.claude-plugin/plugin.json")"
+KM="$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"; mkdir -p "$(dirname "$KM")"
+P="$TMP/plug"; mkdir -p "$P"; git -C "$P" init -q -b main
+write_cfg "$TMP/plug.yml"
+printf '{"teamwright": {"source": {"source": "github", "repo": "acme/teamwright", "ref": "next"}}}\n' > "$KM"
+tw apply --project "$P" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+python3 - "$P" "$KV" <<'PY' && ok "settings enable the plugin and name its marketplace; installed.json records the version" || bad "plugin in settings and @kit" "$(cat "$TMP/out")"
+import json, sys
+s = json.load(open(sys.argv[1] + "/.claude/settings.json"))
+assert s["enabledPlugins"] == {"teamwright@teamwright": True}, s
+assert s["extraKnownMarketplaces"] == {"teamwright": {"source": {"source": "github", "repo": "acme/teamwright", "ref": "next"}}}, s
+m = json.load(open(sys.argv[1] + "/.teamwright/installed.json"))
+assert m["@kit"] == {"plugin": "teamwright@teamwright", "version": sys.argv[2]}, m["@kit"]
+cmds = [h["command"] for g in s["hooks"]["SessionStart"] for h in g["hooks"]]
+assert any("session-check.sh" in c for c in cmds), cmds
+PY
+[ -x "$P/scripts/hooks/session-check.sh" ] && ok "session-check.sh installed executable" || bad "session-check.sh installed executable"
+tw plan --project "$P" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+hasnt "same version: no kit-version action" "$TMP/out" "kit-version"
+python3 - "$P" <<'PY'
+import json, sys
+p = sys.argv[1] + "/.teamwright/installed.json"; m = json.load(open(p)); m["@kit"]["version"] = "0.0.1"
+json.dump(m, open(p, "w"))
+p = sys.argv[1] + "/.claude/settings.json"; s = json.load(open(p))
+s["enabledPlugins"]["teamwright@teamwright"] = False
+s["extraKnownMarketplaces"]["teamwright"] = {"source": {"source": "github", "repo": "mine/fork"}}
+json.dump(s, open(p, "w"))
+PY
+tw plan --project "$P" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+has "older recorded version: plan shows kit-version" "$TMP/out" "kit-version     .teamwright/installed.json  (teamwright@teamwright $KV)"
+tw apply --project "$P" --config "$TMP/plug.yml" > /dev/null 2>&1
+python3 - "$P" "$KV" <<'PY' && ok "update: version re-recorded, owner's plugin choices kept" || bad "update keeps owner's plugin choices"
+import json, sys
+s = json.load(open(sys.argv[1] + "/.claude/settings.json"))
+assert s["enabledPlugins"]["teamwright@teamwright"] is False
+assert s["extraKnownMarketplaces"]["teamwright"]["source"]["repo"] == "mine/fork"
+assert json.load(open(sys.argv[1] + "/.teamwright/installed.json"))["@kit"]["version"] == sys.argv[2]
+PY
+
+# a local-directory marketplace becomes its git origin (+ branch); a token is never written
+R="$TMP/kitrepo"; mkdir -p "$R"; git -C "$R" init -q -b pilot
+git -C "$R" remote add origin https://github.com/acme/tw.git
+printf '{"teamwright": {"source": {"source": "directory", "path": "%s"}}}\n' "$R" > "$KM"
+P2="$TMP/plug2"; mkdir -p "$P2"; git -C "$P2" init -q -b main
+tw apply --project "$P2" --config "$TMP/plug.yml" > /dev/null 2>&1
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["extraKnownMarketplaces"]["teamwright"]["source"]=={"source":"github","repo":"acme/tw","ref":"pilot"}, s' "$P2" \
+  && ok "directory marketplace: github origin with its branch" || bad "directory marketplace -> github origin"
+git -C "$R" remote set-url origin https://user:secret@git.example.com/acme/tw.git
+P3="$TMP/plug3"; mkdir -p "$P3"; git -C "$P3" init -q -b main
+tw apply --project "$P3" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+hasnt "a remote with credentials is never written" "$P3/.claude/settings.json" "secret"
+has "no shareable source: noted" "$TMP/out" "no shareable source for marketplace 'teamwright'"
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright": True}' "$P3" \
+  && ok "no source: the plugin is still enabled" || bad "no source: plugin enabled"
+rm -f "$KM"
 
 finish

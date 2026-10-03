@@ -15,8 +15,11 @@ Decision order (first match wins):
   2. continue    ANALYSIS / IN_PROGRESS task
   3. review      NEEDS_REVIEW -> spawn the reviewer (APPROVE recorded -> continue to
                  CODE_COMPLETE; ESCALATE -> decide; REJECT_RECURRENCE -> continue: defer)
-  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record (PASS recorded ->
-                 continue; deploys: false and surface none -> continue: close);
+  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record; then the
+                 acceptance verdict in ## Validation (PASS -> continue: close; FAIL ->
+                 continue: back to IN_PROGRESS; NEEDS_OWNER -> decide; none -> verify:
+                 task-validator). deploys: false + surface none needs no verify record,
+                 only the acceptance verdict;
      reanalyze   VERIFY_FAIL -> back to ANALYSIS
   5. decide      BLOCKED on an owner decision
   6. start       ready TODO -> ANALYSIS (the owner picks among `alternatives`).
@@ -67,6 +70,38 @@ def git(project, *args):
         return r.returncode, r.stdout
     except OSError:
         return 1, ""
+
+
+def last_code_commit(project, tid):
+    """Newest commit naming the task that touches files outside docs/tasks/ (the verify
+    gate's FRESHNESS rule)."""
+    pat = r"(^|[^A-Za-z0-9_-])" + re.escape(tid) + r"([^A-Za-z0-9_]|$)"
+    rc, out = git(project, "log", "--format=%H", "-E", "--grep=" + pat, "HEAD")
+    for sha in (out.split() if rc == 0 else []):
+        rc2, files = git(project, "show", "--name-only", "--format=", sha)
+        if any(f and not f.startswith("docs/tasks/") for f in files.splitlines()):
+            return sha
+    return ""
+
+
+def acceptance(project, tid, rec):
+    """The latest acceptance verdict if it covers the task's current code, else ''.
+
+    A verdict written before the code last changed is stale: after FAIL -> fix the task
+    needs a new acceptance round, not the old FAIL again (and an old PASS proves nothing)."""
+    verdict = str(rec.get("verdict") or "").split()[0].upper() if str(rec.get("verdict") or "").split() else ""
+    sha = str(rec.get("commit") or "").strip()
+    if not verdict or not sha:
+        return ""
+    rc, full = git(project, "rev-parse", "--verify", "-q", sha + "^{commit}")
+    if rc != 0:
+        return ""
+    full = full.strip()
+    code = last_code_commit(project, tid)
+    if code:
+        return verdict if git(project, "merge-base", "--is-ancestor", code, full)[0] == 0 else ""
+    rc, changed = git(project, "diff", "--name-only", full, "HEAD")
+    return verdict if rc == 0 and all(f.startswith("docs/tasks/") for f in changed.splitlines() if f) else ""
 
 
 def _list(v):
@@ -133,6 +168,7 @@ def load_tasks(project, task):
         body = task.body(text) if hasattr(task, "body") else ""
         tid = (rec.get("id") if isinstance(rec.get("id"), str) else "") or f[:-3]
         reviews = task.review_rounds(project, tid)
+        vals = task.validation_rounds(project, tid) if hasattr(task, "validation_rounds") else []
         verifies = task.verify_rounds(project, tid)
         out[tid] = {
             "id": tid,
@@ -146,7 +182,12 @@ def load_tasks(project, task):
             "review": task.first_word(reviews[-1][1].get("verdict", "")) if reviews else "",
             "review_rounds": len(reviews),
             "verify": task.first_word(verifies[-1][1].get("result", "")).upper() if verifies else "",
-            "mentions_oq": sorted(set(OQ_RE.findall(body)), key=_num),
+            "validation": acceptance(project, tid, vals[-1][1]) if vals else "",
+            # a line marked `non-blocking` (e.g. "non-blocking: OQ-04 - default chosen") is a
+            # deliberate mention: the task does not wait for it, so no warning
+            "mentions_oq": sorted(set(q for line in body.splitlines()
+                                      if not re.search(r"(?i)non-blocking", line)
+                                      for q in OQ_RE.findall(line)), key=_num),
         }
     return out
 
@@ -301,14 +342,28 @@ def candidates(tasks, st, oqs=None):
             out.append(_d("review", t["id"], "%s awaits review round %d" % (t["id"], t["review_rounds"] + 1),
                           role="code-reviewer"))
 
-    # 4. verify
-    for t in by("CODE_COMPLETE", "DEPLOYED"):
-        if t["verify"] == "PASS":
-            out.append(_d("continue", t["id"], "PASS verify recorded: advance %s" % t["id"],
-                          role="orchestrator"))
-        elif t["status"] == "CODE_COMPLETE" and not t["deploys"] and t["surface"] in ("none", ""):
-            out.append(_d("continue", t["id"], "deploys: false, nothing to verify: close %s as DONE"
-                          % t["id"], role="orchestrator"))
+    # 4. verify, then acceptance (task-validator's verdict in ## Validation)
+    for t in by("CODE_COMPLETE", "DEPLOYED", "VERIFIED"):
+        no_record = t["status"] == "CODE_COMPLETE" and not t["deploys"] and t["surface"] in ("none", "")
+        if t["verify"] == "PASS" or no_record or t["status"] == "VERIFIED":
+            what = "PASS verify recorded" if t["verify"] == "PASS" else (
+                "deploys: false, nothing to verify" if no_record else "VERIFIED")
+            v = t["validation"]
+            if v == "PASS":
+                out.append(_d("continue", t["id"], "%s, acceptance PASS: close %s as DONE"
+                              % (what, t["id"]), role="orchestrator"))
+            elif v == "FAIL":
+                out.append(_d("continue", t["id"], "acceptance FAIL: %s goes back to IN_PROGRESS "
+                              "with the validator's findings" % t["id"], role="orchestrator"))
+            elif v == "NEEDS_OWNER":
+                out.append(_d("decide", t["id"], "acceptance NEEDS_OWNER: the validator needs an "
+                              "owner action; once it is done, spawn task-validator for a new round",
+                              ask=True))
+            else:
+                out.append(_d("verify", t["id"], "%s, no acceptance verdict for the current code: task-validator "
+                              "checks Acceptance against evidence%s" % (
+                                  what, " (no verify record needed)" if no_record else ""),
+                              role="task-validator"))
         else:
             out.append(_d("verify", t["id"], "%s is %s without a PASS verify record"
                           % (t["id"], t["status"]), role="task-validator"))

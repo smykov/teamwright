@@ -35,7 +35,7 @@ Why teamwright is shaped the way it is. Each entry: context → decision → why
 
 ## Distributed as a Claude Code plugin
 
-**Decision.** The repository is its own plugin marketplace. `/teamwright:adopt` fits an existing project, `/teamwright:init` starts a new one, `/teamwright:flow` runs and resumes the task loop. Hooks are installed into the project, not globally. Adoption starts in gate-first mode.
+**Decision.** The repository is its own plugin marketplace. `/teamwright:adopt` fits an existing project, `/teamwright:init` starts a new one, `/teamwright:flow` runs and resumes the task loop. Hooks are installed into the project, not globally. Adoption starts in gate-first mode; init ends in enforce, because a project built to the process has no legacy to excuse a red gate.
 **Why.** Copying a template by hand does not scale and cannot be updated; a plugin can be installed with one command and re-applied on update without overwriting local edits.
 
 ## Tools are pluggable, the process is fixed
@@ -47,3 +47,13 @@ Why teamwright is shaped the way it is. Each entry: context → decision → why
 
 **Decision.** Each area's commands run on the host or in Docker (`scripts/tw-run`), set per area in the config. A command that could not exercise the code is reported as `not runnable`, not as a failure.
 **Why.** A gate that fails because a toolchain is missing on the machine teaches agents to ignore gates.
+
+## Requirements before the stack
+
+**Decision.** `/teamwright:init` starts with the requirements document, not with a stack question. The owner's brief is the base, or an interview fills a fixed ten-section template (Jobs To Be Done, story map with MoSCoW, EARS requirements with a failing example, measurable non-functional requirements, constraints and install policy, glossary, integrations, technical decisions, assumptions). A fresh `requirements-reviewer` roasts each draft until it is ready, and the owner approves it; the stack, the deploy target and UI verification are derived from it. Spec tools then work per feature from the approved version.
+**Why.** A stack chosen before the requirements decides them by accident, and a spec tool works one feature at a time — nobody checks the product as a whole. The author of a draft fills its gaps with what they meant; a reviewer that reads only what is written finds the requirement nobody can test and the flow that stops halfway, before they become code. The roast is economical by design: Medium and Low findings go as one batch, and a new round runs only when an accepted change alters what gets built.
+
+## Acceptance is a record, not a sentence
+
+**Decision.** The task-validator's acceptance verdict is a record, `docs/tasks/<ID>.validation/<n>.md`, with the commit it checked, written through the verify gate like a verify record. `DONE` needs the latest verdict `PASS` for the task's current code — also for a task with nothing to deploy.
+**Why.** In the first full task cycle on a pilot, a task with nothing to deploy reached `DONE` with no acceptance at all, because "the orchestrator reads the verdict" was a rule no hook checked. A verdict line in free text could be stale after rework, revived by deleting a later `FAIL`, or missed for its formatting; a record with a commit and a ledger cannot.

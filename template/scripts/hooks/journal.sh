@@ -10,7 +10,8 @@
 # EVENTS -> FILES (under .teamwright/logs/, or $TEAMWRIGHT_LOG_DIR; gitignored)
 #   PreToolUse / PostToolUse / PostToolUseFailure -> tools.jsonl
 #       one line per call: ts, event (pre|post|failure), session_id, agent_id,
-#       agent_type, tool, detail; Agent calls also get subagent_type and task_ids.
+#       agent_type, tool, detail; Agent calls also get subagent_type and task_ids
+#       (ids in the spawn description, else the first id in the prompt).
 #   PermissionRequest / PermissionDenied          -> perms.jsonl
 #       a permission decision was needed / a call was denied (PermissionDenied fires
 #       for auto-mode denials; deny-rule refusals show up as a `pre` line with no
@@ -25,8 +26,11 @@
 #       from `last_assistant_message`; when the runtime does not send it (or it
 #       has no Outcome line), from the last assistant text in the transcript
 #       (`transcript_path`, `agent_transcript_path` for a subagent).
-#       `outcome_source` says which: message | transcript | none. A SubagentStop
-#       without `agent_type` takes it from this agent's own tool-call lines.
+#       `outcome_source` says which: message | transcript | none. A Stop with no
+#       Outcome line while an agent this session launched has not finished yet is
+#       `outcome: waiting`, `outcome_source: open-agent` (the runtime ran the role in
+#       the background; the session resumes on its result). A SubagentStop without
+#       `agent_type` takes it from this agent's own tool-call lines.
 #
 # PRIVACY. `detail` is a short classification, never a replay of the call: the
 # program and subcommand of a shell command (no arguments, no VAR=value prefixes),
@@ -97,10 +101,14 @@ if ev in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
     rec = dict(base, event={"PreToolUse": "pre", "PostToolUse": "post"}.get(ev, "failure"),
                tool=tool, detail=clean(detail()))
     if tool in ("Agent", "Task"):
-        # Task ids named in the spawn request: the join key for the review gate.
-        text = " ".join(str(ti.get(k) or "") for k in ("description", "prompt"))
+        # The task the agent is spawned FOR: the join key for the review gate. The flow
+        # names it in the short description; a prompt also mentions other tasks (owners
+        # of a red gate, dependencies), so prompt ids are used only when the description
+        # names none (older orchestrators) - a wider match, never a missed spawn.
         ids = []
-        for t in ID_RE.findall(text):
+        found = ID_RE.findall(str(ti.get("description") or "")) or \
+            ID_RE.findall(str(ti.get("prompt") or ""))
+        for t in found:
             if t not in ids:
                 ids.append(t)
         rec["subagent_type"] = rec["detail"]
@@ -175,15 +183,33 @@ elif ev in ("Stop", "SubagentStop"):
     except (OSError, IndexError):
         pass
     key = io.actor_key(who)
+    sid = who["session_id"]
     calls, seen_type = 0, ""
+    launched = {}   # subagent_type -> spawns by this session's main agent that returned
     for r in io.read_jsonl(os.path.join(logdir, "tools.jsonl")):
         if r.get("event") == "pre" and io.actor_key(r) == key:
             calls += 1
             seen_type = r.get("agent_type") or seen_type
+        elif (ev == "Stop" and r.get("event") == "post" and r.get("tool") in ("Agent", "Task")
+              and r.get("session_id") == sid and not r.get("agent_id")):
+            t = r.get("subagent_type") or r.get("detail") or ""
+            launched[t] = launched.get(t, 0) + 1
     if ev == "SubagentStop" and not base["agent_type"] and who["agent_id"]:
         base["agent_type"] = seen_type
+    outcome = m.group(1).lower() if m else "none"
+    if ev == "Stop" and not m and launched:
+        # The turn ended while an agent it launched is still running (the runtime ran it
+        # in the background): the session is waiting, not stopped without an outcome.
+        # Matched per agent type, so a helper or a nested agent of another type finishing
+        # does not end the wait for a role.
+        finished = {}
+        for r in io.read_jsonl(os.path.join(logdir, "outcomes.jsonl")):
+            if r.get("event") == "SubagentStop" and r.get("session_id") == sid and r.get("agent_type"):
+                finished[r["agent_type"]] = finished.get(r["agent_type"], 0) + 1
+        if any(n > finished.get(t, 0) for t, n in launched.items()):
+            outcome, src = "waiting", "open-agent"
     io.append_jsonl(os.path.join(logdir, "outcomes.jsonl"), dict(
-        base, event=ev, outcome=m.group(1).lower() if m else "none", outcome_source=src,
+        base, event=ev, outcome=outcome, outcome_source=src,
         current_task=cur, task_status=st, tool_calls=calls))
 PY
 python3 -c "$_tw_py" >/dev/null 2>&1

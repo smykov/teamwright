@@ -30,7 +30,7 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 
 ## Repository layout
 
-- `skills/` — plugin commands: `/teamwright:adopt`, `init`, `flow`, `status`, `reconfigure`.
+- `skills/` — plugin commands: `/teamwright:adopt`, `init`, `requirements`, `flow`, `status`, `reconfigure`.
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — the process reference; copied into projects on install (except `plugin.md`) and linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.

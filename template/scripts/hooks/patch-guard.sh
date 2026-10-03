@@ -93,13 +93,21 @@ for line in os.environ.get("PG_SIGNATURES", "").splitlines():
 if not sigs:
     sys.exit(0)
 exclude = re.compile(os.environ.get("PG_EXCLUDE_RE") or "^$")
+# files the teamwright installer wrote (hooks, metrics, tw-run) are the kit's, not a patch
+installed = set()
+try:
+    import json
+    installed = {k for k in json.load(open(os.path.join(".teamwright", "installed.json")))
+                 if not k.startswith("@")}
+except Exception:
+    pass
 hits = {}   # file -> [(sig, line)]
 cur = None
 for line in git("diff", "--cached", "--unified=0", "--no-color", "--no-ext-diff").splitlines():
     if line.startswith("+++ "):
         p = line[4:].strip()
         cur = p[2:] if p.startswith("b/") else None
-        if cur and exclude.search(cur):
+        if cur and (exclude.search(cur) or cur in installed):
             cur = None
         continue
     if cur and line.startswith("+") and not line.startswith("+++"):

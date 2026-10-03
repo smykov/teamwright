@@ -16,7 +16,23 @@ Details behind the [README](../README.md) quickstart: what onboarding does, how 
 8. Proposes a first sprint: hygiene tasks plus first steps toward the release goal.
 9. Ends with next steps and offers to start `/teamwright:flow`.
 
-`/teamwright:init` does the same for a new project, starting from a spec when the work is large.
+`/teamwright:init` (new project) works through these steps. It asks once whether to commit each step as it lands, batches the consents it can, and asks before every install, download, image pull or MCP server:
+
+1. Checks the repository: `inventory` reports its kind — `empty` or `docs-only` continue, `code` is sent to `/teamwright:adopt` (an interrupted init resumes instead). Documents already in the repository are the base of the requirements and are never overwritten.
+2. Runs `/teamwright:requirements`:
+   - your brief, PRD or terms of reference (any language; the document is written in English, the original stays where it is) is mapped into the ten sections of `docs/requirements.md`, and only the gaps are asked;
+   - without one, an interview in rounds of up to five questions: Jobs To Be Done, the release-1 flow and how success is measured, a story map with MoSCoW and no-gos, EARS requirements with a failing example each, measurable non-functional requirements (ISO/IEC 25010 as a checklist), constraints and what may be installed on the dev machine, in CI and on the server, glossary, integrations, a pre-mortem;
+   - a fresh `requirements-reviewer` roasts the draft (`docs/requirements.reviews/<n>.md`): High findings come as questions, Medium and Low as one batch you can accept at once; it proposes the technical decisions — stack and areas, what "deployed" means, where verification runs, UI verification — from your requirements and install policy; another round runs only when an accepted change alters what gets built, at most two without a Blocker;
+   - you approve the document; specs and tasks are derived from that version.
+3. Proposes the tools as one block (per capability: the proposal, what is already on the host, the alternatives), within the install policy. A tool's MCP server is a separate yes or no (`no_mcp`).
+4. Sets up each area's toolchain on the host or in a container, scaffolds the stack with its official generator, and builds a walking skeleton: the app starts, one real test per area, the running system reports its commit, a `make check` gate, a CI workflow running the same gate. A check the policy does not allow is recorded as a decision.
+5. Writes `.teamwright/config.yml`, installs the hooks, scans for secrets, runs every command once (runner and duration per command) and switches to `enforce`. A UI runner that cannot run yet keeps `gate-first`, unless you decide to go without UI verification for now (`ui_verify_deferred`).
+6. Fills `CLAUDE.md`, `docs/plan.md`, `docs/architecture.md` and `docs/decisions.md` from what was decided.
+7. The spec tool turns the approved requirements into specs, feature by feature along the release-1 slice; you review them at once; tasks get `design_ref`, the requirement ids and a failure branch. Every Must requirement of release 1 is covered by a task.
+8. Plans sprint 1 — T-001 is the first end-to-end slice of the release-1 flow.
+9. Ends with next steps and offers to start `/teamwright:flow`.
+
+`/teamwright:requirements` can also be run on its own: on an adopted project whose `docs/requirements.md` is still the template (`adopt` offers it), or to rework the requirements; a later change is a new version with a line in `docs/decisions.md`.
 
 Hooks written to `.claude/settings.json` take effect in the same Claude Code session (Claude Code watches its settings files). New MCP servers, and role agents in a `.claude/agents/` directory created during the session, load after a restart. The plugin registers no global hooks: everything is installed into the project, so the project works the same with or without the plugin.
 
@@ -82,7 +98,20 @@ python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml  
 
 It compares the `version` in `.claude-plugin/plugin.json` with the installed one: from a git marketplace you get a change only when the version was bumped (see [CHANGELOG.md](../CHANGELOG.md)). A local marketplace (`/plugin marketplace add ./path/to/teamwright`) reads files directly from that checkout, so it may report "already at latest version" and still load the new skills after a reload. Run `/plugin` commands in a terminal session: they are not available over Remote Control.
 
-The plugin update does not touch your project. `/teamwright:status` reports kit updates for the installed files; `tw-install.py apply` (or `/teamwright:adopt` again) updates the files the installer wrote and you did not edit, and keeps and reports the ones you changed.
+The plugin update does not touch your project. `/teamwright:status` reports kit updates for the installed files; `tw-install.py apply` (or `/teamwright:adopt` again) updates the files the installer wrote and you did not edit, and keeps and reports the ones you changed. Project documents (`docs/requirements.md`, `plan.md`, `architecture.md`, `decisions.md`, `open-questions.md`) are never replaced.
+
+## Another machine or a fresh clone
+
+The process lives in two places. The repository carries the gates, roles, documents and configuration; the machine carries the teamwright plugin (the `/teamwright:*` commands and the router) and `core.hooksPath` (local git config, never cloned). A fresh clone has only the first half:
+
+1. **The plugin.** Install writes into `.claude/settings.json` that the project uses `teamwright@teamwright` (`enabledPlugins`) and where its marketplace is (`extraKnownMarketplaces`: the GitHub repository, with the branch when it is not the default one). When you trust the folder, Claude Code offers to add the marketplace and install the plugin — accept and restart. If it does not, in a terminal session: `/plugin marketplace add <repository>`, `/plugin install teamwright@teamwright`, restart. A private repository needs GitHub access on that machine.
+2. **The git hooks:** `bash scripts/install-hooks.sh` (check: `bash scripts/install-hooks.sh --check`).
+3. **The toolchain** the areas run on: the same host tools, or Docker for `runner: docker`. MCP servers from `.mcp.json` are approved once per machine.
+4. `/teamwright:status`, then `/teamwright:flow`.
+
+You do not have to remember this: a `SessionStart` hook (`scripts/hooks/session-check.sh`) compares the machine with the project and tells you what is missing — the plugin, a plugin older than the version recorded in `.teamwright/installed.json` (`@kit`), or git hooks that are off — with the commands to fix it. It never blocks; `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
+
+Local state does not travel: journals and session ledgers (`.teamwright/logs/`, `.teamwright/sessions/`) belong to the machine. Finish a task through review on the machine where it was started — the review and verify ledgers that the gates check are there.
 
 ## Manual install, without the plugin
 

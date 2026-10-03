@@ -1046,10 +1046,22 @@ def journal_period_summary(recs, opt, tasks, src, typed_since=None):
     per_session = [calls_per.get(s, 0) for s in sessions]
     stops = [r for r in recs if r["outcome"] is not None and
              (r["event"] == "Stop" or (r["event"] != "SubagentStop" and not r["agent_id"]))]
-    sub_stops = [r for r in recs if r["outcome"] is not None and r["event"] == "SubagentStop"]
-    denied = [r for r in recs if r["event"] == "PermissionDenied" or
+
+    def runtime_stop(r):
+        # SubagentStop of the runtime's own helper agents: no type, no tool calls
+        return not r["agent_type"] and r["raw"].get("tool_calls") == 0
+    all_sub = [r for r in recs if r["outcome"] is not None and r["event"] == "SubagentStop"]
+    sub_stops = [r for r in all_sub if not runtime_stop(r)]
+    # a session's outcome is its LAST Stop: earlier turns may end while a role runs in the
+    # background (`waiting`), which is not a session without an outcome
+    last_stop = {}
+    for r in sorted((r for r in stops if r["session"]), key=lambda r: r["ts"].timestamp() if r["ts"] else float("-inf")):
+        last_stop[r["session"]] = r
+    gates = [r for r in recs if r["event"] == "gate"]
+    denied = [r for r in recs if r["event"] != "gate" and (
+              r["event"] == "PermissionDenied" or
               str(r["raw"].get("decision", "")).lower() in ("deny", "denied") or
-              r["raw"].get("denied") is True]
+              r["raw"].get("denied") is True)]
     requests = [r for r in recs if r["event"] == "PermissionRequest"]
     # heuristic: pre without post/failure (deny-rule refusals, interrupted calls)
     bal = Counter()
@@ -1086,8 +1098,14 @@ def journal_period_summary(recs, opt, tasks, src, typed_since=None):
                                              len(per_session), src),
         "tool_calls_per_session_max": number(max(per_session) if per_session else None,
                                              len(per_session), src),
-        "sessions_without_outcome": share(sum(1 for r in stops if str(r["outcome"]) in ("none", "")),
-                                          len(stops), src + " - Stop records, outcome none"),
+        "sessions_without_outcome": share(
+            sum(1 for r in last_stop.values() if str(r["outcome"]) in ("none", "", "waiting")),
+            len(last_stop), src + " - last Stop of each session: outcome none, or still waiting "
+                                  "on a background agent"),
+        "gate_warnings": count(sum(1 for r in gates if r["raw"].get("decision") == "warn")
+                               if recs else None, src + " - gates.jsonl, gate-first warnings", len(recs)),
+        "gate_denials": count(sum(1 for r in gates if r["raw"].get("decision") == "deny")
+                              if recs else None, src + " - gates.jsonl, denials", len(recs)),
         "sessions_with_reviewer_evidence": share(len(actual), n_s, src + " - reviewer spawn or "
                                                  "reviewer agent_type in the session"),
         "permission_denials": count(len(denied) if recs else None,
@@ -1153,7 +1171,10 @@ def journal_period_summary(recs, opt, tasks, src, typed_since=None):
         "denials_by_tool": dict(Counter(r["tool"] or "?" for r in denied).most_common()),
         "unmatched_pre_by_tool": dict(unmatched.most_common()),
         "calls_by_tool": dict(Counter(r["tool"] or "?" for r in calls).most_common(opt.top)),
+        "gate_decisions": dict(Counter("%s %s" % (r["raw"].get("gate") or "?", r["raw"].get("decision") or "?")
+                                       for r in gates).most_common()),
         "n_stop_records": len(stops), "n_subagent_stop_records": len(sub_stops),
+        "n_runtime_subagent_stops": len(all_sub) - len(sub_stops),
     }
     return out, breakdown
 
@@ -1398,8 +1419,11 @@ def render_md(rep, periods):
             b = j["breakdown"][name]
             L += ["### Breakdown - %s" % name, ""]
             L.append("- Session outcomes (Stop, n=%d): %s" % (b["n_stop_records"], kv(b["outcomes"])))
-            L.append("- Subagent outcomes (SubagentStop, n=%d): %s" % (b["n_subagent_stop_records"],
-                                                                        kv(b["subagent_outcomes"])))
+            L.append("- Subagent outcomes (SubagentStop, n=%d; %d runtime helper stops without "
+                     "type or tool calls left out): %s" % (b["n_subagent_stop_records"],
+                                                           b.get("n_runtime_subagent_stops", 0),
+                                                           kv(b["subagent_outcomes"])))
+            L.append("- Gate decisions: %s" % kv(b.get("gate_decisions", {})))
             L.append("- Permission denials by tool: %s" % kv(b["denials_by_tool"]))
             L.append("- `pre` without `post`/`failure` by tool (heuristic: deny-rule refusals or "
                      "interrupted calls): %s" % kv(b["unmatched_pre_by_tool"]))

@@ -90,7 +90,8 @@ tail_code: ""
 
 ## Validation
 
-<task-validator: DoD evidence, gate result, mutations, PASS | FAIL | NEEDS_OWNER.>
+<One line per round: `Round N — <PASS|FAIL|NEEDS_OWNER> — validation/<N>.md`. Full records (append-only, written by
+task-validator): `docs/tasks/<ID>.validation/<N>.md`, template `docs/tasks/_validation-template.md`.>
 
 ## Notes
 

@@ -23,6 +23,10 @@ fresh() {  # fresh NAME -> new git repo with one commit, cwd inside
   git add -A; git commit -qm init
 }
 commit_all() { git add -A; git commit -qm tasks; }
+validated() {  # validated ID VERDICT : next validation record at HEAD
+  local d="docs/tasks/$1.validation" n; mkdir -p "$d"; n=$(( $(ls "$d" | grep -c '\.md$') + 1 ))
+  printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: task-validator\n---\n' "$1" "$n" "$2" "$(git rev-parse HEAD)" > "$d/$n.md"
+}
 j() { python3 "$NEXT" --project . --json; }
 field() { j | python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 expect() {  # expect DESC ACTION TASK
@@ -73,9 +77,28 @@ expect_rc "verify role" task-validator "$(field '["role"]')"
 round T-10 verify 1 result=FAIL; commit_all
 expect "latest verify FAIL: still verify" verify T-10
 round T-10 verify 2 result=PASS; commit_all
-expect "PASS recorded: continue (advance)" continue T-10
+expect "PASS recorded, no acceptance verdict: verify (task-validator)" verify T-10
+expect_rc "acceptance role" task-validator "$(field '["role"]')"
+validated T-10 PASS; commit_all
+expect "PASS recorded, acceptance PASS: continue (close)" continue T-10
 mk T-10 DONE; mk T-11 CODE_COMPLETE "deploys: false" "surface: none"; commit_all
-expect "deploys false, surface none: continue (close)" continue T-11
+expect "deploys false, surface none, no verdict: verify (acceptance only)" verify T-11
+j | grep -q "no verify record needed" && ok "acceptance-only reason" || bad "acceptance-only reason"
+validated T-11 FAIL; commit_all
+expect "acceptance FAIL: continue (back to IN_PROGRESS)" continue T-11
+j | grep -q "back to IN_PROGRESS" && ok "FAIL reason names IN_PROGRESS" || bad "FAIL reason names IN_PROGRESS"
+echo fix > fix11.txt; git add fix11.txt; git commit -qm "fix(core): T-11 address acceptance findings"
+expect "after the fix the old FAIL is stale: verify again (no loop)" verify T-11
+validated T-11 NEEDS_OWNER; commit_all
+expect "acceptance NEEDS_OWNER: decide" decide T-11
+validated T-11 PASS; commit_all
+expect "deploys false, surface none, acceptance PASS: continue (close)" continue T-11
+mk T-11 DONE; mk T-20 CODE_COMPLETE "deploys: false" "surface: none"; validated T-20 PASS; commit_all
+echo more > fix20.txt; git add fix20.txt; git commit -qm "feat(core): T-20 reopened and reworked"
+expect "a PASS older than the task's last code commit does not close it" verify T-20
+mk T-20 DONE; mk T-19 VERIFIED; commit_all
+expect "VERIFIED without acceptance: verify" verify T-19
+mk T-19 DONE; commit_all
 mk T-11 DONE; mk T-12 DEPLOYED; commit_all
 expect "DEPLOYED without verify: verify" verify T-12
 mk T-12 DONE; mk T-8 DONE; commit_all
@@ -187,5 +210,7 @@ commit_all
 j | grep -q 'T-6 mentions unresolved OQ-01 but blocked_on is empty' && ok "warning: body mentions an open OQ, blocked_on empty" \
   || bad "warning: body mentions an open OQ, blocked_on empty" "$(j | grep -A3 warnings)"
 python3 "$NEXT" --project . | grep -q "warning: T-6 mentions" && ok "human summary shows warnings" || bad "human summary shows warnings"
+echo "non-blocking: OQ-01 - the default UTC is fine for release 1" >> docs/tasks/T-6.md; sed 's/^Resolve OQ-01 before analysis.$/Timezone hints./' docs/tasks/T-6.md > docs/tasks/T-6.tmp && mv docs/tasks/T-6.tmp docs/tasks/T-6.md; commit_all
+j | grep -q 'T-6 mentions unresolved' && bad "a non-blocking mention is not warned about" || ok "a non-blocking mention is not warned about"
 
 finish

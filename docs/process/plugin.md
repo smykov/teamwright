@@ -9,7 +9,7 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :reconfigure, :status, ... (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
 scripts/tw-next.py                read-only router for /teamwright:flow (next action, JSON or summary)
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
@@ -51,10 +51,12 @@ Python 3 stdlib only. Every subcommand takes `--project PATH` (default: current 
    - written by the installer and unchanged since (hash in `.teamwright/installed.json`) → **update**;
    - contains both markers → only the block between them is re-rendered (**tools**), the rest of the file is left as it is; markers out of order (end before begin) → **conflict**, the file is not touched;
    - written by the installer, then edited → **kept-local**;
+   - a project document that existed before install (`docs/requirements.md`, `open-questions.md`, `plan.md`, `architecture.md`, `decisions.md` — e.g. written by `/teamwright:requirements` during init) → **kept-project**: the template only seeds these, the project's own content is never a conflict;
    - anything else → **conflict**: not touched, listed for the `adopt` command to merge with the owner. After the merge, `apply --accept <path>` records it (**accepted**) so later runs stop reporting it; editing the file or a template change makes it a conflict again.
 
    Files the installer wrote earlier (listed in `.teamwright/installed.json`) that the config no longer produces — e.g. `developer-backend.md` after going from two areas to one — are **stale**: removed by `apply` when unchanged since install (hash matches), otherwise a **conflict** (kept, for the owner to delete or keep).
-3. **`.claude/settings.json`** is merged: missing `env` keys and deny rules are added (existing values win), each teamwright hook command is added once per event (into the group with the same matcher, or a new group). Nothing is removed or reordered. Invalid JSON → conflict.
+3. **`.claude/settings.json`** is merged: missing `env` keys and deny rules are added (existing values win), each teamwright hook command is added once per event (into the group with the same matcher, or a new group). The plugin is enabled (`enabledPlugins`) and its marketplace named (`extraKnownMarketplaces`), so Claude Code offers both on a fresh clone; the source is the one Claude Code already knows for the marketplace when it is GitHub, git or a URL, otherwise the `origin` of a local checkout (GitHub, or a `.git` URL without credentials) with its branch when that is not the default. No shareable source → a note. An existing entry, including a disabled plugin, is kept. Nothing is removed or reordered. Invalid JSON → conflict.
+   **`.teamwright/installed.json`** records the plugin and version that installed the project under `@kit` (**kit-version** when it changes); `scripts/hooks/session-check.sh` compares it with the plugin installed on the machine.
 4. **`.mcp.json`**: servers of the chosen adapters are added under `mcpServers`; an existing server with the same name is kept as it is (reported when it differs). Invalid JSON → conflict.
 5. **Git hooks**: `core.hooksPath = scripts/hooks` and the local-state lines of `.gitignore` (the list from `template/scripts/install-hooks.sh`). A `core.hooksPath` already set to something else (another hook manager) → conflict. Existing `.git/hooks/*` are reported: `core.hooksPath` disables them.
 
@@ -155,6 +157,8 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `gate_command` | string | yes in practice | aggregate gate, `{{GATE_COMMAND}}` |
 | `version_check`, `verify_environments` | string | no | task-validator placeholders |
 | `tools.<capability>` | provider name \| `none` | no | capabilities: `spec`, `context`, `docs`, `ui_verify`, `api_verify`; adapter `providers/<capability>/<provider>.md` |
+| `ui_verify_deferred` | string | no | the owner's recorded decision to run without UI verification for now (e.g. `"decisions.md #6"`): `check-commands` notes the missing `e2e_ui_command` instead of reporting it as not runnable |
+| `no_mcp` | list | no | capabilities whose provider's MCP server is not added to `.mcp.json` (the tool is used through its CLI only) |
 | `language` | string | no | language of generated project docs |
 
 Placeholder rule: `{{NAME}}` → key `name` in the area being rendered, then at the top level; lists are joined with `, `. A per-area file (`developer-<area>.md`, `test-writer-<area>.md`) uses only its own area and the top level: when its area lacks the key, the placeholder stays as written and is reported as `unresolved` — it never takes another area's value. An area key used in a shared file (`AGENTS.md`, `CLAUDE.md`, `task-validator.md`, ...) renders as the single area's value, or `area: value; area: value`. An unknown key stays as written and is reported as `unresolved`.

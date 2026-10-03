@@ -52,6 +52,7 @@ MANIFEST = ".teamwright/installed.json"
 CONFIG = ".teamwright/config.yml"
 CONFIG_NEXT = ".teamwright/config.next.yml"
 ACCEPTED = "@accepted"                                   # manifest key: hand-merged files
+KIT_KEY = "@kit"                                         # manifest key: plugin and version
 RUNNERS = ("host", "docker")
 COMMAND_KEYS = ("test_command", "lint_command", "api_test_command", "e2e_ui_command",
                 "generate_command", "gate_command")      # per-area: wrapped with tw-run
@@ -166,6 +167,12 @@ def load_config(path):
         for k in tools:
             if k not in CAPABILITIES:
                 errors.append("tools.%s: unknown capability (known: %s)" % (k, ", ".join(CAPABILITIES)))
+    defer = cfg.get("ui_verify_deferred")
+    if defer is not None and not (isinstance(defer, str) and defer.strip()):
+        errors.append("ui_verify_deferred must be a non-empty reason (e.g. \"decisions.md #6\")")
+    no_mcp = cfg.get("no_mcp")
+    if no_mcp is not None and not (isinstance(no_mcp, list) and all(x in CAPABILITIES for x in no_mcp)):
+        errors.append("no_mcp must be a list of capabilities (%s)" % ", ".join(CAPABILITIES))
     if errors:
         raise SystemExit("tw-install: invalid config %s:\n  %s" % (path, "\n  ".join(errors)))
     explicit = cfg.get("mode") in MODES
@@ -173,6 +180,13 @@ def load_config(path):
     if not explicit:
         text = _config.set_mode(text, cfg["mode"])  # the written config states its mode
     return cfg, text
+
+
+# Documents whose content belongs to the project: the template only seeds them. An
+# existing one (filled by /teamwright:requirements before install, or the project's own)
+# is kept as is, not reported as a conflict.
+PROJECT_DOCS = ("docs/requirements.md", "docs/open-questions.md", "docs/plan.md",
+                "docs/architecture.md", "docs/decisions.md")
 
 
 def owner_override():
@@ -340,7 +354,61 @@ def inventory(project, providers_dir, kit=KIT):
     out["providers_detected"] = detect_providers(project, providers_dir)
     out["versions"] = detect_versions(project)
     out["unfilled_docs"] = unfilled_docs(project, kit)
+    out["kind"], out["requirement_docs"] = repo_kind(project)
     return out
+
+
+# ---------------------------------------------------------------- repository kind
+# init vs adopt is decided here, not by the model's impression: `empty` and
+# `docs-only` take /teamwright:init, `code` takes /teamwright:adopt.
+KIND_IGNORE_DIRS = (".git/", ".teamwright/", ".claude/", ".github/", ".specify/", ".serena/",
+                    ".vscode/", ".idea/")
+KIND_IGNORE_FILES = (".gitignore", ".gitattributes", ".editorconfig", ".mcp.json", ".DS_Store",
+                     "CLAUDE.md", "AGENTS.md", "PRINCIPLES.md")
+DOC_EXT = (".md", ".markdown", ".txt", ".rst", ".adoc", ".doc", ".docx", ".odt", ".rtf", ".pdf",
+           ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".drawio", ".csv", ".xlsx", ".pptx")
+# Words of a file name (split on anything that is not a letter or digit) that mark a
+# requirements document; whole words or word prefixes only, so "отзывы" is not "тз".
+REQ_WORDS = {"requirement", "requirements", "spec", "specs", "specification", "prd", "brief",
+             "tz", "srs", "scope", "vision", "\u0442\u0437", "terms"}
+REQ_PREFIXES = ("\u0442\u0435\u0445\u0437\u0430\u0434", "\u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a",
+                "\u0442\u0440\u0435\u0431\u043e\u0432\u0430\u043d", "\u0441\u043f\u0435\u0446\u0438\u0444\u0438\u043a\u0430\u0446")
+
+
+def _req_score(f):
+    """2 = the name says requirements, 1 = a top-level or docs/ README, 0 = neither."""
+    stem = os.path.splitext(os.path.basename(f))[0].lower()
+    words = [x for x in re.split(r"[\W_]+", stem) if x]
+    if any(x in REQ_WORDS for x in words) or any(x.startswith(REQ_PREFIXES) for x in words):
+        return 2
+    if stem == "readme" and f.count("/") <= 1 and (f.count("/") == 0 or f.startswith("docs/")):
+        return 1
+    return 0
+
+
+def repo_kind(project):
+    """('empty' | 'docs-only' | 'code', [candidate requirement documents, best first]).
+
+    Files teamwright itself installed (installed.json) do not count, so an init that was
+    interrupted after `apply` is still a new project. A git listing that fails falls back
+    to walking the tree: an unreadable index must not make a codebase look empty."""
+    files = None
+    if is_git(project):
+        rc, out = git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+        if rc == 0:
+            files = [f for f in out.split("\0") if f]
+    if files is None:
+        files = [os.path.relpath(p, project).replace(os.sep, "/") for p in _walk(project)]
+    installed = set(_manifest(project))
+    files = [f for f in files if not f.startswith(KIND_IGNORE_DIRS) and f not in installed
+             and os.path.basename(f) not in KIND_IGNORE_FILES
+             and not os.path.basename(f).upper().startswith(("LICENSE", "COPYING"))]
+    if not files:
+        return "empty", []
+    docs = [f for f in files if f.lower().endswith(DOC_EXT)]
+    kind = "docs-only" if len(docs) == len(files) else "code"
+    scored = sorted((-_req_score(f), f) for f in docs if _req_score(f))
+    return kind, [f for _, f in scored][:20]
 
 
 # ---------------------------------------------------------------- versions
@@ -529,11 +597,80 @@ def _accepted(project):
     return a if isinstance(a, dict) else {}
 
 
-def write_manifest(project, files, accepted):
+def write_manifest(project, files, accepted, kit_info=None):
+    """kit_info: the "@kit" record (plugin, version); None keeps the recorded one."""
     out = dict(sorted(files.items()))
     if accepted:
         out[ACCEPTED] = dict(sorted(accepted.items()))
+    rec = kit_info if kit_info is not None else _manifest_raw(project).get(KIT_KEY)
+    if rec:
+        out[KIT_KEY] = rec
     write(project, MANIFEST, dump_json(out))
+
+
+def _json_file(path):
+    try:
+        d = json.loads(read(path) or "{}")
+    except ValueError:
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def kit_info(kit):
+    """The "@kit" record: which plugin set the project up, at which version."""
+    pj = _json_file(os.path.join(kit, ".claude-plugin", "plugin.json"))
+    mj = _json_file(os.path.join(kit, ".claude-plugin", "marketplace.json"))
+    name = pj.get("name") or "teamwright"
+    return {"plugin": "%s@%s" % (name, mj.get("name") or name), "version": pj.get("version") or ""}
+
+
+def claude_dir():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+
+
+_GITHUB = re.compile(r"^(?:https://(?:[^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)"
+                     r"([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
+
+
+def _git_source(path):
+    """A marketplace source another machine can fetch: the origin of the kit checkout, with
+    its branch when that is not the default one. None for a copy without a usable remote."""
+    rc, top = git(path, "rev-parse", "--show-toplevel")
+    if rc or os.path.realpath(top.strip()) != os.path.realpath(path):
+        return None
+    url = git(path, "remote", "get-url", "origin")[1].strip()
+    m = _GITHUB.match(url)
+    if m:
+        src = {"source": "github", "repo": m.group(1)}
+    elif url.endswith(".git") and not re.match(r"^https?://[^/]*@", url):   # never a token
+        src = {"source": "git", "url": url}
+    else:
+        return None
+    branch = git(path, "symbolic-ref", "--short", "-q", "HEAD")[1].strip()
+    default = git(path, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD")[1].strip()
+    default = default.split("/", 1)[1] if "/" in default else ""
+    if branch and branch != default and (default or branch not in ("main", "master")):
+        src["ref"] = branch
+    return src
+
+
+def kit_marketplace(kit):
+    """(marketplace name, its source for the project's settings or None).
+
+    The project settings name the marketplace (extraKnownMarketplaces) and enable the
+    plugin, so Claude Code offers both on a fresh clone. A source Claude Code already
+    knows by github/git/url is reused; a local directory becomes its git origin."""
+    name = kit_info(kit)["plugin"].split("@", 1)[1]
+    known = _json_file(os.path.join(claude_dir(), "plugins", "known_marketplaces.json")).get(name)
+    src = known.get("source") if isinstance(known, dict) else None
+    if isinstance(src, dict) and src.get("source") in ("github", "git", "url"):
+        return name, {k: v for k, v in src.items() if k in ("source", "repo", "url", "ref", "path")}
+    local = src.get("path") if isinstance(src, dict) and src.get("source") == "directory" else None
+    for p in ([local] if local else []) + [kit]:
+        g = _git_source(p) if p and os.path.isdir(p) else None
+        if g:
+            return name, g
+    return name, None
 
 
 def template_files(kit):
@@ -583,9 +720,19 @@ def desired_files(kit, cfg, adapters):
     return out
 
 
-def merge_settings(existing, tpl):
-    """Add teamwright env, deny rules and hooks; never remove or change what exists."""
+def merge_settings(existing, tpl, plugin=None):
+    """Add teamwright env, deny rules, hooks and the plugin; never remove or change what exists.
+
+    plugin: (plugin id, marketplace name, marketplace source or None)."""
     res = json.loads(json.dumps(existing or {}))
+    if plugin:
+        pid, mname, msrc = plugin
+        ep = res.setdefault("enabledPlugins", {})
+        if isinstance(ep, dict):
+            ep.setdefault(pid, True)
+        km = res.setdefault("extraKnownMarketplaces", {}) if msrc else None
+        if isinstance(km, dict):
+            km.setdefault(mname, {"source": msrc})
     if "$schema" in tpl and "$schema" not in res:
         res["$schema"] = tpl["$schema"]
     env = res.setdefault("env", {})
@@ -678,6 +825,11 @@ def plan(project, kit, cfg, cfg_text, cfg_src, providers_dir):
             elif dest in manifest:
                 a.update(op="kept-local", change=False)
                 a.pop("unresolved", None)
+            elif dest in PROJECT_DOCS:
+                # the project's own document (written before install, e.g. by
+                # /teamwright:requirements, or the project's existing doc): never a conflict
+                a.update(op="kept-project", change=False)
+                a.pop("unresolved", None)
             else:
                 a.update(op="conflict", change=False)
                 a.pop("unresolved", None)
@@ -717,14 +869,25 @@ def plan(project, kit, cfg, cfg_text, cfg_src, providers_dir):
         actions.append({"op": "conflict", "path": ".claude/settings.json", "change": False,
                         "reason": "invalid JSON, not merged"})
     else:
-        merged = merge_settings(existing, tpl)
+        info = kit_info(kit)
+        mname, msrc = kit_marketplace(kit)
+        merged = merge_settings(existing, tpl, (info["plugin"], mname, msrc))
+        if msrc is None and mname not in (merged.get("extraKnownMarketplaces") or {}):
+            notes.append(".claude/settings.json: no shareable source for marketplace %r (a local copy "
+                         "without a git remote) - a fresh clone is not offered the plugin; add "
+                         "extraKnownMarketplaces by hand" % mname)
         ch = merged != existing or s is None
         actions.append({"op": "merge-settings" if ch else "same", "path": ".claude/settings.json",
                         "content": dump_json(merged), "change": ch})
 
+    info = kit_info(kit)
+    if _manifest_raw(project).get(KIT_KEY) != info:
+        actions.append({"op": "kit-version", "path": MANIFEST, "kit": info, "change": True})
+
     # 4. .mcp.json
-    wanted = [(c, adapters[c]["server"]) for c in CAPABILITIES
-              if adapters.get(c) and not adapters[c].get("missing") and adapters[c].get("server")]
+    skip_mcp = set(cfg.get("no_mcp") or [])   # tool used through its CLI only, no MCP server
+    wanted = [(c, adapters[c]["server"]) for c in CAPABILITIES if c not in skip_mcp
+              and adapters.get(c) and not adapters[c].get("missing") and adapters[c].get("server")]
     if wanted:
         mp = os.path.join(project, ".mcp.json")
         m = read(mp)
@@ -790,12 +953,16 @@ def apply(project, kit, actions):
     manifest = _manifest(project)
     before = dict(manifest)
     accepted = _accepted(project)
+    kit_rec = None
     for a in actions:
         if not a.get("change"):
             if a["op"] == "same" and "src" in a and a["path"] not in manifest:
                 pass  # identical by chance: not ours, leave it unowned
             continue
         rel = a["path"]
+        if a["op"] == "kit-version":
+            kit_rec = a["kit"]
+            continue
         if a["op"] == "stale":
             p = os.path.join(project, rel)
             if os.path.isfile(p):
@@ -823,8 +990,8 @@ def apply(project, kit, actions):
             manifest[rel] = sha(a["content"])
             if os.access(a["src"], os.X_OK):
                 os.chmod(os.path.join(project, rel), 0o755)
-    if manifest != before:
-        write_manifest(project, manifest, accepted)
+    if manifest != before or kit_rec is not None:
+        write_manifest(project, manifest, accepted, kit_rec)
 
 
 def accept(project, actions, paths, dry):
@@ -960,6 +1127,8 @@ ENV_ERRORS = (
         r"ECONNREFUSED|connection refused|could not connect to server|"
         r"Can't reach database server|\bP1001\b|getaddrinfo (?:ENOTFOUND|EAI_AGAIN)|"
         r"Name or service not known|Temporary failure in name resolution", re.I)),
+    ("package not installed", re.compile(
+        r"npx canceled due to missing packages", re.I)),
     ("docker unavailable", re.compile(
         r"Cannot connect to the Docker daemon|docker: (?:command )?not found|"
         r"permission denied while trying to connect to the Docker daemon", re.I)),
@@ -984,9 +1153,12 @@ def env_error(output):
     return None
 
 
-def _run_one(project, tw_run, env, area, key, cmd, timeout, logdir):
+def _run_one(project, tw_run, env, area, key, cmd, timeout, logdir, runner="host"):
     log = os.path.join(logdir, "%s.%s.log" % (area, key.replace("_command", "")))
-    res = {"area": area, "key": key, "command": cmd, "log": os.path.relpath(log, project)}
+    res = {"area": area, "key": key, "command": cmd, "runner": runner,
+           "log": os.path.relpath(log, project)}
+    import time
+    t0 = time.time()
     # own process group, so a timeout kills the whole tree (a test runner's children too)
     p = subprocess.Popen(["bash", tw_run, area, "--", cmd], cwd=project, env=env,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -1008,6 +1180,7 @@ def _run_one(project, tw_run, env, area, key, cmd, timeout, logdir):
     except OSError:
         pass
     tail = [l for l in output.splitlines() if l.strip()][-1:] or [""]
+    res["duration_s"] = round(time.time() - t0, 1)
     res["exit"] = rc
     if rc is None:
         res.update(status="fail", reason="timeout after %ds" % timeout)
@@ -1038,6 +1211,7 @@ def check_commands(project, kit, cfg, cfg_src, timeout, only_area=None, dry=Fals
     logdir = os.path.join(project, ".teamwright", "logs", "check-commands")
     areas = [a for a in cfg.get("areas") or [] if not only_area or a.get("name") == only_area]
     workdirs = {a["name"]: str(a.get("workdir") or "") for a in areas}
+    runners = {a["name"]: str(a.get("runner") or "host") for a in areas}
     planned = [(a["name"], "generate_command", a["generate_command"]) for a in areas
                if str(a.get("generate_command") or "").strip()]
     gen_count = len(planned)
@@ -1050,7 +1224,7 @@ def check_commands(project, kit, cfg, cfg_src, timeout, only_area=None, dry=Fals
     for i, (name, key, cmd) in enumerate(planned):
         if i == gen_count:
             state = _tree_state(project)     # baseline after code generation
-        res = _run_one(project, tw_run, env, name, key, cmd, timeout, logdir)
+        res = _run_one(project, tw_run, env, name, key, cmd, timeout, logdir, runners.get(name, "host"))
         if state is not None:
             now_state = _tree_state(project) or {}
             tracked, untracked = _tree_diff(state, now_state)
@@ -1075,6 +1249,18 @@ def check_commands(project, kit, cfg, cfg_src, timeout, only_area=None, dry=Fals
                              % (name, key, ", ".join(untracked[:5])))
             state = now_state
         results.append(res)
+    ui = str((cfg.get("tools") or {}).get("ui_verify") or "none")
+    deferred = str(cfg.get("ui_verify_deferred") or "").strip()
+    if deferred and not any(str(a.get("e2e_ui_command") or "").strip()
+                            for a in cfg.get("areas") or []):
+        notes.append("UI verification deferred by the owner (%s): tools.ui_verify is %s, no "
+                     "e2e_ui_command yet" % (deferred, ui))
+    elif ui != "none" and not only_area and not any(str(a.get("e2e_ui_command") or "").strip()
+                                                    for a in cfg.get("areas") or []):
+        # a UI runner that has no command cannot verify anything: not a silent skip
+        results.append({"area": "*", "key": "e2e_ui_command", "command": "", "status": "not-runnable",
+                        "runner": "-", "reason": "tools.ui_verify is %s but no area has an "
+                        "e2e_ui_command: UI verification cannot run" % ui, "log": "-"})
     if not planned:
         notes.append("no commands configured")
     return results, notes
@@ -1156,7 +1342,9 @@ def main(argv=None):
             print(json.dumps({"results": results, "notes": notes, "ok": not bad}, indent=2))
         else:
             for r in results:
-                print("%-13s %-10s %-17s %s%s" % (r["status"], r["area"], r["key"], r["command"],
+                print("%-13s %-10s %-17s %-7s %6s  %s%s" % (
+                    r["status"], r["area"], r["key"], r.get("runner", "-"),
+                    "%.1fs" % r["duration_s"] if "duration_s" in r else "-", r["command"],
                                                  ("\n              -> %s (log: %s)" % (r["reason"], r["log"]))
                                                  if r.get("reason") else ""))
             for n_ in notes:
@@ -1211,7 +1399,8 @@ def main(argv=None):
         for a in actions:
             if a["op"] == "same":
                 continue
-            extra = a.get("reason") or (", ".join(a["servers"]) if a.get("servers") else "")
+            extra = a.get("reason") or (", ".join(a["servers"]) if a.get("servers") else "") \
+                or ("%s %s" % (a["kit"]["plugin"], a["kit"]["version"]) if a.get("kit") else "")
             if a.get("gitignore_add"):
                 extra = ".gitignore += %d line(s)" % len(a["gitignore_add"])
             print("%-15s %s%s" % (a["op"], a["path"], ("  (%s)" % extra) if extra else ""))

@@ -75,6 +75,11 @@ git reset -q HEAD -- main.py; git checkout -q -- main.py
 printf 'IGNORE_LIST_RE = "c"\n' >> src/clean/c.py; git add -A
 expect_rc "patch signature in a clean area only warns" 0 "$(commit 'feat: clean area')"
 grep -q "warning" "$TMP/err" && ok "warning printed for clean area" || bad "warning printed for clean area"
+mkdir -p kit .teamwright; printf 'IGNORE_LIST_RE = "k"\n' > kit/tool.py
+printf '{"kit/tool.py": "x", "@accepted": {}}\n' > .teamwright/installed.json; git add kit/tool.py
+commit 'chore: install kit' >/dev/null
+grep -q "warning" "$TMP/err" && bad "files the installer wrote are not patches" "$(cat "$TMP/err")" || ok "files the installer wrote are not patches"
+rm -f .teamwright/installed.json
 
 # shellcheck disable=SC2016
 conf PG_MODE=block 'PG_SIGNATURES="$PG_SIGNATURES

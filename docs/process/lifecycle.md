@@ -5,6 +5,8 @@ The rules here are what the reviewer, the hooks and the metrics scripts check ag
 
 ## 0. Where tasks come from
 
+**Before the first task: the requirements.** `docs/requirements.md` is the product's requirements document — problem, release-1 goal and scope, functional requirements in EARS form with a failing example each, measurable non-functional requirements, constraints, glossary, integrations, technical decisions, assumptions. `/teamwright:requirements` builds it from the owner's brief or an interview; a fresh `requirements-reviewer` roasts each draft (`docs/requirements.reviews/<n>.md`, verdict `READY` / `NOT_READY`) until it is ready, and the owner approves it. Specs and tasks are derived from the approved version; a spec that contradicts it is a question for the owner. `/teamwright:init` starts here; `/teamwright:adopt` runs it when the document is still the template.
+
 | Size of the work | Path |
 |---|---|
 | **Large** — spans more than one seam or service, or carries product uncertainty (what to build is not settled) | The project's spec tool first (`tools.spec`, see [tools.md](tools.md)): specify → clarify → plan → tasks; with no spec tool, a plain `docs/specs/<name>.md` the owner agrees. Each item of the resulting task list becomes a task record with `design_ref` pointing to the spec/plan section it implements |
@@ -103,7 +105,7 @@ stateDiagram-v2
 | `NEEDS_REVIEW → CODE_COMPLETE` | Latest review record `APPROVE` from the `code-reviewer` agent; findings fixed or filed; no principle violated without a recorded exception |
 | `CODE_COMPLETE → DEPLOYED` | Pushed during DRAIN (the `pre-push` hook checks every task in the tail); the deploy itself is proven later by the smoke (section 7) |
 | `DEPLOYED → VERIFIED` | A `PASS` verify record of each kind `surface` requires, for the deployed commit (section 7): API tests and/or an end-to-end UI test run per `surface`, including the **failure branch** from Acceptance, checked against data/logs — not against the system's own text output |
-| `VERIFIED → DONE` (or `CODE_COMPLETE → DONE` when `deploys: false`) | A `PASS` verify record for the current code per `surface` (with `deploys: false` the system is started locally; `deploys: false` + `surface: none` needs none); nothing left in the task that is "temporary" without a linked follow-up; the latest `task-validator` acceptance verdict in `## Validation` is `PASS` (`FAIL` → back to `IN_PROGRESS` with its findings; `NEEDS_OWNER` → waits for the owner). The verify gate checks the verify record (T3); the acceptance verdict is checked by the orchestrator, not by a hook (T1) |
+| `VERIFIED → DONE` (or `CODE_COMPLETE → DONE` when `deploys: false`) | A `PASS` verify record for the current code per `surface` (with `deploys: false` the system is started locally; `deploys: false` + `surface: none` needs none); nothing left in the task that is "temporary" without a linked follow-up; the latest `task-validator` validation record (`docs/tasks/<ID>.validation/<n>.md`) is `PASS` for the current code (`FAIL` → back to `IN_PROGRESS` with its findings; `NEEDS_OWNER` → waits for the owner). The verify gate checks the verify record and, on entering `DONE`, that the latest acceptance verdict is `PASS` and was written by `task-validator` (T3). With `deploys: false` + `surface: none` the acceptance verdict is the only check |
 
 Per type, in addition:
 

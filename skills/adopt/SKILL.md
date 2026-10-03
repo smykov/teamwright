@@ -48,7 +48,7 @@ Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" inventory --json` and
 
 ## 3. Product goal — before tools and tasks
 
-Ask the owner, in one question: **"What should the next release achieve?"** (a store release, a feature, a customer milestone, a deadline). Offer two or three candidates you can see in the repository (open issues, TODOs, a release checklist, a store or platform requirement) and "only hygiene for now". Then ask for hard constraints (date, platform policy, budget).
+Ask the owner, in one question: **"What should the next release achieve?"** (a store release, a feature, a customer milestone, a deadline). Offer two or three candidates you can see in the repository (open issues, TODOs, a release checklist, a store or platform requirement) and "only hygiene for now". Then ask for hard constraints (date, platform policy, budget). When `docs/requirements.md` is still the template (`unfilled_docs`) and the goal is more than hygiene, offer `/teamwright:requirements` for it: the existing README, issues and docs are its base.
 
 The answer is used three times: it goes into `docs/plan.md` (and the goal's acceptance into `docs/requirements.md`) in the owner's words — unknowns go to `docs/open-questions.md`; it shapes the first sprint (step 13); and it is repeated in Next steps. "Only hygiene" is a valid answer — record it as such.
 
@@ -183,6 +183,7 @@ Sprint 1: T-001 … T-00N (hygiene: …; goal: …)
 ### Next steps (mandatory — never end without it)
 
 1. **Status**: one line each — branch (`teamwright-adopt`; how to merge it when the owner is ready), mode and what makes it `enforce`, which gates are live now and whether a restart is needed (step 11) — when MCP servers were added or are not connected, name them: "restart Claude Code to load MCP servers <names>".
+   Add one line: **another machine** — a clone is offered the plugin from the project settings (`extraKnownMarketplaces`: name the source; the install note when there is none), then needs `bash scripts/install-hooks.sh` once; the session-start check names what is missing.
 2. **Unresolved**: commands not run and why (environment vs code); UI runner not yet runnable; template docs still unfilled (`docs/plan.md`, `docs/requirements.md`, `docs/open-questions.md`); versions marked unknown; conflicts left; owner decisions pending (secret rotation, history purge, hook manager).
 3. **Order of work**: after the commit, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json` and present its decision — `task` and `reason` first, then `alternatives` in its order — plus any `warnings` (fix a missing `blocked_on` before offering). **Do not compute your own order**: the recommendation and the router must never diverge. You may add one line of context after the router's reason (e.g. "the gate is red, so every backend task is red until T-002 is done"); if you think the router is wrong, say so and why, but still offer its pick first.
 4. **Offer**: "Start `/teamwright:flow` on <router's task> — <title>?" — on "yes", invoke `/teamwright:flow`.

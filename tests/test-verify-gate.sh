@@ -39,7 +39,21 @@ analysis: skipped:trivial
 ---
 ## Acceptance
 - [ ] Failure branch: empty header -> 400 with a field error
+
+## Validation
 EOF
+}
+# validate ID VERDICT WHO... : write the next acceptance verdict (validation record)
+# through the gate; on allow the tool "runs". VALIDATOR_FIELD / VCOMMIT override fields.
+xd() { echo "$P/docs/tasks/$1.validation"; }
+validate() {
+  local id="$1" v="$2" out content n; shift 2
+  n=$(( $(ls "$(xd "$id")" 2>/dev/null | grep -c '^[0-9]*\.md$') + 1 ))
+  content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n---\n## Acceptance checked\n- every item against evidence\n' \
+    "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}")"
+  out="$(run Write "$S" "file_path=$(xd "$id")/$n.md" "content=$content" "$@")"
+  if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; fi
+  printf '%s' "$out"
 }
 # vtext ID N KIND RESULT COMMIT [VERIFIER] [TOOL] [EVIDENCE] [FAILURE-BRANCH-LINE]
 vtext() {
@@ -76,7 +90,9 @@ if grep -q 'make e2e' "$P/.teamwright/logs/verify.jsonl" 2>/dev/null; then
   bad "journal does not store the command"; else ok "journal does not store the command"; fi
 out="$(to T-1 DEPLOYED VERIFIED)"; expect_allow "pass: DEPLOYED -> VERIFIED with a fresh api PASS" "$out"
 vtask T-1 VERIFIED api
-out="$(to T-1 VERIFIED DONE)"; expect_allow "pass: VERIFIED -> DONE still fresh" "$out"
+out="$(to T-1 VERIFIED DONE)"; expect_deny "VERIFIED -> DONE without an acceptance verdict is denied" "$out" "acceptance verdict PASS"
+validate T-1 PASS "${VAL[@]}" >/dev/null
+out="$(to T-1 VERIFIED DONE)"; expect_allow "pass: VERIFIED -> DONE still fresh, acceptance PASS" "$out"
 
 C2="$(commit "fix(api): T-2 retry on timeout" src/retry.txt)"
 vtask T-2 DEPLOYED api
@@ -180,10 +196,27 @@ wv T-11 3 ui FAIL "$H" playwright "${VAL[@]}" >/dev/null
 out="$(to T-11 DEPLOYED VERIFIED)"; expect_deny "both: a later ui FAIL denies" "$out" "VERIFY_FAIL"
 
 vtask T-12 CODE_COMPLETE none false
-out="$(to T-12 CODE_COMPLETE DONE)"; expect_allow "none + deploys false: DONE without a verify record" "$out"
+out="$(to T-12 CODE_COMPLETE DONE)"; expect_deny "none + deploys false: DONE still needs the acceptance verdict" "$out" "no validation record"
+out="$(validate T-12 PASS "${DEV[@]}")"; expect_deny "a developer cannot write the acceptance verdict" "$out" "written by a fresh task-validator"
+out="$(validate T-12 PASS @session_id=x)"; expect_deny "the main session cannot write the acceptance verdict" "$out" "main session"
+out="$(VALIDATOR_FIELD=main validate T-12 PASS "${VAL[@]}")"; expect_deny "validator field must name task-validator" "$out" "validator: task-validator"
+out="$(VCOMMIT=deadbeef validate T-12 PASS "${VAL[@]}")"; expect_deny "a commit that does not resolve is denied" "$out" "does not resolve"
+out="$(validate T-12 FAIL "${VAL[@]}")"; expect_allow "task-validator writes a FAIL verdict" "$out"
+out="$(to T-12 CODE_COMPLETE DONE)"; expect_deny "latest verdict FAIL denies DONE" "$out" "is FAIL"
+out="$(run Write "$S" "file_path=$(xd T-12)/1.md" "content=x" "${VAL[@]}")"; expect_deny "an earlier verdict cannot be rewritten" "$out" "append-only"
+out="$(run Bash "$S" "command=sed -i s/FAIL/PASS/ docs/tasks/T-12.validation/1.md")"; expect_deny "shell writes to validation records are denied" "$out" "never by shell commands"
+validate T-12 PASS "${VAL[@]}" >/dev/null
+out="$(to T-12 CODE_COMPLETE DONE)"; expect_allow "none + deploys false: DONE with acceptance PASS, no verify record" "$out"
+vtask T-17 CODE_COMPLETE none false
+mkdir -p "$(xd T-17)"; printf -- '---\ntask: T-17\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\n' "$(git -C "$P" rev-parse HEAD)" > "$(xd T-17)/1.md"
+out="$(to T-17 CODE_COMPLETE DONE)"; expect_deny "a PASS verdict not written through the gate does not count" "$out" "validation.jsonl"
+vtask T-18 CODE_COMPLETE none false
+validate T-18 PASS "${VAL[@]}" >/dev/null; validate T-18 FAIL "${VAL[@]}" >/dev/null; rm "$(xd T-18)/2.md"
+out="$(to T-18 CODE_COMPLETE DONE)"; expect_deny "deleting a later FAIL does not bring back the earlier PASS" "$out" "file is gone"
 vtask T-13 CODE_COMPLETE none true
 out="$(to T-13 CODE_COMPLETE DONE)"; expect_deny "none + deploys true still needs a record" "$out" "no verify record"
 wv T-13 1 smoke PASS "$H" "" "${VAL[@]}" >/dev/null
+validate T-13 PASS "${VAL[@]}" >/dev/null
 out="$(to T-13 CODE_COMPLETE DONE)"; expect_allow "none + deploys true: a smoke record passes" "$out"
 vtask T-14 CODE_COMPLETE api false
 out="$(to T-14 CODE_COMPLETE DONE)"; expect_deny "deploys false with an api surface still needs a record" "$out" "no verify record"
@@ -197,5 +230,30 @@ out="$(to T-16 DEPLOYED VERIFIED)"; expect_allow "a person's committed record (v
 out="$(to T-16 DEPLOYED CODE_COMPLETE)"; expect_allow "other transitions are not this gate's business" "$out"
 out="$(hook_json Edit "$S" "file_path=$(tf T-16)" @hook_event_name=PostToolUse | bash "$GATE")"
 expect_allow "PostToolUse events are ignored" "$out"
+# every denial / warning lands in gates.jsonl (metrics: how often each gate fired)
+GL="$P/.teamwright/logs/gates.jsonl"; rm -f "$GL"
+vtask T-20 CODE_COMPLETE none false
+to T-20 CODE_COMPLETE DONE >/dev/null
+expect_rc "a denial is journaled in gates.jsonl" "verify-gate deny T-20" \
+  "$(python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[-1]); print(r["gate"], r["decision"], r["reason"].split()[2])' "$GL")"
+printf 'version: 1\nmode: gate-first\n' > "$P/.teamwright/config.yml"
+out="$(to T-20 CODE_COMPLETE DONE)"
+printf '%s' "$out" | grep -q "gate-first" && ok "gate-first: a warning, not a denial" || bad "gate-first: a warning, not a denial" "$out"
+expect_rc "a warning is journaled as warn" warn \
+  "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[-1])["decision"])' "$GL")"
+rm -f "$P/.teamwright/config.yml"
+
+# stale acceptance: the task's code changed after the PASS
+vtask T-21 CODE_COMPLETE none false
+validate T-21 PASS "${VAL[@]}" >/dev/null
+commit "fix(core): T-21 rework after reopening" src/t21.txt >/dev/null
+out="$(to T-21 CODE_COMPLETE DONE)"; expect_deny "an acceptance PASS older than the task's last code commit does not count" "$out" "stale"
+validate T-21 PASS "${VAL[@]}" >/dev/null
+out="$(to T-21 CODE_COMPLETE DONE)"; expect_allow "a new acceptance round for the current code passes" "$out"
+# committing the records themselves does not make the verdict stale
+vtask T-23 CODE_COMPLETE none false
+validate T-23 PASS "${VAL[@]}" >/dev/null
+git -C "$P" add docs/tasks >/dev/null && git -C "$P" commit -qm "docs(task): T-23 acceptance PASS"
+out="$(to T-23 CODE_COMPLETE DONE)"; expect_allow "records committed after the verdict keep it fresh (no code commit names the task)" "$out"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

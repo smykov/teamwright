@@ -342,7 +342,7 @@ fi
 move main NEEDS_REVIEW CODE_COMPLETE allow
 
 # --------------------------------------------------------------------------------------
-step "7. Verify gate: done means a recorded PASS for the current code"
+step "7. Verify gate: done means a recorded PASS for the current code and an acceptance PASS"
 move main CODE_COMPLETE DONE verify-gate
 act "task-validator runs the API tests and records the run"
 mkdir -p reports
@@ -354,6 +354,15 @@ if call allow task-validator Write "file_path=$VERIFY" "content=$VERIFY_TEXT"; t
   mkdir -p "$(dirname "$VERIFY")" && printf '%s\n' "$VERIFY_TEXT" > "$VERIFY"
   landed task-validator Write "$VERIFY"
   git add docs/tasks && commit "docs(verify): T-001 round 1 api PASS" co
+fi
+move main CODE_COMPLETE DONE verify-gate
+act "task-validator checks every Acceptance item against evidence: acceptance PASS"
+VALIDATION="$P/docs/tasks/T-001.validation/1.md"
+VALIDATION_TEXT="$(printf -- '---\ntask: T-001\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\n\n## Claims\n\n- both Acceptance items: test/slug_test.sh, run in verify/1.md\n' "$(git rev-parse HEAD)")"
+if call allow task-validator Write "file_path=$VALIDATION" "content=$VALIDATION_TEXT"; then
+  mkdir -p "$(dirname "$VALIDATION")" && printf '%s\n' "$VALIDATION_TEXT" > "$VALIDATION"
+  landed task-validator Write "$VALIDATION"
+  git add docs/tasks && commit "docs(validation): T-001 round 1 PASS" co
 fi
 move main CODE_COMPLETE DONE allow
 python3 -c "$PYHELP" hook "" "$SESSION" @hook_event_name=Stop \

@@ -29,7 +29,7 @@ if grep -q "$SECRET" "$L/tools.jsonl"; then bad "file contents are never journal
 
 j Agent s1 "subagent_type=code-reviewer" "description=Review T-12" "prompt=Review T-12 and T-12 again, compare with T-3. Key $SECRET" @hook_event_name=PreToolUse
 expect_rc "Agent spawn records subagent_type" code-reviewer "$(field "$L/tools.jsonl" 3 subagent_type)"
-expect_rc "Agent spawn records task ids (deduplicated)" '["T-12", "T-3"]' "$(field "$L/tools.jsonl" 3 task_ids)"
+expect_rc "Agent spawn records the task from the description, not ids mentioned in the prompt" '["T-12"]' "$(field "$L/tools.jsonl" 3 task_ids)"
 if grep -q "$SECRET" "$L/tools.jsonl"; then bad "prompts are never journaled"; else ok "prompts are never journaled"; fi
 j Bash s1 "command=false" @hook_event_name=PostToolUseFailure
 expect_rc "PostToolUseFailure is journaled as failure" failure "$(field "$L/tools.jsonl" 4 event)"
@@ -77,6 +77,30 @@ expect_rc "missing transcript: none, no crash" none "$(field "$L/outcomes.jsonl"
 hook_json Read s1 "file_path=src/a.py" @hook_event_name=PreToolUse @agent_id=a7 @agent_type=problem-investigator | bash "$J"
 hook_json "" s1 "@hook_event_name=SubagentStop" @agent_id=a7 | bash "$J"
 expect_rc "SubagentStop without agent_type: filled from the journal" problem-investigator "$(field "$L/outcomes.jsonl" 6 agent_type)"
+
+# task ids: description first, else only the first id of the prompt
+j Agent s9 "subagent_type=developer" "description=Fix the parser" "prompt=Task T-7. Gate is red because of T-3 and T-5." @hook_event_name=PreToolUse
+expect_rc "no id in the description: prompt ids are used (wider match, never a missed spawn)" '["T-7", "T-3", "T-5"]' "$(python3 -c 'import json,sys; print(json.dumps([json.loads(l) for l in open(sys.argv[1])][-1]["task_ids"]))' "$L/tools.jsonl")"
+j Agent s9 "subagent_type=code-reviewer" "description=Review T-7 and T-8" "prompt=see T-3" @hook_event_name=PreToolUse
+expect_rc "ids in the description are all kept" '["T-7", "T-8"]' "$(python3 -c 'import json,sys; print(json.dumps([json.loads(l) for l in open(sys.argv[1])][-1]["task_ids"]))' "$L/tools.jsonl")"
+
+# Stop while a launched agent is still running: waiting, not none
+last_out() { python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["outcome"], r["outcome_source"])' "$L/outcomes.jsonl"; }
+j Agent s8 "subagent_type=developer" "description=T-7" @hook_event_name=PostToolUse
+hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=I will continue when it finishes." | bash "$J"
+expect_rc "Stop with a launched agent still running: waiting" "waiting open-agent" "$(last_out)"
+hook_json "" s8 "@hook_event_name=SubagentStop" @agent_id=a9 | bash "$J"
+hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=still waiting" | bash "$J"
+expect_rc "a runtime SubagentStop (no type, no calls) does not end the wait" "waiting open-agent" "$(last_out)"
+hook_json "" s8 "@hook_event_name=SubagentStop" @agent_id=a7 @agent_type=Explore | bash "$J"
+hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=still waiting" | bash "$J"
+expect_rc "a nested agent of another type finishing does not end the wait" "waiting open-agent" "$(last_out)"
+hook_json "" s8 "@hook_event_name=SubagentStop" @agent_id=a8 @agent_type=developer | bash "$J"
+hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=done, no outcome line" | bash "$J"
+expect_rc "agent finished, no Outcome line: none" "none none" "$(last_out)"
+j Agent s8 "subagent_type=code-reviewer" "description=T-7" @hook_event_name=PostToolUse
+hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=Outcome: barrier" | bash "$J"
+expect_rc "an explicit Outcome line wins over waiting" "barrier message" "$(last_out)"
 
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"

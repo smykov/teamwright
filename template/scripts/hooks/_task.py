@@ -154,6 +154,12 @@ def verify_rounds(root, tid):
     return _rounds(root, tid, ".verify", with_body=True)
 
 
+def validation_rounds(root, tid):
+    """[(round, record)] for docs/tasks/<tid>.validation/<n>.md: task-validator's
+    acceptance verdicts (`verdict:`, `commit:`), sorted by round."""
+    return _rounds(root, tid, ".validation")
+
+
 def review_rounds(root, tid):
     """[(round, record)] for docs/tasks/<tid>.reviews/<n>.md, sorted by round.
     The count of these files IS review_rounds; the task field is never trusted."""

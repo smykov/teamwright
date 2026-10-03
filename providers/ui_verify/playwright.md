@@ -42,11 +42,11 @@ Set `use.baseURL` in `playwright.config.*` from an environment variable (e.g. `B
 ## Rules for agents
 
 - **Test files:** under the project's Playwright `testDir` (see `playwright.config.*`), one scenario per test named after the Acceptance line. Locators: `getByRole`, `getByLabel`, `getByTestId` — no CSS chains or XPath tied to layout. Wait with web-first assertions (`await expect(locator).toHaveText(...)`), never `waitForTimeout`.
-- **Run:** the area's `e2e_ui_command` (typically `npx playwright test <file>`); a single test with `-g "<title>"`; against a running system with its base URL from the environment (`BASE_URL=... npx playwright test`). Red first: show the test fails on the missing behaviour, not on a locator typo.
+- **Run:** the area's `e2e_ui_command` (typically `npx --no playwright test <file>` — `--no` stops npx from downloading a package that is not installed); a single test with `-g "<title>"`; against a running system with its base URL from the environment (`BASE_URL=... npx playwright test`). Red first: show the test fails on the missing behaviour, not on a locator typo.
 - **Assert the effect,** not only the page text: where the test can reach it, check the API response (`page.waitForResponse`, `request` fixture) or the stored state.
 - **Explore with Playwright MCP** (`browser_navigate`, `browser_snapshot` for the accessibility tree and refs, `browser_click`, `browser_fill_form`, `browser_console_messages`, `browser_network_requests`) to reproduce a bug or find locators. Snapshot before acting; never type real credentials; close the browser (`browser_close`) when done. What you learn goes into a committed test.
 - **Validator:** record `tool: playwright` and the exact command; `evidence` is the HTML report directory (`playwright-report/`) or a JUnit file, plus `test-results/` traces for failures.
-- **Browsers missing** (`Executable doesn't exist`): run `npx playwright install` once; this is setup, not a test failure. **Flaky** (passes on retry): report it as a finding; a retry pass is not a clean PASS.
+- **Browsers missing** (`Executable doesn't exist`): installing them (`npx playwright install`) is setup, not a test failure — ask the owner first, it downloads browsers; never install when the owner declined downloads. **Flaky** (passes on retry): report it as a finding; a retry pass is not a clean PASS.
 
 ## Evidence
 

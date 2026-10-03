@@ -15,6 +15,7 @@ import sys
 TASK_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.md$")
 REVIEW_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.reviews/(\d+)\.md$")
 VERIFY_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.verify/(\d+)\.md$")
+VALIDATION_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.validation/(\d+)\.md$")
 
 
 REVIEWER_AGENT = os.environ.get("TEAMWRIGHT_REVIEWER_AGENT", "code-reviewer")
@@ -95,12 +96,19 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_INPUT = {}
+
+
 def load_input():
     try:
         raw = sys.stdin.read()
-        return json.loads(raw) if raw.strip() else None
+        data = json.loads(raw) if raw.strip() else None
     except Exception:
         return None
+    if isinstance(data, dict):
+        _INPUT.clear()
+        _INPUT.update(data)
+    return data
 
 
 def project_root(data):
@@ -404,6 +412,18 @@ def deny(reason, gate, data=None, hard=False):
                 "permissionDecisionReason": reason,
             }
         }))
+    # Every warning and denial is a fact for the metrics (gates.jsonl, gitignored): how
+    # often each gate fired, in which mode - the evidence for switching to enforce.
+    src = data if isinstance(data, dict) else _INPUT
+    try:
+        who = actor(src)
+        append_jsonl(os.path.join(log_dir(src), "gates.jsonl"), {
+            "ts": now(), "event": "gate", "gate": gate, "decision": "warn" if mode == "warn" else "deny",
+            "session_id": who.get("session_id", ""), "agent_id": who.get("agent_id", ""),
+            "agent_type": who.get("agent_type", ""), "tool": src.get("tool_name") or "",
+            "reason": reason.splitlines()[0][:200]})
+    except Exception:
+        pass
     log = os.environ.get("TEAMWRIGHT_GATE_LOG")
     if log:
         try:
