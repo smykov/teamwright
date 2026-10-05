@@ -2,6 +2,20 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.5.1] - 2026-10-05
+
+From the first long pilot (4 days, 585 commits, 70 reviews, 33 tasks closed): fixes for false positives and one disk-filling instruction.
+
+### Fixed
+- pre-push (DRAIN): a commit that touches only `docs/**`, `specs/**` or `openspec/**` ships no code and belongs to no task (before, only `docs/tasks/**` did): recording a decision or a spec that names a TODO task no longer needs `tail_code: ratified`. `TEAMWRIGHT_DOC_PATHS_RE` overrides the pattern.
+- Analysis gate: appending to a task file through the shell (`>>`, `tee -a`) is allowed — an appended note lands after the front matter and cannot change the status. Overwriting (`>`, `tee`, `sed -i`) is still denied.
+- patch-guard: a file the commit creates is not inspected; a list in a new file is its content, not "one more case".
+- task-validator: mutations run in a `git worktree` of the committed revision, inside one script whose `trap` removes it (`git worktree remove --force`, then `rmdir`), never in a `cp -a` copy that dragged build output and caches along (one filled a disk at 2.4 GB) and that the agent could not delete (`rm -rf` is denied). Uncommitted task changes → the validator stops and reports.
+- `/teamwright:flow`: a role the runtime started in the background is waited for with one blocking wait; with none available the turn ends with a "waiting for" line (journaled `waiting`) and the completion notification resumes it — no polling loops or `sleep`.
+
+### Changed
+- init and adopt propose `paths-ignore: ["docs/tasks/**"]` on the CI `push` trigger: task bookkeeping no longer runs the full CI.
+
 ## [0.5.0] - 2026-10-05
 
 A progress report for the owner. Projects already kept their own progress commands, each tied to how that repository stores tasks; the generic report counts teamwright's records, and an adaptation step fits it to the rest.

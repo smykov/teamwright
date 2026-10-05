@@ -110,6 +110,14 @@ out="$(run Bash s1 "command=sed -i 's/status: TODO/status: IN_PROGRESS/' docs/ta
 expect_deny "sed -i on a task status is denied" "$out" "Edit/Write"
 out="$(run Bash s1 "command=grep status docs/tasks/T-1.md")"
 expect_allow "reading task status via shell is allowed" "$out"
+out="$(run Bash s1 "command=printf '%s\\n' '- note: status of the build checked' >> docs/tasks/T-1.md")"
+expect_allow "appending a note (>>) is allowed even if it mentions status" "$out"
+out="$(run Bash s1 "command=echo '- status note' | tee -a docs/tasks/T-1.md")"
+expect_allow "tee -a appends a note: allowed" "$out"
+out="$(run Bash s1 "command=echo 'status: DONE' > docs/tasks/T-1.md")"
+expect_deny "overwriting a task file through > is still denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=echo 'status: DONE' | tee docs/tasks/T-1.md")"
+expect_deny "tee without -a is still denied" "$out" "Edit/Write"
 
 # ---- the documented analysis blocks pass the gate, filled exactly as written ----
 # The task template (active block, and the commented rca block) and every analysis

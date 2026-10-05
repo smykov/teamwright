@@ -14,8 +14,11 @@
 #    (task IN_PROGRESS again) and patches left in DEFERRED tasks.
 #
 #    ATTRIBUTION (one owner per commit, conservative):
-#      * a commit touching only docs/tasks/** is bookkeeping (task records, review
-#        records) and belongs to no task - creating a TODO task must not dirty the tail;
+#      * a commit touching only docs/** or the spec tool's directories (specs/**,
+#        openspec/**) is bookkeeping or documentation (task and review records, specs,
+#        decisions) and belongs to no task: it ships no code, so it must not dirty the
+#        tail - creating a TODO task or recording a decision needed `tail_code: ratified`
+#        before ($TEAMWRIGHT_DOC_PATHS_RE overrides the pattern);
 #      * otherwise the owner is the first task id in the message (subject, then
 #        body) that has a docs/tasks/<ID>.md at the pushed revision; failing that,
 #        the first task record the commit changes; ids without a record are ignored;
@@ -60,6 +63,7 @@ def git(*a):
 
 lsha = os.environ["LSHA"]
 id_re = re.compile(r"\b" + task.TASK_ID + r"\b")
+doc_re = re.compile(os.environ.get("TEAMWRIGHT_DOC_PATHS_RE") or r"^(docs|specs|openspec)/")
 approved = set(os.environ["TEAMWRIGHT_PUSH_STATUSES"].split())
 records = {}
 
@@ -73,8 +77,8 @@ def record(tid):
 owners = {}
 for sha in sys.stdin.read().split():
     files = [f for f in git("show", "--format=", "--name-only", sha).splitlines() if f]
-    if files and all(f.startswith("docs/tasks/") for f in files):
-        continue  # bookkeeping: task / review records only
+    if files and all(doc_re.match(f) for f in files):
+        continue  # bookkeeping / docs / specs only: no code to hold back
     owner = None
     for tid in id_re.findall(git("log", "-1", "--format=%B", sha)):
         if record(tid) is not None:

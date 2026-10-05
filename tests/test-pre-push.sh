@@ -17,6 +17,10 @@ expect_rc "first push (new branch, nothing pending) passes" 0 "$(push)"
 task_file docs/tasks/T-3.md T-3 TODO bug full
 git add -A; git commit -qm "chore(task): T-3 created" 2>/dev/null
 expect_rc "creating a TODO task (task records only) does not block" 0 "$(push)"
+mkdir -p specs/001 docs/sprints
+echo "decision" >> docs/decisions.md; echo "spec" > specs/001/spec.md; echo "goal" > docs/sprints/1.md
+git add -A; git commit -qm "docs(T-3): spec, sprint and decision for T-3" 2>/dev/null
+expect_rc "a docs/specs-only commit naming a TODO task does not block (no tail_code needed)" 0 "$(push)"
 
 code a.py "feat(T-3): first cut"
 expect_rc "code of a TODO task blocks the push" 1 "$(push)"

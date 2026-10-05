@@ -30,6 +30,10 @@ printf '    if x == "special":\n        return None\n' >> src/router/r.py; git a
 commit 'feat: special case' >/dev/null
 grep -q "patch-guard" "$TMP/err" && bad "literal-branch is off by default" || ok "literal-branch is off by default"
 
+printf 'FORMATS = [\n    "text/plain",\n    "text/html",\n    "image/png",\n]\n' > src/router/formats.py; git add -A
+commit 'feat(router): clipboard formats' >/dev/null
+grep -q "patch-guard" "$TMP/err" && bad "a list in a NEW file is not a patch" || ok "a list in a NEW file is not a patch"
+
 # ---- opt-in block ---------------------------------------------------------------
 conf PG_MODE=block
 printf 'IGNORE_RE = "b"\n' >> src/router/r.py; git add -A
