@@ -45,12 +45,14 @@ Why these roles and how they hand over: `docs/process/roles.md`.
 
 Every session ends with an outcome: `barrier | idle | escalate | interrupted`; hooks journal tool calls and outcomes into `.teamwright/logs/`. Details: `docs/process/sessions.md` §2.
 
-Process settings (`process:` in `.teamwright/config.yml`, changed only by the owner through `/teamwright:settings`): review blocks from **{{REVIEW_BLOCKING}}** findings up; a pass takes at most **{{BATCH_MAX_TASKS}}** task(s), capped per priority at {{BATCH_BY_PRIORITY}}; starting a ready task: **{{AUTONOMY_START}}**; continue after a barrier: **{{AUTONOMY_CONTINUE}}**. Tasks of a pass run one after another in this working tree; a red gate stops the pass.
+Process settings (`process:` in `.teamwright/config.yml`, changed only by the owner through `/teamwright:settings`): review blocks from **{{REVIEW_BLOCKING}}** findings up; a pass takes at most **{{BATCH_MAX_TASKS}}** task(s), capped per priority at {{BATCH_BY_PRIORITY}}; starting a ready task: **{{AUTONOMY_START}}**; continue after a barrier: **{{AUTONOMY_CONTINUE}}**; tasks in parallel worktrees: **{{BATCH_PARALLEL}}** (`/teamwright:parallel`). Tasks of a pass run one after another in this working tree; a red gate stops the pass.
 
 ## Where tasks come from
 
 - **Large** work — spans more than one seam or service, or the product behaviour is not settled — goes through the configured spec tool first (Tools, below): specify → clarify → plan → tasks; with no spec tool, a plain `docs/specs/<name>.md` the owner agrees. Each resulting task record carries `design_ref` (link to its spec/plan section). The spec tool's own implement/apply step is not used: implementation always follows the lifecycle below.
 - **Small** work — one seam, behaviour agreed — goes straight into a task record.
+
+Everything about one requirement — its row in `docs/requirements.md`, the spec sections and tasks that name it — in one call: `scripts/tw-req FR-NN` (also `NFR-NN`, `OQ-NN`).
 
 ## Tasks
 

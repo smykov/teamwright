@@ -23,7 +23,7 @@ Process: `AGENTS.md`, `docs/process/roles.md`, `docs/process/lifecycle.md`; a ho
 2. The task file: goal, guarantees / DoD, **the `analysis` block** (root cause, evidence, invariant, seam, approach), `recurrence_of`.
 3. `docs/failures.md` and the relevant `docs/decisions/<area>.md`.
 4. History of the touched area: `git log --oneline -20 -- <files>`, `git log --grep=<keyword> --oneline`, earlier review sections of related tasks.
-5. The diff and the code around it. Find call sites and sibling paths of every changed symbol with the configured context tool (Tools, below); grep as its fallback. Plain text search alone gives false "no callers", and an empty result from any tool is not proof of absence — say where you looked.
+5. The diff and the code around it. Find call sites and sibling paths of every changed symbol with the configured context tool (Tools, below); grep as its fallback. Plain text search alone gives false "no callers", and an empty result from any tool is not proof of absence — say where you looked. The requirement or spec section a task implements: `scripts/tw-req <FR-NN>` instead of reading the documents whole.
 6. Task created from a spec → the spec/plan section behind `design_ref`: the diff must not decide what the spec left to the owner, or contradict what it decided.
 
 ## 1. Recurrence check — first, every time
@@ -50,7 +50,7 @@ On a recurrence the fix is **not** accepted as another patch, however correct it
 Check each item of `PRINCIPLES.md` tiered T1 or higher against the diff. Always check:
 
 - [ ] **Done that doesn't work** — every claim of the task, docstring or contract is backed by a code path that actually runs (wired, registered, called, deployed-config present). A prompt or a comment is not a guarantee.
-- [ ] **Tests that don't bite** — each guarantee has a test that fails without the change (ask: which line would I delete to make it red?). Assertions on state, not on text. Failure branches covered, not only the happy path. **Weakened tests in the diff** (removed asserts, new skip/xfail, loosened conditions) — separate finding.
+- [ ] **Tests that don't bite** — each guarantee has a test that fails without the change (ask: which line would I delete to make it red?). Read the test-writer's bite check in the task's `## Tests`: 2–3 wrong implementations, each caught. Missing, or a guarantee no wrong implementation targeted → `toothless-test`. Assertions on state, not on text. Failure branches covered, not only the happy path. **Weakened tests in the diff** (removed asserts, new skip/xfail, loosened conditions) — separate finding.
 - [ ] **Second path** — the same concern handled elsewhere without the new guard.
 - [ ] **Second source of truth** — a constant, schema or format duplicated instead of referenced.
 - [ ] **Silent degradation** — swallowed errors, failure reported as success, logging below the level that is kept.

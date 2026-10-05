@@ -156,6 +156,10 @@ def load_config(path):
             wd = a.get("workdir")
             if wd is not None and (not isinstance(wd, str) or wd.startswith("/") or ".." in wd.split("/")):
                 errors.append("areas[%s].workdir must be a relative path inside the project" % n)
+            cw = a.get("ci_workflow")
+            if cw is not None and not (isinstance(cw, str) and cw.strip()):
+                errors.append("areas[%s].ci_workflow must name the CI workflow that runs the tests "
+                              "the host cannot (e.g. windows.yml)" % n)
             for k in COMMAND_KEYS:
                 if a.get(k) and str(a[k]).lstrip().startswith(TW_RUN):
                     errors.append("areas[%s].%s: write the bare command; tw-run is applied "
@@ -180,6 +184,7 @@ def load_config(path):
     # rendered into AGENTS.md and the role files ({{REVIEW_BLOCKING}} ...); not written back
     cfg["review_blocking"] = proc["review"]["blocking"]
     cfg["batch_max_tasks"] = str(proc["batch"]["max_tasks"])
+    cfg["batch_parallel"] = str(proc["batch"]["parallel"])
     cfg["batch_by_priority"] = ", ".join("%s %s" % kv for kv in sorted(proc["batch"]["by_priority"].items()))
     cfg["autonomy_start"] = proc["autonomy"]["start"]
     cfg["autonomy_continue"] = "true" if proc["autonomy"]["continue"] else "false"

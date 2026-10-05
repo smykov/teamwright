@@ -79,4 +79,13 @@ expect_rc "resume after removing the pause file" 0 "$(push)"
 git checkout -q -b feature
 code e.py "feat(T-4): on a branch"
 expect_rc "new branch with code of an unapproved task is blocked" 1 "$(push feature)"
+expect_rc "push to wip/* (CI only) is not a delivery: allowed with an unapproved task" 0 \
+  "$(git push -q origin feature:wip/T-4 2>"$TMP/err"; echo $?)"
+expect_rc "commits on a remote wip branch still count as undelivered" 1 "$(push feature)"
+code e.py "feat(T-4): more"
+expect_rc "an existing wip branch can be updated" 0 "$(git push -q origin feature:wip/T-4 2>/dev/null; echo $?)"
+code e.py "feat(T-4): even more"
+touch "$TEAMWRIGHT_PAUSE_FILE"
+expect_rc "pause blocks wip pushes too" 1 "$(git push -q origin feature:wip/T-4 2>/dev/null; echo $?)"
+rm "$TEAMWRIGHT_PAUSE_FILE"
 finish

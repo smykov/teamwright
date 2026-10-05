@@ -15,6 +15,7 @@ scripts/tw-next.py                read-only router for /teamwright:flow (next ac
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, settings history, DRAIN exceptions, record sizes (improve)
+scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, status, journal merge
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -169,6 +170,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `areas[].source_dirs` | list | no | `{{SOURCE_DIRS}}` |
 | `areas[].test_command`, `lint_command`, `api_test_command`, `e2e_ui_command` | string | no | `{{TEST_COMMAND}}` etc., written bare and rendered as `scripts/tw-run <area> -- <cmd>`; `""` renders as `n/a` |
 | `areas[].generate_command` | string | no | codegen run before the checks (by `check-commands`, and by the developer before the gate) |
+| `areas[].ci_workflow` | string | no | the CI workflow that runs tests of this area the host cannot (another platform): the flow confirms red and green with a run on a `wip/<ID>` branch, which pre-push does not treat as a delivery; CI must trigger on `wip/**` |
 | `areas[].runner` | `host` \| `docker` | no (default `host`) | where `scripts/tw-run` runs the area's commands |
 | `areas[].image` | string | yes with `docker` | container image, preferably the one CI uses |
 | `areas[].cache` | list | no | cache directories persisted between docker runs (relative = in `$HOME`) |
@@ -183,6 +185,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.review.blocking` | `low` \| `medium` \| `high` | no (default `low`) | from which severity a review finding returns the task; Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` always block. Set → the review gate checks the verdict against the record's findings table. `{{REVIEW_BLOCKING}}` |
 | `process.batch.max_tasks` | 1–5 | no (default 1) | tasks per `/teamwright:flow` pass, one after another. `{{BATCH_MAX_TASKS}}` |
 | `process.batch.by_priority.P0`…`P3` | 1–5 | no (default P0 1, P1 1, P2 3, P3 3) | cap for a pass holding a task of that priority; the lowest wins; `tw-next.py --pass` applies it. `{{BATCH_BY_PRIORITY}}` |
+| `process.batch.parallel` | 1–4 | no (default 1 = off) | tasks worked at the same time, each in its own worktree on `tw/<ID>` and its own session, when their seams do not overlap (`/teamwright:parallel`, `tw-parallel.py`). `{{BATCH_PARALLEL}}` |
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
 

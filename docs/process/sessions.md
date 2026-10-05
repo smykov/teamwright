@@ -69,7 +69,8 @@ A **pass** is one `/teamwright:flow` run that takes tasks from the ready queue o
 |---|---|
 | **At most `batch.max_tasks` tasks per pass** (default 1, at most 5) | Each task still gets its own diff, review and records; the cap bounds the context a session carries |
 | **Capped per priority: `batch.by_priority`** (default P0 1, P1 1, P2 3, P3 3) | A pass that holds a P0 stays at one task; the lowest cap among the pass's tasks wins |
-| **One active task at a time** | One `.teamwright/current-task` per working tree: the next task starts when the previous one reached a barrier (`NEEDS_REVIEW` or later). True parallel work needs separate worktrees |
+| **One active task at a time per working tree** | One `.teamwright/current-task` per tree: the next task starts when the previous one reached a barrier (`NEEDS_REVIEW` or later) |
+| **Parallel: separate worktrees and sessions** (`batch.parallel`, default 1 = off) | `/teamwright:parallel` analyses ready tasks in the main tree, groups those whose `analysis.seam` paths do not overlap (a seam without a path runs alone), and gives each a worktree on `tw/<ID>` and its own session. Each branch is rebased, gated in its worktree and fast-forwarded into the main branch one at a time; one push afterwards |
 | **A red gate stops the pass** | Nothing new is started on a broken tree |
 | **Checked by the router** | `tw-next.py --pass <ids taken so far>` reports `budget` and answers `stop` instead of `start` when the cap is used; the flow does not count from memory |
 | `--tasks N` lowers the cap for one run | Never raises it above the setting |

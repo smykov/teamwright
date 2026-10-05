@@ -34,7 +34,7 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — the process reference; copied into projects on install (except `plugin.md`) and linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.
-- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), context-tool check (`tw-context.py`), process data (`tw-process.py`), release check.
+- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), context-tool check (`tw-context.py`), process data (`tw-process.py`), parallel worktrees (`tw-parallel.py`), release check.
 - `tests/` — regression tests; `tests/lib.sh` has the helpers (`hook_json`, `expect_deny`, `task_file`, `new_repo`).
 - `examples/` — the offline demo and its recorder.
 - `docs/design-decisions.md` — why the kit is shaped the way it is; `docs/usage.md` — user guide.

@@ -759,6 +759,11 @@ has "code-reviewer renders the threshold" "$PS/.claude/agents/code-reviewer.md" 
 grep -q "{{REVIEW_BLOCKING}}\|{{BATCH_" "$PS/AGENTS.md" "$PS/.claude/agents/code-reviewer.md" \
   && bad "no settings placeholder left unresolved" || ok "no settings placeholder left unresolved"
 grep -q "^process:" "$PS/.teamwright/config.yml" && ok "settings written to config.yml" || bad "settings written to config.yml"
+has "AGENTS.md renders the parallel setting" "$PS/AGENTS.md" "tasks in parallel worktrees: **1**"
+[ -x "$PS/scripts/tw-req" ] && ok "scripts/tw-req installed executable" || bad "scripts/tw-req installed executable"
+awk '{print} /^  - name: backend$/{print "    ci_workflow: \"\""}' "$TMP/ps.yml" > "$TMP/ps-ci.yml"
+tw plan --project "$PS" --config "$TMP/ps-ci.yml" > "$TMP/out" 2>&1
+has "empty ci_workflow is refused" "$TMP/out" "ci_workflow must name the CI workflow"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 finish

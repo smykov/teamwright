@@ -35,10 +35,14 @@ Decision order (first match wins):
                  not), then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits (push is the owner's call), else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
+  Parallel work (tw-parallel.py): a task on a `tw/<ID>` worktree is worked in that
+  worktree's session. The main tree skips it, and offers `merge` once its record on the
+  branch is CODE_COMPLETE or later. A session on `tw/<ID>` sees only its own task and
+  never pushes: delivery happens from the main tree after the merge.
 
 JSON: {"action", "task", "reason", "role", "ask_owner", "alternatives": [...],
        "state": {...}, "tasks": [...], "warnings": [...]}; action is one of resume | continue | review |
-verify | reanalyze | decide | start | stop | idle | paused, task is an id or null;
+verify | reanalyze | decide | start | stop | merge | idle | paused, task is an id or null;
 "settings" carries the effective process settings and "budget" the pass budget.
 """
 import argparse
@@ -69,6 +73,24 @@ def kit_config():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def parallel_state(project, task):
+    """(own task id when this tree is on tw/<ID> else None, {id: status on its branch}
+    for tasks in other tw/<ID> worktrees)."""
+    rc, out = git(project, "worktree", "list", "--porcelain")
+    _, cur = git(project, "rev-parse", "--abbrev-ref", "HEAD")
+    cur = cur.strip()
+    own = cur[3:] if cur.startswith("tw/") else None
+    others = {}
+    for line in out.splitlines() if rc == 0 else []:
+        if line.startswith("branch refs/heads/tw/"):
+            tid = line[len("branch refs/heads/tw/"):].strip()
+            if tid == own:
+                continue
+            rc2, text = git(project, "show", "tw/%s:docs/tasks/%s.md" % (tid, tid))
+            others[tid] = (task.status(task.parse(text)) or "?") if rc2 == 0 else "?"
+    return own, others
 
 
 def budget_of(proc, tasks, taken, candidate=None):
@@ -438,7 +460,24 @@ def decide(project, taken=None):
         res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None)
         return res
     oqs = open_questions(project)
-    cands = candidates(tasks, st, oqs)
+    own, elsewhere = parallel_state(project, task)
+    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs)
+    if own:
+        # a worktree session works its own task only, and never pushes
+        cands = [c for c in cands if c["task"] == own]
+        if own in tasks and tasks[own]["status"] in ("CODE_COMPLETE", "DEPLOYED", "VERIFIED", "DONE"):
+            cands = []  # verification follows the merge and the push from the main tree
+        if not cands and own in tasks:
+            cands = [_d("idle", own, "%s is %s on tw/%s: this worktree's work is done - merge it from the "
+                        "main tree (/teamwright:parallel)" % (own, tasks[own]["status"], own))]
+    else:
+        merges = [_d("merge", tid, "%s is %s on tw/%s: merge it into this branch, run the gate, remove the "
+                     "worktree (/teamwright:parallel)" % (tid, stt, tid), role="orchestrator")
+                  for tid, stt in sorted(elsewhere.items(), key=lambda kv: _num(kv[0]))
+                  if stt in ("CODE_COMPLETE", "DEPLOYED", "VERIFIED", "DONE")]
+        at = next((i for i, c in enumerate(cands) if c["action"] == "start" or
+                   (c["action"] == "decide" and c["task"] is None and "unpushed" in c["reason"])), len(cands))
+        cands = cands[:at] + merges + cands[at:]
     auto = proc["autonomy"]["start"] == "auto"
     budget = None
     if taken is not None:
@@ -497,6 +536,7 @@ def decide(project, taken=None):
                       for t in _sorted(tasks.values())]
     first["warnings"] = warnings_for(tasks, oqs)
     first["settings"] = proc
+    first["parallel"] = {"own": own, "elsewhere": elsewhere}
     first["budget"] = budget
     return first
 

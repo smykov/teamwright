@@ -48,6 +48,11 @@ Why teamwright is shaped the way it is. Each entry: context → decision → why
 **Decision.** A closed list of parameters of fixed steps is set per project in `process:` of `.teamwright/config.yml`: the review blocking threshold, how many tasks a flow pass takes (per priority), and autonomy (start without asking, continue after a barrier). Statuses, roles, gates, records and the escalation rule do not change. Hooks and the router read the settings, so they are checked, not just written down; agents cannot edit the config, so an agent cannot loosen its own threshold. A missing key is the earlier behaviour.
 **Why.** A pilot spent 46 % of its review rounds on send-backs while 127 of 192 findings were Low: one full round each — tests, developer, gate, a fresh reviewer — for style. Rewriting the role files locally does not survive a kit update; a fork of the process per project does not compare. A threshold the owner sets and the gate enforces keeps the pipeline common and its cost tunable, and metrics split at the date of the change show whether it helped (`/teamwright:improve`).
 
+## Parallel work is parallel sessions, not parallel agents in one tree
+
+**Decision.** Tasks run at the same time only in separate git worktrees, each with its own Claude Code session, and only when their analysed seams do not overlap. The main session analyses, groups, merges (rebase, gate in the worktree, fast-forward) and pushes once.
+**Why.** Every gate is per working tree: one active task, one journal, one set of ledgers that say who implemented and who reviewed. Running several tasks in one tree would mean teaching every gate about several active tasks, and a merge conflict or a red gate would hit tasks that never touched each other. A worktree per task keeps each guarantee as it is; the cost moves to the merge, which is done one branch at a time on a tested, rebased branch. Seams come from the analysis, so grouping happens after it — a seam that names no path runs alone.
+
 ## Toolchains can run in containers
 
 **Decision.** Each area's commands run on the host or in Docker (`scripts/tw-run`), set per area in the config. A command that could not exercise the code is reported as `not runnable`, not as a failure.

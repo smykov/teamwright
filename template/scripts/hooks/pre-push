@@ -24,6 +24,12 @@
 #        the first task record the commit changes; ids without a record are ignored;
 #      * a commit with no known task id is not attributed.
 #
+# 3. WIP BRANCHES. A push to a remote branch matching $TEAMWRIGHT_WIP_REFS_RE (default
+#    `^refs/heads/wip/`) is not a delivery: it runs CI for tests that run only there
+#    (a platform the host cannot build), before review. DRAIN does not apply to it and
+#    no status changes. Commits on remote wip branches never count as delivered: the
+#    DRAIN range of a later push ignores them. The pause still applies.
+#
 # Human override, one-off: TEAMWRIGHT_ALLOW_PUSH=1 git push ...
 set -uo pipefail
 
@@ -43,12 +49,20 @@ fi
 command -v python3 >/dev/null 2>&1 || exit 0
 export TEAMWRIGHT_HOOKS_DIR="$HERE"   # task id pattern: $TEAMWRIGHT_TASK_ID_RE (see _task.py)
 export TEAMWRIGHT_PUSH_STATUSES="${TEAMWRIGHT_PUSH_STATUSES:-CODE_COMPLETE DEPLOYED VERIFIED DONE}"
+WIP_RE="${TEAMWRIGHT_WIP_REFS_RE:-^refs/heads/wip/}"
+# delivered = what the remote has outside its wip branches
+delivered=()
+while read -r ref sha; do
+  [[ "refs/heads/${ref#refs/remotes/$REMOTE/}" =~ $WIP_RE ]] && continue
+  delivered+=("$sha")
+done < <(git for-each-ref --format='%(refname) %(objectname)' "refs/remotes/$REMOTE" 2>/dev/null)
 blocked=""
-while read -r _lref lsha _rref rsha; do
+while read -r _lref lsha rref rsha; do
   [ -z "${lsha:-}" ] && continue
   case "$lsha" in *[!0]*) ;; *) continue ;; esac          # branch deletion
+  [[ "${rref:-}" =~ $WIP_RE ]] && continue                 # wip branch: CI only, not a delivery
   if [ -z "${rsha:-}" ] || [ "$rsha" = "$ZERO" ] || ! git cat-file -e "$rsha" 2>/dev/null; then
-    range=("$lsha" --not "--remotes=$REMOTE")
+    range=("$lsha" --not "${delivered[@]}")
   else
     range=("$rsha..$lsha")
   fi

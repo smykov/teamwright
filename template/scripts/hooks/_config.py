@@ -201,19 +201,20 @@ SEVERITIES = ("low", "medium", "high")
 PRIORITIES = ("P0", "P1", "P2", "P3")
 PROCESS_DEFAULTS = {
     "review": {"blocking": "low"},
-    "batch": {"max_tasks": 1, "by_priority": {"P0": 1, "P1": 1, "P2": 3, "P3": 3}},
+    "batch": {"max_tasks": 1, "by_priority": {"P0": 1, "P1": 1, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "ask", "continue": False},
 }
 # Recommended for new projects (offered by adopt, init and /teamwright:settings).
 PROCESS_RECOMMENDED = {
     "review": {"blocking": "medium"},
-    "batch": {"max_tasks": 3, "by_priority": {"P0": 1, "P1": 2, "P2": 3, "P3": 3}},
+    "batch": {"max_tasks": 3, "by_priority": {"P0": 1, "P1": 2, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "auto", "continue": True},
 }
 # Findings that block whatever the threshold: the threshold saves rounds on style and
 # small drift, never on what is dangerous.
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
 MAX_BATCH = 5
+MAX_PARALLEL = 4
 
 
 def _bool(v):
@@ -230,7 +231,7 @@ def process_errors(cfg):
     if not isinstance(p, dict):
         return ["process must be a mapping"]
     errs = []
-    allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority"),
+    allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
                "autonomy": ("start", "continue")}
     for k, v in p.items():
         if k not in allowed:
@@ -248,6 +249,8 @@ def process_errors(cfg):
     b = p.get("batch") if isinstance(p.get("batch"), dict) else {}
     if "max_tasks" in b and not (str(b["max_tasks"]).isdigit() and 1 <= int(b["max_tasks"]) <= MAX_BATCH):
         errs.append("process.batch.max_tasks must be 1..%d" % MAX_BATCH)
+    if "parallel" in b and not (str(b["parallel"]).isdigit() and 1 <= int(b["parallel"]) <= MAX_PARALLEL):
+        errs.append("process.batch.parallel must be 1..%d" % MAX_PARALLEL)
     bp = b.get("by_priority")
     if bp is not None:
         if not isinstance(bp, dict):
@@ -278,6 +281,9 @@ def process_of(cfg):
     if str(b.get("max_tasks", "")).isdigit() and 1 <= int(b["max_tasks"]) <= MAX_BATCH:
         out["batch"]["max_tasks"] = int(b["max_tasks"])
         explicit.append("batch.max_tasks")
+    if str(b.get("parallel", "")).isdigit() and 1 <= int(b["parallel"]) <= MAX_PARALLEL:
+        out["batch"]["parallel"] = int(b["parallel"])
+        explicit.append("batch.parallel")
     if isinstance(b.get("by_priority"), dict):
         for pk, pv in b["by_priority"].items():
             if pk in PRIORITIES and str(pv).isdigit() and 1 <= int(pv) <= MAX_BATCH:

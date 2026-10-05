@@ -2,6 +2,17 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.7.0] - 2026-10-05
+
+The rest of the first pilot's feedback, except a container-side language server wrapper and a size budget for the analysis block.
+
+### Added
+- **Parallel tasks** — `process.batch.parallel` (1–4, default 1 = off) and `/teamwright:parallel`: ready tasks are analysed in the main tree, those whose `analysis.seam` paths do not overlap are grouped (a seam that names no path runs alone), and each gets a worktree on `tw/<ID>` and its own session (`/teamwright:flow <ID>`). Approved branches are rebased, gated in their worktree and fast-forwarded in one at a time; their journals are appended to the main one (`scripts/tw-parallel.py`: `plan`, `start`, `status`, `logs`). Router: the main tree skips tasks running in worktrees and offers `merge` when one is approved on its branch; a worktree session sees only its own task and ends at `CODE_COMPLETE` (no push, no verification there).
+- **Tests that run only in CI** — `areas[].ci_workflow`. pre-push treats a push to `wip/*` (`TEAMWRIGHT_WIP_REFS_RE`) as CI only, not a delivery: DRAIN does not apply, no status changes, the pause still does, and commits on remote wip branches never count as delivered for a later push. The flow confirms red and green with a run on `wip/<ID>` before review; init and adopt add the `wip/**` trigger.
+- **`scripts/tw-req <ID>`**, installed into projects: a requirement's row in `docs/requirements.md`, every spec or doc section that names it, the tasks that cite it, its open-question row. Roles use it instead of reading documents whole; they point at code by symbol, not `file:line`.
+- Serena adapter: index `markdown` too (Marksman), read one section of a document by its heading; `tw-context.py` notes when documents are not indexed.
+- **Bite check by the test-writer** — before the developer starts, 2–3 deliberately wrong implementations in a throwaway worktree, each caught by a test, recorded under `## Tests` in the task (new template section); the reviewer reads it.
+
 ## [0.6.0] - 2026-10-05
 
 The pipeline stays fixed; its steps get parameters the owner sets per project, and the process gets a way to measure and improve itself. From the first long pilot: 46 % of review rounds were send-backs, 127 of 192 findings were Low; the context tool was configured but did not index the main language, and nothing said so.

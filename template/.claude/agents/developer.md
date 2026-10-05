@@ -29,6 +29,7 @@ Run these commands exactly as written: they are rendered as `scripts/tw-run <are
 
 - **Gather context with the configured tools** (the Tools section below; no hook depends on them): the context tool before plain text search, the docs tool — or the pinned version's own docs — before any package API. Never rely on memory for signatures, defaults or deprecations.
 - **An empty result is not proof of absence**, whatever the tool. Say where and how you looked.
+- **Requirements and specs by id, not by reading whole files:** `scripts/tw-req FR-03` (also `NFR-…`, `OQ-…`) prints the requirement's row, every spec or doc section that names it and the tasks that cite it. Read a whole document only when the id is not enough. Point at code by symbol (`Module::function`), not `file:line` — line numbers go stale and become docs drift.
 
 <!-- teamwright:tools:begin -->
 ## Tools

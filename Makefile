@@ -19,7 +19,7 @@ lint:            ## shellcheck + python syntax + Markdown links + JSON validity
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	  shellcheck -S warning $(SH_FILES) && echo "shellcheck: ok"; \
 	else echo "shellcheck: not installed, skipped"; fi
-	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-context.py scripts/tw-process.py scripts/check-links.py examples/make-cast.py && echo "python: ok"
+	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-context.py scripts/tw-process.py scripts/tw-parallel.py template/scripts/tw-req scripts/check-links.py examples/make-cast.py && echo "python: ok"
 	@python3 scripts/check-links.py && echo "markdown links and anchors: ok"
 	@python3 -m json.tool template/.claude/settings.json >/dev/null && echo "settings.json: ok"
 	@python3 -m json.tool template/scripts/metrics/metrics.example.json >/dev/null && echo "metrics.example.json: ok"

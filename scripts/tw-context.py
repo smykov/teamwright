@@ -189,6 +189,10 @@ def check(project, sessions=20):
                     "the host" if (a.get("runner") == "docker") else "")
             res["findings"].append("area %s: %s not indexed by %s (%s)%s" % (
                 a["name"], ", ".join(missing), provider, ", ".join("%s %d files" % (l, langs[l]) for l in missing), hint))
+    if provider == "serena" and indexed is not None and "markdown" not in indexed and any(
+            os.path.isdir(os.path.join(project, d)) for d in ("specs", "openspec", "docs")):
+        res["notes"] = ["documents are not indexed: add `markdown` to languages in .serena/project.yml "
+                        "(Marksman) so roles read spec sections, not whole files"]
     u = usage(project, provider, all_dirs, sessions)
     res["usage"] = u
     n = u["tool"] + u["builtin"]
@@ -217,6 +221,8 @@ def human(r):
             u["tool"], u["builtin"], "n/a" if u["share"] is None else "%d%%" % round(100 * u["share"]), u["sessions"]))
     for f in r["findings"]:
         lines.append("  finding: " + f)
+    for n in r.get("notes") or []:
+        lines.append("  note: " + n)
     return "\n".join(lines)
 
 

@@ -65,6 +65,12 @@ The skill then drives the lifecycle with fresh role agents run in the foreground
 
 The pipeline is the same in every project; a few of its steps take parameters — the review blocking threshold, how many tasks a flow pass takes (capped per priority), and whether the flow starts and continues without asking. adopt and init ask once; `/teamwright:settings` shows and changes them through the installer, and records the decision. Without settings the kit behaves as before them.
 
+`/teamwright:parallel` runs independent tasks at the same time (`batch.parallel` above 1): it analyses ready tasks, groups those whose seams do not overlap, and creates a worktree per task on `tw/<ID>`; you open one session per worktree (`cd <path> && claude "/teamwright:flow <ID>"`). When a task is approved there, the main session rebases its branch, runs the gate in the worktree, fast-forwards it in, and removes the worktree; one push follows.
+
+Tests that only CI can run (another platform): give the area `ci_workflow` and let that workflow run on `wip/**`. The flow pushes the task's commits to `wip/<ID>` to see red and green before review; pre-push does not count it as a delivery.
+
+Requirements by id: `scripts/tw-req FR-03` prints the requirement, the spec sections that cite it and the tasks — what roles use instead of reading whole documents.
+
 `/teamwright:improve` reads what the process costs in this project — review send-backs and findings by severity and category, DRAIN exceptions, bookkeeping commits, record sizes, whether the context tool is used — and proposes changes, each routed: a setting, a project rule (`PRINCIPLES.md`), a task, or feedback to teamwright. It writes `docs/process-reviews/<date>.md`, and the next run compares against it.
 
 `/teamwright:feedback` sends what belongs to the kit back here: an issue through the forms, or a pull request from a fork for a tested change — anonymised, and only after you read it.
