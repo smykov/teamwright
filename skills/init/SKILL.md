@@ -3,7 +3,7 @@ name: init
 description: Start a NEW project on the teamwright process — requirements first (the owner's brief as the base, or an interview, then a roast by a fresh requirements-reviewer until approved), then the stack the requirements call for, a walking skeleton with a green gate and CI from day one, enforce mode, specs and tasks derived from the requirements through the chosen spec tool, sprint 1, and the offer to start /teamwright:flow. Run from the (empty or docs-only) repository root.
 argument-hint: "[path to a brief | short description of the product]"
 disable-model-invocation: true
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(bash scripts/install-hooks.sh *) Bash(git status *) Bash(git log *) Bash(git init *) Bash(git add *) Bash(git commit *) Bash(command -v *) Bash(make *) Bash(ls *) Read Write Edit Agent AskUserQuestion Skill
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" *) Bash(bash scripts/install-hooks.sh *) Bash(git status *) Bash(git log *) Bash(git init *) Bash(git add *) Bash(git commit *) Bash(command -v *) Bash(make *) Bash(ls *) Read Write Edit Agent AskUserQuestion Skill
 ---
 
 # /teamwright:init — a new project on the teamwright process
@@ -86,6 +86,8 @@ Turn the spec tool's tasks into `docs/tasks/T-NNN.md` from the template: `design
 
 `docs/sprints/1.md` from the template: the sprint goal (the release-1 flow, or its first part) and the tasks in the router's order (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json`). **T-001 is the first end-to-end slice of the release-1 flow** on the walking skeleton (`deploys: true`, a real `surface`), not "set up the project". While the UI runner cannot run yet, T-001 takes the part of the slice that can be verified (`surface: api`), and a task that makes the UI runner work comes before the first `surface: ui` task (`depends_on`) — unless UI verification is deferred (`ui_verify_deferred`): then UI tasks carry a reviewed `verify_exception` and depend on nothing that cannot happen. Sprint 1 also covers what steps 4–5 could not finish (deploy target, UI runner, a command not yet runnable). Commit on "yes".
 
+**Progress report.** With more than one area, a release-1 milestone in `docs/plan.md`, or task lists kept outside `docs/tasks/`, adapt `/teamwright:progress` (section 3 of `${CLAUDE_PLUGIN_ROOT}/skills/progress/SKILL.md`) and add its files to the same commit; otherwise the generic report needs nothing.
+
 ## Report
 
 ```
@@ -97,6 +99,7 @@ Runners: <area>=host | <area>=docker <image>
 Gate: <command> — <green|red> · CI: <workflow> · Commands: <n pass, n fail, n not runnable>
 Specs: <paths> · Must requirements covered: <n>/<n>
 Sprint 1: <goal> — T-001 … T-00N
+Progress: /teamwright:progress <adapted: milestone … | generic>
 ```
 
 ### Next steps (mandatory — never end without it)

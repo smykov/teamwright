@@ -3,7 +3,7 @@ name: adopt
 description: Adopt the teamwright process in an EXISTING repository — inventory, product goal, tool choice per capability, areas with a runnable toolchain (host or the CI's container image), merge of existing CLAUDE.md and agents, hooks in gate-first mode, secret scan, every command checked once, a first sprint toward the goal, and next steps. Run from the repository root.
 argument-hint: "[--dry-run]"
 disable-model-invocation: true
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" inventory *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" scan *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" check-commands *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(claude mcp list) Bash(git status *) Bash(git log *) Bash(command -v *)
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" inventory *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" scan *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" check-commands *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" *) Bash(claude mcp list) Bash(git status *) Bash(git log *) Bash(command -v *)
 ---
 
 # /teamwright:adopt — bring an existing project up to the teamwright process
@@ -44,7 +44,8 @@ Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" inventory --json` and
 - **CI that masks failures** (`|| true`, `--passWithNoTests`, lint `--fix` in CI, `continue-on-error`) — read the workflow files for this; and the **container images** CI jobs run in (`container:`, `image:`, a `docker run` step) — step 5 uses them;
 - **unfilled template docs**: `docs/plan.md`, `docs/requirements.md`, `docs/open-questions.md` still identical to the template — list them; they are filled in step 3 or reported in Next steps;
 - secret-looking files (tracked / untracked / ignored) and large binaries in the tree;
-- git state: `core.hooksPath` (another hook manager?), legacy `.git/hooks`.
+- git state: `core.hooksPath` (another hook manager?), legacy `.git/hooks`;
+- **how work is tracked and reported today**: an existing progress / status / dashboard command (skill, command, script, Makefile target), task lists outside `docs/tasks/` (`specs/*/tasks.md`, `TODO.md`, an issue tracker named in the docs) — step 15 adapts the progress report to them.
 
 ## 3. Product goal — before tools and tasks
 
@@ -167,6 +168,10 @@ Commit once, on one "yes" for the whole list (task records, merged files, config
 
 In `gate-first` mode the analysis, review and verify gates **warn** (to the owner and the model) instead of blocking, so the team can work while the gate is red. Git hooks (secret scan, DRAIN on push, patch-guard) are active from now on regardless of mode. When every command in `check-commands` passes and the first-sprint gate tasks are `DONE`, switch on blocking: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" enforce` — ask first; `/teamwright:status` shows when the project is ready.
 
+## 15. Progress report
+
+Adapt `/teamwright:progress` to this repository after sprint 1 exists: follow section 3 of `${CLAUDE_PLUGIN_ROOT}/skills/progress/SKILL.md` — the existing progress command and task sources found in step 2, areas of the sprint-1 tasks, the milestone from step 3. Its files go into the same commit list as step 13 (`.teamwright/progress.json`, `.teamwright/progress.md`, a project script only if work stays outside task records). Nothing to adapt (one area, no other task source, no milestone yet) → write nothing and say so.
+
 ## Report
 
 ```
@@ -178,6 +183,7 @@ Commands: <n pass, n fail, n not runnable> (table above) · gate modifies tracke
 Conflicts: <file — resolved how / accepted | left for owner>
 Secrets: <n secret-like (tracked/untracked) — actions; n placeholders/fixtures/examples ignored>
 Sprint 1: T-001 … T-00N (hygiene: …; goal: …)
+Progress: /teamwright:progress <adapted: milestone …, extra source … | generic>
 ```
 
 ### Next steps (mandatory — never end without it)

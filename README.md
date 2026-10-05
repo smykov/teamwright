@@ -179,6 +179,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | [`/teamwright:requirements`](skills/requirements/SKILL.md) | builds `docs/requirements.md` from your brief or an interview; a fresh reviewer roasts it until it is ready; you approve it |
 | [`/teamwright:flow`](skills/flow/SKILL.md) | asks the router for the next action and drives the task through the lifecycle with fresh role agents |
 | [`/teamwright:status`](skills/status/SKILL.md) | read-only: mode, install drift, hooks, tasks, the next action, whether the project is ready for `enforce` |
+| [`/teamwright:progress`](skills/progress/SKILL.md) | read-only report for you: done by sprint, plan stage, milestone and area in percent, what is next, what waits for you; `--adapt` fits it to how the repository already tracks work |
 | [`/teamwright:reconfigure`](skills/reconfigure/SKILL.md) | swaps a tool provider or changes the config through `.teamwright/config.next.yml` |
 
 ## Glossary

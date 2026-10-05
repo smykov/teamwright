@@ -9,9 +9,10 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
 scripts/tw-next.py                read-only router for /teamwright:flow (next action, JSON or summary)
+scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -108,6 +109,23 @@ and rendered into the roles as `scripts/tw-run <area> -- <cmd>`; a command with 
 make it a chain of `scripts/tw-run <area> -- ...` calls or a Makefile target that uses them.
 `generate_command` (codegen, e.g. localisation or ORM clients) runs separately before the
 checks; a check must not modify tracked files.
+
+## tw-progress.py: the progress report
+
+`python3 scripts/tw-progress.py [--project PATH] [--json]` is read-only. It counts task records
+by status, by `sprint:` (with the goal and pending forks of `docs/sprints/<N>.md`), by plan stage
+(a task belongs to a stage of the `docs/plan.md` Stages table when it names one of the stage's
+FR-NN; FRs no task names are listed) and by area (the configured area whose `source_dirs`,
+`test_dirs` or `workdir` the task's `analysis.seam` names, longest directory first; unmatched
+tasks are listed, not guessed). Done means `DONE`; `DEFERRED` is left out of percentages. The
+next action, the ready queue and the owner decisions are the router's (`tw-next.py`).
+
+The optional, committed `.teamwright/progress.json` adapts it to a project: per-task `areas`,
+`area_rules` (regex over the seam, then the task text), a `milestone` (named list of plan
+stages) and an `extra_command` whose JSON is reported next to the counts — for work kept
+outside task records. `.teamwright/progress.md` holds what the project adds to the report in
+words. Both are written by `/teamwright:progress --adapt` or the progress step of adopt and init,
+from what the repository already has (an earlier progress command, the spec tool's task lists).
 
 ## tw-next.py: the flow router
 

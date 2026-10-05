@@ -2,6 +2,14 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.5.0] - 2026-10-05
+
+A progress report for the owner. Projects already kept their own progress commands, each tied to how that repository stores tasks; the generic report counts teamwright's records, and an adaptation step fits it to the rest.
+
+### Added
+- `/teamwright:progress` and `scripts/tw-progress.py` (read-only): tasks done by status, sprint (goal, pending forks), plan stage (by FR-NN; FRs without tasks listed) and area (by the directory `analysis.seam` names, longest first; unmatched tasks listed, never guessed), in percent; in-flight work, the router's next action and ready queue, owner decisions, open questions, risks (VERIFY_FAIL, open rca, recurrences, two or more review rounds), git state. `--gate` runs every configured command.
+- Per-project adaptation: `.teamwright/progress.json` (per-task `areas`, `area_rules`, a `milestone` of plan stages, an `extra_command` for work kept outside task records) and `.teamwright/progress.md` (what the project adds to the report). `/teamwright:progress --adapt` writes them from what the repository has — an earlier progress command, a spec tool's task lists; adopt (inventory and step 15) and init (sprint 1) run the same step.
+
 ## [0.4.5] - 2026-10-03
 
 From the first live init: the project was cloned on a second machine and `/teamwright:flow` did not exist there — the plugin and `core.hooksPath` live on the machine, not in the repository, and nothing said so.

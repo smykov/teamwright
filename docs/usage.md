@@ -61,6 +61,12 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 
 The skill then drives the lifecycle with fresh role agents run in the foreground, commits each role's result before the next step, and asks only at decision points: escalation, architecture review, push. It stops on a `TEAMWRIGHT_PAUSE` file or its budget, and always ends with a summary whose `Outcome:` line routes the next session. Router rules in full: [plugin.md](process/plugin.md#tw-nextpy-the-flow-router).
 
+## `/teamwright:progress`
+
+A report for you rather than for the agents: tasks done by sprint, plan stage, milestone and area, in percent, what is in flight, what the router picks next and what waits for your decision. The counts come from the task records, `docs/plan.md`, `docs/sprints/` and git (`scripts/tw-progress.py`). `--gate` also runs every configured command.
+
+Repositories differ in how they track work: an earlier progress command, a spec tool's task lists not yet split into records, a release called MVP. `/teamwright:progress --adapt` (also a step of adopt and init) reads what the repository has and proposes `.teamwright/progress.json` and `.teamwright/progress.md` for your approval — areas, the milestone, an extra reader for work kept elsewhere. Rules: [plugin.md](process/plugin.md#tw-progresspy-the-progress-report).
+
 ## Toolchain runners: host or Docker
 
 Every area's commands run through `scripts/tw-run <area> -- <cmd>`. With `runner: host` that is the command itself. With `runner: docker` it runs in `docker run --rm` with your uid, the repository mounted and package caches as volumes, by default in the image your CI already uses, so a local result matches CI. A missing SDK on the machine is not a reason to skip a gate:
