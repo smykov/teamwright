@@ -27,9 +27,10 @@ AI agents write plausible code fast and fail in a few predictable ways. They sto
 - **7 role agents:** requirements-reviewer, problem-investigator, test-writer, developer, technical-writer, code-reviewer, task-validator.
 - **9 hooks:** analysis, review and verify gates with a state guard, a session journal, a `CLAUDE.md` size check, and git hooks — secret scan, commit message, pre-push, patch guard.
 - **15 principles**, each with how it is checked.
-- **6 commands:** `adopt`, `init`, `requirements`, `flow`, `status`, `reconfigure`.
+- **11 commands:** `adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `settings`, `parallel`, `improve`, `feedback`, `reconfigure`.
 - **Tool adapters per capability:** Spec Kit, OpenSpec, Serena, CodeGraphContext, Context7, Playwright, Patrol, Flutter `integration_test`, Maestro, Espresso / XCUITest, your own test runner — or none. Docker runners for toolchains you do not want on the host.
-- **Metrics CLI**, an **offline demo**, **650+ regression checks** of the hooks, installer, router and metrics.
+- **Process settings** per project — review threshold, tasks per pass, parallel worktrees, autonomy — on a pipeline that stays the same.
+- **Metrics CLI**, a **process review** (`/teamwright:improve`) and a way to send what it finds back here (`/teamwright:feedback`), an **offline demo**, **850 regression checks** of the hooks, installer, router, metrics and scripts.
 
 For developers using Claude Code on a real codebase, for teams bringing agents into an existing project (gates warn first and block once the project's checks are green), and for anyone who wants to measure whether agents help — from git and logs rather than impressions.
 
@@ -81,11 +82,15 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - The next task is computed from task files: unfinished work first, then ready tasks by priority; a prerequisite inherits the priority of the tasks waiting on it. [tool: router] — [readiness rule](docs/process/lifecycle.md#4-readiness-rule)
 - Review returns a task only for findings at or above the project's threshold (`process.review.blocking`); Critical and dangerous categories (secret leak, security, weakened test, done-not-working, recurrence) always do; the rest become one follow-up task per sprint. [hook blocks] — [settings](skills/settings/SKILL.md)
 - Tasks per flow pass: one by default; the project sets the cap per priority, one task at a time in the tree, a red gate stops the pass. [router] — [passes](docs/process/sessions.md#3-passes-how-many-tasks-in-a-row)
+- Tasks run in parallel only in separate worktrees and sessions, only when their analysed seams do not overlap; each branch is rebased, gated and fast-forwarded in one at a time. [router and tool] — [/teamwright:parallel](skills/parallel/SKILL.md)
+- A requirement is read by id, not by reading every document: `scripts/tw-req FR-03` gives its row, the spec sections and the tasks that cite it. [tool] — [usage](docs/usage.md#settings-improve-and-feedback)
 
 **Tests**
 - Characterization tests where the seam has none; then a failing test for every guarantee before the implementation, and a reproducing test for every bug. [reviewer checks] — [test-writer](template/.claude/agents/test-writer.md)
+- Before the developer starts, the test-writer runs 2–3 deliberately wrong implementations in a throwaway worktree; each must be caught by a test, and the result is in the task record. [reviewer checks] — [test-writer](template/.claude/agents/test-writer.md)
+- Tests the host cannot run (another platform) run in CI on a `wip/<ID>` branch before review; that push is not a delivery. [hook allows only `wip/*`] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 - The gate is green before review; the reviewer and the validator run it again instead of trusting the author's report. [reviewer checks] — [AGENTS.md](template/AGENTS.md#gate)
-- Tests must bite: the reviewer names the line whose removal turns each test red, the validator applies 3–6 mutations on a throwaway copy of the tree, and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
+- Tests must bite: the reviewer names the line whose removal turns each test red, the validator applies 3–6 mutations in a throwaway worktree that its script removes, and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
 - Every task's acceptance names a failure branch, and an end-to-end test exercises it. [reviewer checks; the verify gate requires a `Failure branch:` line] — [task template](template/docs/tasks/_task-template.md)
 
 **Review**
@@ -112,7 +117,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 
 **Safety**
 - Secret scan on every commit; `.env` and `*.local.json` files are refused. CI repeats it only if your project adds it. [hook blocks] — [secret scan](docs/process/gates.md#secret-scan)
-- No `git stash`, `checkout --`, `restore`, `clean`, `reset --hard`, force-push or `rm -rf`; experiments run on a throwaway copy or worktree. [deny list blocks the usual command forms] — [deny list](docs/process/gates.md#deny-list)
+- No `git stash`, `checkout --`, `restore`, `clean`, `reset --hard`, force-push or `rm -rf`; experiments run in a throwaway worktree removed by the same script. [deny list blocks the usual command forms] — [deny list](docs/process/gates.md#deny-list)
 - Code leaves the machine only for approved tasks, and a `TEAMWRIGHT_PAUSE` file stops every push. [hook blocks] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 
 **Measurement**
@@ -205,6 +210,9 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | seam | the one place in the code where a behaviour is owned, and where a fix belongs |
 | tier | how a rule is enforced: T0 written guidance, T1 reviewer checklist, T2 hook warns, T3 hook or CI blocks |
 | journal | `.teamwright/logs/*.jsonl`: tool calls, agent starts and session outcomes logged by a hook; no file contents or prompts |
+| process settings | `process:` in `.teamwright/config.yml`: review blocking threshold, tasks per pass (per priority), parallel worktrees, autonomy; parameters of fixed steps, set by you through `/teamwright:settings` |
+| pass | one `/teamwright:flow` run that takes tasks one after another, up to the cap in the settings |
+| follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the sprint's `review-follow-up` task |
 
 ## What gets installed
 
@@ -213,10 +221,10 @@ Paths are in your repository after install; each links to its source in [`templa
 | Component | What it does | Tier |
 |---|---|---|
 | [`scripts/hooks/analysis-gate.sh`](template/scripts/hooks/analysis-gate.sh) | no `IN_PROGRESS` and no code edits of the active task without a filled analysis block | T3 |
-| [`scripts/hooks/review-gate.sh`](template/scripts/hooks/review-gate.sh) | review records only from a code-reviewer that did not implement the task; `CODE_COMPLETE` only with an approval and a logged reviewer start; after two send-backs in a row the third record must escalate (or reject a recurrence), never approve; the state guard | T3 |
+| [`scripts/hooks/review-gate.sh`](template/scripts/hooks/review-gate.sh) | review records only from a code-reviewer that did not implement the task; `CODE_COMPLETE` only with an approval and a logged reviewer start; after two send-backs in a row the third record must escalate (or reject a recurrence), never approve; with a review threshold set, the verdict must match the findings table; the state guard | T3 |
 | [`scripts/hooks/verify-gate.sh`](template/scripts/hooks/verify-gate.sh) | `VERIFIED` / `DONE` only with a `PASS` verify record for the current code, of the kind the task's `surface` needs; `DONE` also with the task-validator's acceptance `PASS` for that code | T3 |
 | [`scripts/hooks/journal.sh`](template/scripts/hooks/journal.sh) | logs tool calls, permission events and session outcomes to `.teamwright/logs/` | facts |
-| [`scripts/hooks/pre-push`](template/scripts/hooks/pre-push) | pushes only code of approved tasks; a `TEAMWRIGHT_PAUSE` file stops all pushes | T3 |
+| [`scripts/hooks/pre-push`](template/scripts/hooks/pre-push) | pushes only code of approved tasks (docs-only commits belong to no task; `wip/*` branches are CI-only, not deliveries); a `TEAMWRIGHT_PAUSE` file stops all pushes | T3 |
 | [`scripts/hooks/pre-commit`](template/scripts/hooks/pre-commit) | secret scan (gitleaks or a built-in fallback); refuses `.env`, `*.local.json` | T3 |
 | [`scripts/hooks/commit-msg`](template/scripts/hooks/commit-msg), [`patch-guard.sh`](template/scripts/hooks/patch-guard.sh) | warns on "one more special case" in an area fixed before (blocking is opt-in) | T2 |
 | [`scripts/hooks/claude-md-budget.sh`](template/scripts/hooks/claude-md-budget.sh) | warns when `CLAUDE.md` outgrows its size budget | T2 |
@@ -230,6 +238,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`docs/process/`](docs/process/) | the process reference (all of it except `plugin.md`) | T0 |
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
+| [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |
 
 Every gate has a documented exit for the case where it is wrong (for example `analysis: skipped:trivial` for a typo fix). Gates and exits: [docs/process/gates.md](docs/process/gates.md). Why the kit is shaped this way: [docs/design-decisions.md](docs/design-decisions.md).
 
@@ -278,7 +287,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 
 ## Status
 
-Early: 0.x, built and tried by its author on real projects — so far adoption of one existing project and the task loop on it, and dry runs of `/teamwright:init` on new projects, with and without a brief. Bug reports from other stacks are the most useful contribution.
+Early: 0.x, built and tried by its author on real projects — adoption of one existing project and the task loop on it, dry runs of `/teamwright:init`, and a first multi-day run of the whole loop on a new project, whose feedback shaped 0.5–0.7 (review threshold, passes, parallel worktrees, CI-only tests). Bug reports from other stacks are the most useful contribution.
 
 ## Roadmap
 

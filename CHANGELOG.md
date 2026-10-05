@@ -2,6 +2,16 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.7.1] - 2026-10-05
+
+Documentation caught up with 0.5–0.7.
+
+### Changed
+- `docs/process/gates.md`: the review gate's threshold check (item 6), shell appends allowed by the analysis gate, new files skipped by the patch guard, DRAIN for docs/specs-only commits and `wip/*` branches, `TEAMWRIGHT_DOC_PATHS_RE` and `TEAMWRIGHT_WIP_REFS_RE`, parallel sessions in worktrees.
+- `docs/process/lifecycle.md`: what returns a task from review under a threshold; follow-ups.
+- `docs/process/plugin.md`: router actions `merge` and `stop`, worktree sessions, `settings` and `parallel` in the output.
+- README: 11 commands, process settings, parallel worktrees, `tw-req`, the test-writer's bite check, CI-only tests, the validator's worktree, glossary (process settings, pass, follow-up), `scripts/tw-req` in what gets installed; `docs/README.md` index.
+
 ## [0.7.0] - 2026-10-05
 
 The rest of the first pilot's feedback, except a container-side language server wrapper and a size budget for the analysis block.

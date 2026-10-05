@@ -147,8 +147,12 @@ commits). First match wins:
 | 3 | `NEEDS_REVIEW` | `review` (code-reviewer); latest verdict APPROVE → `continue` (to CODE_COMPLETE), ESCALATE → `decide`, REJECT_RECURRENCE → `continue` (defer) |
 | 4 | `CODE_COMPLETE` / `DEPLOYED` without a PASS verify | `verify` (task-validator); PASS → `continue`; `deploys: false` and surface `none` → `continue` (close); `VERIFY_FAIL` → `reanalyze` |
 | 5 | `BLOCKED` with `blocked_on` naming the owner, a decision or an open question (or empty) | `decide` |
-| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED, and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`) |
+| 5a | (main tree) a task on a `tw/<ID>` worktree whose record on that branch is `CODE_COMPLETE` or later | `merge` (`/teamwright:parallel`); tasks in worktrees are otherwise skipped |
+| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED, and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`; `process.autonomy.start: auto` → `ask_owner: false`) |
+| 6a | with `--pass IDS`: no ready task fits the pass cap (`process.batch.max_tasks`, lowered by the `by_priority` cap of every task in the pass) | `stop` (end the pass); `budget` reports taken / limit / left |
 | 7 | unpushed commits | `decide` (push); otherwise `idle` |
+
+In a worktree on `tw/<ID>` the router answers only for that task and ends `idle` once it is `CODE_COMPLETE`: no push and no verification there. The output also carries `settings` (effective `process:` values, `explicit` keys) and `parallel` (`own`, `elsewhere`).
 
 Within a step, tasks are ordered by priority (P0 first), then id. **Priority inheritance** (step 6): a task inherits the highest priority among the open tasks that depend on it, directly or transitively, and the reason says so (`inherits P1 from T-010, which depends on it`) — otherwise a P1 task waits behind unrelated P2 work while its own P2 prerequisite is never picked. **Warnings** (`warnings` in JSON, `warning:` lines in the summary): a task whose body mentions an unresolved `OQ-NN` while `blocked_on` is empty (set `blocked_on: OQ-NN` if the question must be answered first), and a `blocked_on` that names only questions already answered (clear it). Untracked files alone do not
 trigger `resume`. JSON: `action`, `task` (id or null), `reason`, `role`, `ask_owner`,
