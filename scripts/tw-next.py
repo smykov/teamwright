@@ -6,7 +6,12 @@ the journal (.teamwright/logs/outcomes.jsonl), the gate mode, TEAMWRIGHT_PAUSE a
 state, and prints the next action. The skill talks to the owner; this script only
 decides, so the same project state always gives the same answer.
 
-  python3 tw-next.py [--project PATH] [--json]
+  python3 tw-next.py [--project PATH] [--json] [--pass T-1,T-2]
+
+--pass names the tasks this flow run (a pass) has already taken. The router then applies
+`process.batch` from .teamwright/config.yml: when the pass is at its cap, `start` becomes
+`stop` (end the pass at this barrier). `process.autonomy.start: auto` makes `start`
+need no owner answer.
 
 Decision order (first match wins):
   0. paused      TEAMWRIGHT_PAUSE exists: the team is stopped, report only
@@ -29,10 +34,12 @@ Decision order (first match wins):
                  the highest priority of the open tasks that depend on it, directly or
                  not), then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits (push is the owner's call), else idle
+     stop        (with --pass) the pass took as many tasks as process.batch allows
 
 JSON: {"action", "task", "reason", "role", "ask_owner", "alternatives": [...],
        "state": {...}, "tasks": [...], "warnings": [...]}; action is one of resume | continue | review |
-verify | reanalyze | decide | start | idle | paused, task is an id or null.
+verify | reanalyze | decide | start | stop | idle | paused, task is an id or null;
+"settings" carries the effective process settings and "budget" the pass budget.
 """
 import argparse
 import json
@@ -51,6 +58,28 @@ PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 OQ_RE = re.compile(r"\bOQ-\d+\b")
 OQ_RESOLVED = ("answered", "closed", "resolved", "dropped", "done")
 OWNER_RE = re.compile(r"(?i)\b(owner|decision|decide|approv\w*|question|OQ-\d+|choose|confirm)\b")
+
+
+def kit_config():
+    """The kit's own _config (process settings are read with the newest rules even when
+    the project's installed copy predates them)."""
+    import importlib.util
+    path = os.path.join(KIT, "template", "scripts", "hooks", "_config.py")
+    spec = importlib.util.spec_from_file_location("tw_kit_config", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def budget_of(proc, tasks, taken, candidate=None):
+    """Pass budget: the cap is max_tasks lowered by the by_priority cap of every task
+    in the pass (and of the candidate, when given)."""
+    cap = proc["batch"]["max_tasks"]
+    for tid in list(taken) + ([candidate] if candidate else []):
+        t = tasks.get(tid)
+        if t:
+            cap = min(cap, proc["batch"]["by_priority"].get(t["priority"], cap))
+    return {"taken": len(taken), "limit": cap, "left": max(cap - len(taken), 0)}
 
 
 def _load_helpers(project):
@@ -398,16 +427,42 @@ def _role(t):
     return "problem-investigator" if t["status"] == "ANALYSIS" else "developer"
 
 
-def decide(project):
+def decide(project, taken=None):
     task, config = _load_helpers(project)
     st = state_of(project, config)
+    kc = kit_config()
+    proc = kc.read_process(os.path.join(project, kc.CONFIG))
     tasks = load_tasks(project, task)
     if tasks is None:
         res = _d("idle", None, "no docs/tasks/ - run /teamwright:adopt or /teamwright:init first")
-        res.update(alternatives=[], state=st, tasks=[], warnings=[])
+        res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None)
         return res
     oqs = open_questions(project)
     cands = candidates(tasks, st, oqs)
+    auto = proc["autonomy"]["start"] == "auto"
+    budget = None
+    if taken is not None:
+        budget = budget_of(proc, tasks, taken)
+        kept, dropped_at = [], None
+        for c in cands:
+            if c["action"] == "start" and c["task"] in taken:
+                continue
+            if c["action"] == "start":
+                b = budget_of(proc, tasks, taken, c["task"])
+                if len(taken) >= b["limit"]:
+                    # a higher-priority task does not fit, a lower one may still
+                    dropped_at = len(kept) if dropped_at is None else dropped_at
+                    continue
+            kept.append(c)
+        if dropped_at is not None and not any(c["action"] == "start" for c in kept):
+            kept.insert(dropped_at, _d("stop", None, "pass budget used: %d task(s), cap %d (process.batch; "
+                                       "the lowest priority cap in the pass wins) - end the pass at "
+                                       "this barrier" % (len(taken), budget["limit"])))
+        cands = kept
+    for c in cands:
+        if c["action"] == "start" and auto:
+            c["ask_owner"] = False
+            c["reason"] += " (autonomy.start: auto)"
     if st["pause"]:
         first = _d("paused", None, "TEAMWRIGHT_PAUSE exists: the team is stopped; remove the file "
                    "to resume (next would be: %s)" % (
@@ -441,6 +496,8 @@ def decide(project):
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
                       for t in _sorted(tasks.values())]
     first["warnings"] = warnings_for(tasks, oqs)
+    first["settings"] = proc
+    first["budget"] = budget
     return first
 
 
@@ -475,12 +532,15 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--project", default=os.getcwd(), help="project root (default: cwd)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--pass", dest="taken", default=None,
+                    help="tasks this pass already took, comma-separated (applies process.batch)")
     args = ap.parse_args(argv)
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):
         print("tw-next: no such project: %s" % project, file=sys.stderr)
         return 2
-    res = decide(project)
+    taken = None if args.taken is None else [x.strip() for x in args.taken.split(",") if x.strip()]
+    res = decide(project, taken)
     print(json.dumps(res, indent=2, ensure_ascii=False) if args.json else human(res))
     return 0
 

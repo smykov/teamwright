@@ -173,8 +173,16 @@ def load_config(path):
     no_mcp = cfg.get("no_mcp")
     if no_mcp is not None and not (isinstance(no_mcp, list) and all(x in CAPABILITIES for x in no_mcp)):
         errors.append("no_mcp must be a list of capabilities (%s)" % ", ".join(CAPABILITIES))
+    errors += _config.process_errors(cfg)
     if errors:
         raise SystemExit("tw-install: invalid config %s:\n  %s" % (path, "\n  ".join(errors)))
+    proc = _config.process_of(cfg)
+    # rendered into AGENTS.md and the role files ({{REVIEW_BLOCKING}} ...); not written back
+    cfg["review_blocking"] = proc["review"]["blocking"]
+    cfg["batch_max_tasks"] = str(proc["batch"]["max_tasks"])
+    cfg["batch_by_priority"] = ", ".join("%s %s" % kv for kv in sorted(proc["batch"]["by_priority"].items()))
+    cfg["autonomy_start"] = proc["autonomy"]["start"]
+    cfg["autonomy_continue"] = "true" if proc["autonomy"]["continue"] else "false"
     explicit = cfg.get("mode") in MODES
     cfg["mode"] = _config.mode_of(cfg)          # missing -> enforce, as the gates read it
     if not explicit:

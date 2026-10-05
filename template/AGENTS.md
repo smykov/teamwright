@@ -45,7 +45,7 @@ Why these roles and how they hand over: `docs/process/roles.md`.
 
 Every session ends with an outcome: `barrier | idle | escalate | interrupted`; hooks journal tool calls and outcomes into `.teamwright/logs/`. Details: `docs/process/sessions.md` §2.
 
-Batch size: 1 task by default, at most 3, and only `P2`/`P3` tasks with no blockers; a red gate fails the whole batch.
+Process settings (`process:` in `.teamwright/config.yml`, changed only by the owner through `/teamwright:settings`): review blocks from **{{REVIEW_BLOCKING}}** findings up; a pass takes at most **{{BATCH_MAX_TASKS}}** task(s), capped per priority at {{BATCH_BY_PRIORITY}}; starting a ready task: **{{AUTONOMY_START}}**; continue after a barrier: **{{AUTONOMY_CONTINUE}}**. Tasks of a pass run one after another in this working tree; a red gate stops the pass.
 
 ## Where tasks come from
 

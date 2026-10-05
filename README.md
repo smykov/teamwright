@@ -79,7 +79,8 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Large work (more than one seam, or behaviour not settled) starts in a spec; small work goes straight to a task record. [written rule] — [lifecycle](docs/process/lifecycle.md#0-where-tasks-come-from)
 - A task enters `IN_PROGRESS`, and its code is edited, only after the analysis block names the root cause, the evidence, the invariant, the seam and the approach (an `rca` task: root cause, evidence, decision). [hook blocks] — [analysis gate](docs/process/gates.md#analysis-gate)
 - The next task is computed from task files: unfinished work first, then ready tasks by priority; a prerequisite inherits the priority of the tasks waiting on it. [tool: router] — [readiness rule](docs/process/lifecycle.md#4-readiness-rule)
-- One task per session by default, at most three low-priority ones; a red gate fails the whole batch. [written rule] — [batching](docs/process/sessions.md#3-batching)
+- Review returns a task only for findings at or above the project's threshold (`process.review.blocking`); Critical and dangerous categories (secret leak, security, weakened test, done-not-working, recurrence) always do; the rest become one follow-up task per sprint. [hook blocks] — [settings](skills/settings/SKILL.md)
+- Tasks per flow pass: one by default; the project sets the cap per priority, one task at a time in the tree, a red gate stops the pass. [router] — [passes](docs/process/sessions.md#3-passes-how-many-tasks-in-a-row)
 
 **Tests**
 - Characterization tests where the seam has none; then a failing test for every guarantee before the implementation, and a reproducing test for every bug. [reviewer checks] — [test-writer](template/.claude/agents/test-writer.md)
@@ -178,8 +179,11 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | [`/teamwright:init`](skills/init/SKILL.md) | new project: requirements first, then the stack they call for, a walking skeleton with a green gate and CI, `enforce`, specs and tasks from the requirements, sprint 1 |
 | [`/teamwright:requirements`](skills/requirements/SKILL.md) | builds `docs/requirements.md` from your brief or an interview; a fresh reviewer roasts it until it is ready; you approve it |
 | [`/teamwright:flow`](skills/flow/SKILL.md) | asks the router for the next action and drives the task through the lifecycle with fresh role agents |
-| [`/teamwright:status`](skills/status/SKILL.md) | read-only: mode, install drift, hooks, tasks, the next action, whether the project is ready for `enforce` |
+| [`/teamwright:status`](skills/status/SKILL.md) | read-only: mode, settings, whether the context tool indexes your languages and is used, install drift, hooks, tasks, the next action, whether the project is ready for `enforce` |
 | [`/teamwright:progress`](skills/progress/SKILL.md) | read-only report for you: done by sprint, plan stage, milestone and area in percent, what is next, what waits for you; `--adapt` fits it to how the repository already tracks work |
+| [`/teamwright:settings`](skills/settings/SKILL.md) | process settings: review blocking threshold, tasks per flow pass by priority, autonomy; the pipeline stays the same |
+| [`/teamwright:improve`](skills/improve/SKILL.md) | measures what the process costs here (send-backs, findings by severity, DRAIN exceptions, context-tool use, before/after a settings change) and proposes changes: a setting, a project rule, or feedback |
+| [`/teamwright:feedback`](skills/feedback/SKILL.md) | sends an improvement to this repository — an issue through the forms or a pull request from a fork — anonymised, after you read it |
 | [`/teamwright:reconfigure`](skills/reconfigure/SKILL.md) | swaps a tool provider or changes the config through `.teamwright/config.next.yml` |
 
 ## Glossary

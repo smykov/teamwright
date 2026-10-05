@@ -9,10 +9,12 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress, :settings, :improve, :feedback (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
 scripts/tw-next.py                read-only router for /teamwright:flow (next action, JSON or summary)
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
+scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
+scripts/tw-process.py             read-only: review findings, settings history, DRAIN exceptions, record sizes (improve)
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -129,7 +131,7 @@ from what the repository already has (an earlier progress command, the spec tool
 
 ## tw-next.py: the flow router
 
-`python3 scripts/tw-next.py [--project PATH] [--json]` (also `tw-install.py next`) is read-only
+`python3 scripts/tw-next.py [--project PATH] [--json] [--pass IDS]` (also `tw-install.py next`) is read-only
 and deterministic. It reads `docs/tasks/*.md` (status, priority, `depends_on`, `deploys`,
 `surface`, `blocked_on`), the latest round in `<ID>.reviews/` (verdict) and `<ID>.verify/`
 (result), `.teamwright/current-task`, the last `Stop` in `.teamwright/logs/outcomes.jsonl`
@@ -178,6 +180,13 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `ui_verify_deferred` | string | no | the owner's recorded decision to run without UI verification for now (e.g. `"decisions.md #6"`): `check-commands` notes the missing `e2e_ui_command` instead of reporting it as not runnable |
 | `no_mcp` | list | no | capabilities whose provider's MCP server is not added to `.mcp.json` (the tool is used through its CLI only) |
 | `language` | string | no | language of generated project docs |
+| `process.review.blocking` | `low` \| `medium` \| `high` | no (default `low`) | from which severity a review finding returns the task; Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` always block. Set → the review gate checks the verdict against the record's findings table. `{{REVIEW_BLOCKING}}` |
+| `process.batch.max_tasks` | 1–5 | no (default 1) | tasks per `/teamwright:flow` pass, one after another. `{{BATCH_MAX_TASKS}}` |
+| `process.batch.by_priority.P0`…`P3` | 1–5 | no (default P0 1, P1 1, P2 3, P3 3) | cap for a pass holding a task of that priority; the lowest wins; `tw-next.py --pass` applies it. `{{BATCH_BY_PRIORITY}}` |
+| `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
+| `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
+
+`process:` is a closed list: any other key fails validation. Missing keys are the behaviour before settings existed. Changed through `/teamwright:settings` (config.next.yml + `apply`), like every config change.
 
 Placeholder rule: `{{NAME}}` → key `name` in the area being rendered, then at the top level; lists are joined with `, `. A per-area file (`developer-<area>.md`, `test-writer-<area>.md`) uses only its own area and the top level: when its area lacks the key, the placeholder stays as written and is reported as `unresolved` — it never takes another area's value. An area key used in a shared file (`AGENTS.md`, `CLAUDE.md`, `task-validator.md`, ...) renders as the single area's value, or `area: value; area: value`. An unknown key stays as written and is reported as `unresolved`.
 

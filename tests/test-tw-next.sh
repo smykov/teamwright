@@ -213,4 +213,29 @@ python3 "$NEXT" --project . | grep -q "warning: T-6 mentions" && ok "human summa
 echo "non-blocking: OQ-01 - the default UTC is fine for release 1" >> docs/tasks/T-6.md; sed 's/^Resolve OQ-01 before analysis.$/Timezone hints./' docs/tasks/T-6.md > docs/tasks/T-6.tmp && mv docs/tasks/T-6.tmp docs/tasks/T-6.md; commit_all
 j | grep -q 'T-6 mentions unresolved' && bad "a non-blocking mention is not warned about" || ok "a non-blocking mention is not warned about"
 
+# ---- process settings: autonomy.start and the pass budget ---------------------------
+fresh settings
+mk T-1 TODO "priority: P1"
+mk T-2 TODO "priority: P2"
+mk T-3 TODO "priority: P2"
+commit_all
+jp() { python3 "$NEXT" --project . --json "$@"; }
+expect_rc "no settings: start asks the owner" True "$(field '["ask_owner"]')"
+expect_rc "no --pass: no budget" None "$(field '["budget"]')"
+expect_rc "no --pass: start as before" "start T-1" "$(jp | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"])')"
+expect_rc "defaults: a pass of 1 is used after one task" "stop" \
+  "$(jp --pass T-9 | python3 -c 'import json,sys; print(json.load(sys.stdin)["action"])')"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  batch:\n    max_tasks: 3\n    by_priority:\n      P1: 2\n  autonomy:\n    start: auto\n' > .teamwright/config.yml
+expect_rc "autonomy.start auto: start needs no owner answer" False "$(field '["ask_owner"]')"
+expect_rc "P1 candidate caps the pass at 2: second task allowed" "start T-1" \
+  "$(jp --pass T-2 | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"])')"
+expect_rc "budget reports the P1 cap" "1 2 1" \
+  "$(jp --pass T-1 | python3 -c 'import json,sys; b=json.load(sys.stdin)["budget"]; print(b["taken"], b["limit"], b["left"])')"
+expect_rc "a P1 already in the pass caps it at 2: stop after two" "stop" \
+  "$(jp --pass T-1,T-2 | python3 -c 'import json,sys; print(json.load(sys.stdin)["action"])')"
+expect_rc "P2-only pass goes to max_tasks 3" "start" \
+  "$(jp --pass T-2,T-9 | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"] if d["task"]=="T-3" else "x"+str(d["task"]))')" 
+expect_rc "settings are reported" "medium?low 3" \
+  "$(field '["settings"]' | python3 -c 'import ast,sys; d=ast.literal_eval(sys.stdin.read()); print("medium?"+d["review"]["blocking"], d["batch"]["max_tasks"])')"
+
 finish

@@ -58,6 +58,8 @@ The alternatives per capability are the files in `${CLAUDE_PLUGIN_ROOT}/provider
 
 ## 5. Config, apply, hooks, enforce
 
+**Process settings** — one question block before the config is written (AskUserQuestion, recommended first; table and consequences in `${CLAUDE_PLUGIN_ROOT}/skills/settings/SKILL.md`): review blocking threshold (`medium` recommended — Low findings become follow-ups instead of send-backs; Critical and dangerous categories always block), tasks per flow pass (3, P1 capped at 2, P0 alone), autonomy (`start: auto`, `continue: true` — the flow takes the next ready task after a barrier; push stays the owner's call). Write the answers as `process:` in the config and one row in `docs/decisions.md`. An answer "keep it as it is" leaves the keys out (defaults: every finding blocks, one task per pass, ask before starting). Later changes: `/teamwright:settings`.
+
 Show and write `.teamwright/config.yml` with every placeholder `plan` would report as unresolved (`conventions`, `test_helpers`, ...) already filled from the scaffold. `plan`, then `apply --dry-run`, then `apply`. `bash scripts/install-hooks.sh --check`; `scan`. Commit the skeleton and the install before `check-commands`: on an uncommitted tree its "modifies tracked files" check sees nothing.
 
 Run `check-commands` **in the foreground and change nothing while it runs** (a parallel edit is reported as "the gate modifies tracked files"). Report every command (area · command · runner · pass / fail / not runnable · duration) and whether `git status` stayed unchanged. `check-commands` runs the area commands, not `gate_command`: run the gate once yourself for the report.
@@ -99,6 +101,7 @@ Runners: <area>=host | <area>=docker <image>
 Gate: <command> — <green|red> · CI: <workflow> · Commands: <n pass, n fail, n not runnable>
 Specs: <paths> · Must requirements covered: <n>/<n>
 Sprint 1: <goal> — T-001 … T-00N
+Settings: review.blocking <…> · pass <n> (P1 <n>) · autonomy <start>/<continue> | defaults
 Progress: /teamwright:progress <adapted: milestone … | generic>
 ```
 

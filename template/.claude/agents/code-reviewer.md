@@ -71,14 +71,15 @@ Check each item of `PRINCIPLES.md` tiered T1 or higher against the diff. Always 
 Each finding: severity, category, `file:line`, what is wrong, impact, what to do.
 
 - **Severity:** Critical (violated invariant, security hole, data loss) · High (principle violation, untested failure branch, weakened test, contract mismatch) · Medium (maintainability, missing edge-case test, docs drift) · Low (style).
+- **Blocking threshold: {{REVIEW_BLOCKING}}** (`process.review.blocking`, set by the owner). A finding **blocks** when its severity is at or above the threshold, when it is Critical, or when its category is `secret-leak`, `security`, `weakened-test`, `done-not-working` or `recurrence` — whatever the threshold. A finding below it does **not** return the task: it stays in the table and is a follow-up (the orchestrator collects follow-ups into one task per sprint). Rate severity honestly: the review gate checks that the verdict matches the table, so a downgraded severity is a visible claim, not a shortcut.
 - **Category** (use these names so findings can be counted): `recurrence` · `allowlist-trap` · `second-path` · `ssot-violation` · `contract-overclaim` · `done-not-working` · `toothless-test` · `weakened-test` · `silent-degradation` · `secret-leak` · `docs-drift` · `scope-creep` · `correctness` · `security` · `maintainability`.
 
 ## Verdict
 
 | Verdict | When | Next status |
 |---|---|---|
-| `APPROVE` | no Critical/High; Medium fixed or justified | `CODE_COMPLETE` |
-| `REQUEST_CHANGES` | Critical/High, or unjustified Medium — any finding at all that needs a code change | `IN_PROGRESS` |
+| `APPROVE` | no blocking finding (findings below the threshold may remain — they are follow-ups) | `CODE_COMPLETE` |
+| `REQUEST_CHANGES` | at least one blocking finding | `IN_PROGRESS` |
 | `REJECT_RECURRENCE` | recurrence detected (section 1) | original task `DEFERRED` with `absorbed_by: <rca id>` — never `BLOCKED` |
 | `ESCALATE` | this is the 3rd round after two `REQUEST_CHANGES` in a row, or the fix needs a decision above the task | `BLOCKED` with `blocked_on: owner decision — <question>` |
 

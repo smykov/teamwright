@@ -61,18 +61,20 @@ Every session ends with exactly one outcome, written in its final message. The s
 One blocked task is **not** `escalate`: mark it `BLOCKED` with a reason, report it, keep picking other ready tasks.
 A session that ends without an outcome is a defect in the process — the next session cannot route. The `Outcome:` line is the last line of the final message, in plain text; the Stop hook reads it from the message, or from the transcript when the runtime does not pass the message. A session does no other work while a role agent it spawned is still running: role agents run in the foreground, and each result is committed before the next step. When the runtime runs a role in the background and has no blocking wait, the turn ends with a "waiting for <role>" line and no outcome; the hook journals `waiting`, and the completion notification resumes the session. Only the session's last turn counts as its outcome.
 
-## 3. Batching
+## 3. Passes: how many tasks in a row
+
+A **pass** is one `/teamwright:flow` run that takes tasks from the ready queue one after another, in this working tree. How many is a project setting (`process.batch` in `.teamwright/config.yml`, changed by the owner through `/teamwright:settings`); the pipeline each task goes through is the same.
 
 | Rule | Why |
 |---|---|
-| **Default: 1 task per session** | One task, one diff, one review — the cheapest thing to get right |
-| **Maximum 3 tasks per batch** | Beyond that the diff stops being reviewable and seams start to interact |
-| **Only low-priority tasks (`P2`/`P3`) with no blockers** | Nothing in `depends_on` open, `blocked_on` empty, no other task waiting on it. `P0`/`P1` and tasks others wait on always go alone |
-| **A red gate fails the whole batch** | The batch shares one gate run; no task in it moves to `NEEDS_REVIEW` until all are green |
-| Group by seam and deploy unit | One push ships the batch; mixing units smears it across pipelines |
-| Each task keeps its own acceptance, commit line, status and review record | Batching shares execution, not accountability |
+| **At most `batch.max_tasks` tasks per pass** (default 1, at most 5) | Each task still gets its own diff, review and records; the cap bounds the context a session carries |
+| **Capped per priority: `batch.by_priority`** (default P0 1, P1 1, P2 3, P3 3) | A pass that holds a P0 stays at one task; the lowest cap among the pass's tasks wins |
+| **One active task at a time** | One `.teamwright/current-task` per working tree: the next task starts when the previous one reached a barrier (`NEEDS_REVIEW` or later). True parallel work needs separate worktrees |
+| **A red gate stops the pass** | Nothing new is started on a broken tree |
+| **Checked by the router** | `tw-next.py --pass <ids taken so far>` reports `budget` and answers `stop` instead of `start` when the cap is used; the flow does not count from memory |
+| `--tasks N` lowers the cap for one run | Never raises it above the setting |
 
-These are written rules (T0): neither the router nor `/teamwright:flow` checks a batch's priorities or blockers; `--tasks N` only sets how many tasks the session may take.
+`process.autonomy`: `start: auto` starts the router's ready task without asking which one; `continue: true` keeps the pass going after a barrier instead of ending the session. Push stays a decision point: with `continue: true` it is asked once, at the end of the pass, for every task the pass brought to `CODE_COMPLETE`.
 
 ## 4. Stop and check with the owner
 

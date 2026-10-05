@@ -23,6 +23,7 @@ git fetch -q; python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" --json
 - `total`, `by_status`, `by_sprint` (goal, `active`, `closed`, `pending_forks`), `by_area`, `by_stage` (tasks matched to a `docs/plan.md` stage by the FR-NN they name; `frs_without_tasks`), `current_stage`, `milestone` (from the adaptation);
 - `next`, `ready`, `in_flight` — from the router (`tw-next.py`), the same answer `/teamwright:flow` gives;
 - `owner` — `decisions` (BLOCKED, ESCALATE, NEEDS_OWNER, unpushed commits, a dirty tree), `open_questions`, `pending_forks`;
+- `follow_ups` — open review findings below the blocking threshold (unchecked items in the sprint's `review-follow-up` task);
 - `risks` — `verify_fail`, `open_rca`, `recurrences`, `two_plus_review_rounds`, `warnings`;
 - `unassigned` — tasks no area matched; `analysed: false` means no `analysis.seam` yet, so the area is not known before analysis;
 - `extra` — the project's own reader (`extra_command` in the adaptation), `errors`, `git`.
@@ -41,7 +42,7 @@ With `--gate`: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" check-comm
 4. **Milestone** (if adapted) — the same per area, then the open task count and the stages it still needs, with their "Done when".
 5. **Now and next** — `in_flight`, then `next` and the first `ready` tasks with the router's reason.
 6. **Needs the owner** — `owner.decisions`, `open_questions`, `pending_forks`; when `next` itself waits for the owner, say it plainly: "the next step waits for you — …".
-7. **Risks** — `risks` and `errors`. Nothing → omit the section.
+7. **Risks** — `risks` and `errors`; open follow-ups when they grow sprint over sprint. Nothing → omit the section.
 8. **Extra** — what `.teamwright/progress.md` asks for, from `extra`.
 
 Short: tables with one sentence each, no session history.

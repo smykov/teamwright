@@ -167,4 +167,38 @@ expect_allow "non-task files are ignored" "$out"
 out="$(hook_json Edit "$S" "file_path=$(tf T-1)" @hook_event_name=PostToolUse | bash "$GATE")"
 expect_allow "PostToolUse events are ignored" "$out"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
+# ---- process.review.blocking: the verdict must match the findings table ----------
+rv_tab() {  # rv_tab ID N VERDICT "Sev|Cat" ... -> review text with a findings table
+  local id="$1" n="$2" v="$3"; shift 3
+  printf -- '---\ntask: %s\nround: %s\nreviewer: code-reviewer\nverdict: %s\n---\n\n## Findings\n\n| # | Severity | Category | Where | Finding | Required change |\n|---|---|---|---|---|---|\n' "$id" "$n" "$v"
+  local i=0 r; for r in "$@"; do i=$((i+1)); printf '| %d | %s | %s | a.py:1 | x | y |\n' "$i" "${r%%|*}" "${r##*|}"; done
+  printf '\n## Verdict rationale\n\nok\n'
+}
+wr() { run Write "$S" "file_path=$(rd "$1")/$2.md" "content=$(rv_tab "$@")" "${REV[@]}"; }
+task_file "$(tf T-40)" T-40 NEEDS_REVIEW bug full
+spawn code-reviewer "review T-40"
+out="$(wr T-40 1 REQUEST_CHANGES "Low|maintainability")"
+expect_allow "no process.review.blocking: findings are not checked (old behaviour)" "$out"
+mkdir -p "$P/.teamwright"; printf 'version: 1\nprocess:\n  review:\n    blocking: medium\n' > "$P/.teamwright/config.yml"
+out="$(wr T-40 1 REQUEST_CHANGES "Low|maintainability" "Low|docs-drift")"
+expect_deny "medium: REQUEST_CHANGES with only Low findings is denied" "$out" "follow-ups"
+out="$(wr T-40 1 APPROVE "Low|maintainability" "Low|docs-drift")"
+expect_allow "medium: APPROVE with Low findings (follow-ups) is allowed" "$out"
+out="$(wr T-40 1 APPROVE "Medium|docs-drift")"
+expect_deny "medium: APPROVE with a Medium finding is denied" "$out" "blocking finding"
+out="$(wr T-40 1 REQUEST_CHANGES "Medium|correctness")"
+expect_allow "medium: REQUEST_CHANGES with a Medium finding is allowed" "$out"
+printf 'version: 1\nprocess:\n  review:\n    blocking: high\n' > "$P/.teamwright/config.yml"
+out="$(wr T-40 1 APPROVE "Low|secret-leak")"
+expect_deny "high: an always-blocking category blocks at Low" "$out" "blocking finding"
+out="$(wr T-40 1 APPROVE "Medium|weakened-test")"
+expect_deny "high: weakened-test blocks whatever the severity" "$out" "blocking finding"
+out="$(wr T-40 1 APPROVE "Medium|docs-drift" "Low|maintainability")"
+expect_allow "high: Medium docs-drift is a follow-up" "$out"
+out="$(wr T-40 1 APPROVE "Critical|correctness")"
+expect_deny "Critical always blocks" "$out" "blocking finding"
+out="$(wr T-40 1 APPROVE "Minor|correctness")"
+expect_deny "an unknown severity is refused" "$out" "Severity Critical"
+rm -f "$P/.teamwright/config.yml"
+
 finish

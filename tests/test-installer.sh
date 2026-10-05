@@ -738,4 +738,27 @@ python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.jso
   && ok "no source: the plugin is still enabled" || bad "no source: plugin enabled"
 rm -f "$KM"
 
+# ---- process settings: validated, rendered, absent = defaults -------------------------
+PS="$TMP/procset"; mkdir -p "$PS"; git -C "$PS" init -q -b main
+write_cfg "$TMP/ps.yml" fake-spec one
+cp "$TMP/ps.yml" "$TMP/ps-bad.yml"
+printf 'process:\n  review:\n    blocking: strict\n  speed: 2\n' >> "$TMP/ps-bad.yml"
+tw plan --project "$PS" --config "$TMP/ps-bad.yml" > "$TMP/out" 2>&1
+expect_rc "invalid process settings: plan fails" 1 "$?"
+has "unknown process key named" "$TMP/out" "process.speed: unknown key"
+has "bad threshold named" "$TMP/out" "process.review.blocking must be one of"
+tw apply --project "$PS" --config "$TMP/ps.yml" > "$TMP/out" 2>&1
+has "no settings: AGENTS.md renders the defaults" "$PS/AGENTS.md" "review blocks from **low** findings up"
+cp "$TMP/ps.yml" "$TMP/ps-next.yml"
+printf 'process:\n  review:\n    blocking: medium\n  batch:\n    max_tasks: 3\n    by_priority:\n      P1: 2\n  autonomy:\n    start: auto\n    continue: true\n' >> "$TMP/ps-next.yml"
+tw apply --project "$PS" --config "$TMP/ps-next.yml" > "$TMP/out" 2>&1
+expect_rc "valid process settings apply" 0 "$?"
+has "AGENTS.md renders the threshold" "$PS/AGENTS.md" "review blocks from **medium** findings up"
+has "AGENTS.md renders the per-priority caps" "$PS/AGENTS.md" "P0 1, P1 2, P2 3, P3 3"
+has "code-reviewer renders the threshold" "$PS/.claude/agents/code-reviewer.md" "Blocking threshold: medium"
+grep -q "{{REVIEW_BLOCKING}}\|{{BATCH_" "$PS/AGENTS.md" "$PS/.claude/agents/code-reviewer.md" \
+  && bad "no settings placeholder left unresolved" || ok "no settings placeholder left unresolved"
+grep -q "^process:" "$PS/.teamwright/config.yml" && ok "settings written to config.yml" || bad "settings written to config.yml"
+grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
+
 finish

@@ -61,6 +61,14 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 
 The skill then drives the lifecycle with fresh role agents run in the foreground, commits each role's result before the next step, and asks only at decision points: escalation, architecture review, push. It stops on a `TEAMWRIGHT_PAUSE` file or its budget, and always ends with a summary whose `Outcome:` line routes the next session. Router rules in full: [plugin.md](process/plugin.md#tw-nextpy-the-flow-router).
 
+## Settings, improve and feedback
+
+The pipeline is the same in every project; a few of its steps take parameters — the review blocking threshold, how many tasks a flow pass takes (capped per priority), and whether the flow starts and continues without asking. adopt and init ask once; `/teamwright:settings` shows and changes them through the installer, and records the decision. Without settings the kit behaves as before them.
+
+`/teamwright:improve` reads what the process costs in this project — review send-backs and findings by severity and category, DRAIN exceptions, bookkeeping commits, record sizes, whether the context tool is used — and proposes changes, each routed: a setting, a project rule (`PRINCIPLES.md`), a task, or feedback to teamwright. It writes `docs/process-reviews/<date>.md`, and the next run compares against it.
+
+`/teamwright:feedback` sends what belongs to the kit back here: an issue through the forms, or a pull request from a fork for a tested change — anonymised, and only after you read it.
+
 ## `/teamwright:progress`
 
 A report for you rather than for the agents: tasks done by sprint, plan stage, milestone and area, in percent, what is in flight, what the router picks next and what waits for your decision. The counts come from the task records, `docs/plan.md`, `docs/sprints/` and git (`scripts/tw-progress.py`). `--gate` also runs every configured command.

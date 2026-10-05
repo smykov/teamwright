@@ -90,6 +90,8 @@ Commands are run once, all together, in step 10 — not here.
 
 Show the full config (schema: `docs/process/plugin.md`), then write it with the Write tool. Start from `${CLAUDE_PLUGIN_ROOT}/template/.teamwright/config.example.yml`: `version: 1`, `mode: gate-first`, `process_version` as in the example, the chosen `tools`, the areas from step 5, `language`.
 
+**Process settings** — one question block before the config is written (AskUserQuestion, recommended first; table and consequences in `${CLAUDE_PLUGIN_ROOT}/skills/settings/SKILL.md`): review blocking threshold (`medium` recommended — Low findings become follow-ups instead of send-backs; Critical and dangerous categories always block), tasks per flow pass (3, P1 capped at 2, P0 alone), autonomy (`start: auto`, `continue: true` — the flow takes the next ready task after a barrier; push stays the owner's call). Write the answers as `process:` in the config and one row in `docs/decisions.md`. An answer "keep it as it is" leaves the keys out (defaults: every finding blocks, one task per pass, ask before starting). Later changes: `/teamwright:settings`.
+
 - First adoption (no teamwright gates installed) → `.teamwright/config.yml`.
 - Gates already installed (re-adoption, or any later change) → `.teamwright/config.next.yml`, and pass `--config .teamwright/config.next.yml` to `plan` and `apply`.
 
@@ -183,6 +185,7 @@ Commands: <n pass, n fail, n not runnable> (table above) · gate modifies tracke
 Conflicts: <file — resolved how / accepted | left for owner>
 Secrets: <n secret-like (tracked/untracked) — actions; n placeholders/fixtures/examples ignored>
 Sprint 1: T-001 … T-00N (hygiene: …; goal: …)
+Settings: review.blocking <…> · pass <n> (P1 <n>) · autonomy <start>/<continue> | defaults
 Progress: /teamwright:progress <adapted: milestone …, extra source … | generic>
 ```
 

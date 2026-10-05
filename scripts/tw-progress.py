@@ -111,6 +111,8 @@ def records(project, task):
             "seam": str(analysis.get("seam") or ""),
             "text": "\n".join([s("title"), s("design_ref"), body]),
             "recurrence_of": [x for x in re.split(r"[\s,\[\]'\"]+", s("recurrence_of")) if x],
+            "class": s("class"),
+            "open_items": len(re.findall(r"^\s*- \[ \]", body, re.M)),
         }
     return out
 
@@ -361,6 +363,10 @@ def report(project):
                   "open_questions": open_question_rows(project),
                   "pending_forks": [{"sprint": s["sprint"], "fork": f} for s in by_sprint for f in s["pending_forks"]]},
         "risks": risks,
+        # review findings below the blocking threshold, collected per sprint by the flow
+        "follow_ups": {"open_items": sum((extra.get(t["id"]) or {}).get("open_items", 0) for t in open_
+                                         if (extra.get(t["id"]) or {}).get("class") == "review-follow-up"),
+                       "tasks": [t["id"] for t in open_ if (extra.get(t["id"]) or {}).get("class") == "review-follow-up"]},
         "git": {"branch": st.get("branch"), "head": g("log", "-1", "--format=%h %s (%cr)"),
                 "recent": g("log", "-5", "--format=%h %s").splitlines(),
                 "uncommitted": len(st.get("dirty_files") or []) + (st.get("untracked") or 0),

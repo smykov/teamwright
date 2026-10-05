@@ -2,6 +2,24 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.6.0] - 2026-10-05
+
+The pipeline stays fixed; its steps get parameters the owner sets per project, and the process gets a way to measure and improve itself. From the first long pilot: 46 % of review rounds were send-backs, 127 of 192 findings were Low; the context tool was configured but did not index the main language, and nothing said so.
+
+### Added
+- **Process settings** — `process:` in `.teamwright/config.yml`, a closed list: `review.blocking` (`low` | `medium` | `high`), `batch.max_tasks` and `batch.by_priority` (tasks per flow pass, capped per priority), `autonomy.start` (`ask` | `auto`) and `autonomy.continue`. Missing keys keep the earlier behaviour. The installer validates them and renders them into `AGENTS.md` and `code-reviewer.md` (`{{REVIEW_BLOCKING}}` …).
+- Review gate: with `review.blocking` set, `APPROVE` with a blocking finding and `REQUEST_CHANGES` without one are refused; the record's findings table gains a Category column. Critical and `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` block at any threshold. Findings below it are collected by the flow into one `review-follow-up` task per sprint.
+- Router: `tw-next.py --pass <ids>` applies the pass cap (`budget`, new action `stop`); `autonomy.start: auto` clears `ask_owner` on `start`; output carries `settings`.
+- `/teamwright:flow`: with `autonomy.continue: true` the pass goes on after a barrier and asks push once, at the end of the pass.
+- `/teamwright:settings` — show and change the settings through `config.next.yml` + `apply`, with the data behind each choice; adopt and init ask once.
+- `/teamwright:status` shows the settings and checks the context tool: languages indexed against each area's languages (`.serena/project.yml`), and the share of code reading through the tool per role from the journal (`scripts/tw-context.py`).
+- `/teamwright:improve` — process review from git, records and journals (`scripts/tw-process.py`: findings by severity and category under the threshold in force, verdicts, settings history, `tail_code: ratified`, bookkeeping share, record sizes, open follow-ups; `teamwright-metrics --split-date` at the last settings change); proposals routed to a setting, a project rule, a task, or feedback; report in `docs/process-reviews/<date>.md`.
+- `/teamwright:feedback` — an issue through the repository's forms (`gh`, or a pre-filled link) or a pull request from a fork, anonymised, after the owner reads it; duplicates checked first.
+- `/teamwright:progress` reports open follow-ups.
+
+### Changed
+- `docs/process/sessions.md` §3 "Batching" is now "Passes": the cap comes from the settings and is checked by the router; P1 tasks may share a pass when the owner allows it. Tasks of a pass still run one after another in one working tree.
+
 ## [0.5.1] - 2026-10-05
 
 From the first long pilot (4 days, 585 commits, 70 reviews, 33 tasks closed): fixes for false positives and one disk-filling instruction.

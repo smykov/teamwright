@@ -43,6 +43,11 @@ Why teamwright is shaped the way it is. Each entry: context → decision → why
 **Decision.** At onboarding the owner picks a provider per capability — `spec`, `context`, `docs`, `ui_verify`, `api_verify` — and missing MCP servers are installed with consent. The choice lives in `.teamwright/config.yml`; no hook depends on a tool.
 **Why.** Projects differ in stack and tooling; the value is the process and its gates, which must survive a tool swap.
 
+## Step parameters are settings, the pipeline is not
+
+**Decision.** A closed list of parameters of fixed steps is set per project in `process:` of `.teamwright/config.yml`: the review blocking threshold, how many tasks a flow pass takes (per priority), and autonomy (start without asking, continue after a barrier). Statuses, roles, gates, records and the escalation rule do not change. Hooks and the router read the settings, so they are checked, not just written down; agents cannot edit the config, so an agent cannot loosen its own threshold. A missing key is the earlier behaviour.
+**Why.** A pilot spent 46 % of its review rounds on send-backs while 127 of 192 findings were Low: one full round each — tests, developer, gate, a fresh reviewer — for style. Rewriting the role files locally does not survive a kit update; a fork of the process per project does not compare. A threshold the owner sets and the gate enforces keeps the pipeline common and its cost tunable, and metrics split at the date of the change show whether it helped (`/teamwright:improve`).
+
 ## Toolchains can run in containers
 
 **Decision.** Each area's commands run on the host or in Docker (`scripts/tw-run`), set per area in the config. A command that could not exercise the code is reported as `not runnable`, not as a failure.

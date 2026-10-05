@@ -11,7 +11,7 @@ You are the **orchestrator** (the main session in `AGENTS.md`): you pick the tas
 
 Arguments: `$ARGUMENTS`
 - `T-NNN` — work on this task instead of the router's pick (still subject to readiness and the gates; say so if the router disagrees and why).
-- `--tasks N` — budget: take at most N tasks to a barrier in this session (default 1; at most 3, and only for the batch rule in `docs/process/sessions.md` §3).
+- `--tasks N` — lower the pass cap for this run (never above the project's `process.batch`, see `docs/process/sessions.md` §3).
 - `--status` — show the status screen and the router's decision, then stop.
 
 Project files you follow (read them, do not restate them from memory): `AGENTS.md`, `docs/process/lifecycle.md`, `docs/process/sessions.md`, `PRINCIPLES.md`, `CLAUDE.md`, the task record, `.teamwright/config.yml` (read-only for you).
@@ -28,8 +28,10 @@ Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it nam
 ## 1. Ask the router
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --pass "<ids this run has started, comma-separated; empty at first>"
 ```
+
+`--pass` makes the router apply the project's process settings (`settings` in its output): the pass cap from `process.batch` (`budget`: taken, limit, left — lowered further by `--tasks`), and `autonomy.start` (`ask_owner: false` on `start` when it is `auto`). Count only tasks this run moved `TODO → ANALYSIS`.
 
 It reads `docs/tasks/*.md` (with their `.reviews/` and `.verify/` records), the journals in `.teamwright/logs/`, `.teamwright/current-task`, the gate mode, `TEAMWRIGHT_PAUSE`, and git state (dirty tree, unpushed commits), and prints one decision:
 
@@ -58,6 +60,7 @@ Router order (the helper applies it; you do not re-derive it):
 | 5 | `BLOCKED` with an owner decision pending | `decide` | ask the owner the pending question (decision point) |
 | 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | `TODO → ANALYSIS`, §3 from step 2 |
 | 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3 step 7) |
+| — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3 step 9 |
 | — | Nothing ready | `idle` | report, outcome `idle` |
 | — | `TEAMWRIGHT_PAUSE` exists | `paused` | report, no work that leads to a push; outcome `idle` |
 
@@ -92,13 +95,16 @@ Spawn each role as a **fresh subagent by its role file name** (`problem-investig
 4. **Implement** — `developer` for the task's area, inside the seam, until the tests are green. Tests are never weakened to pass.
 5. **Gate** — run `generate_command` first when the area has one, then the gate (`gate_command` from `AGENTS.md`; per area through `scripts/tw-run`). Compare `git status` before and after: the gate must not change tracked files. Red → back to the developer; a red gate fails the whole batch. Green → `technical-writer` syncs the docs the change touched, local commit (`<type>(<scope>): T-NNN <what>`), `IN_PROGRESS → NEEDS_REVIEW` with `implemented_by:` set in the same edit — the role file that implemented (`developer`, `developer-<area>`), or `human:<name>` when a person wrote the code. **No push.**
 6. **Review** — spawn a **fresh `code-reviewer`** subagent with the task id and the commit range. It writes `docs/tasks/T-NNN.reviews/<n>.md`; you read its verdict and change the status:
-   - `APPROVE` → `NEEDS_REVIEW → CODE_COMPLETE`;
+   - `APPROVE` → `NEEDS_REVIEW → CODE_COMPLETE`. Findings left in the record's table are below the threshold (`process.review.blocking`): append each as an unchecked line to the sprint's follow-up task — `docs/tasks/<ID>.md` with `class: review-follow-up`, `type: chore`, `priority: P3`, `surface: none`, `deploys: false`, `sprint:` the active sprint, title `Review follow-ups — sprint <N>`; create it from the template if the sprint has none. Line format under `## Acceptance`: `- [ ] T-NNN r<round>#<n> <Severity> <category>: <finding> (<where>)`. Commit with the status change (`chore(task): T-NNN NEEDS_REVIEW→CODE_COMPLETE, follow-ups → T-MMM`). One task per sprint, not one per review;
    - `REQUEST_CHANGES` → `IN_PROGRESS`, back to step 4 with the findings (after two send-backs in a row the reviewer's third record is `ESCALATE` or `REJECT_RECURRENCE`; the review gate refuses an `APPROVE` there);
    - `REJECT_RECURRENCE` → task `DEFERRED` with `absorbed_by: <rca id>`; the rca task enters the queue; the investigator's recommended exit (b) or (c) is a decision point;
    - `ESCALATE` → `BLOCKED`, decision point.
 7. **Push (DRAIN)** — every task in the unpushed tail is `CODE_COMPLETE` or later (or `tail_code: ratified`) → decision point "push now?". On "yes": `git push`; the pre-push hook re-checks; tasks that deploy → `DEPLOYED`. `TEAMWRIGHT_PAUSE` present → no push, say so. `deploys: false` → no push needed for verification; go to step 8 against a locally started system (with `surface: none`: step 8 checks acceptance only, no verify record).
 8. **Verify** — spawn a **fresh `task-validator`** with the task id, `surface`, environment and commit. It runs the committed tests against the running system, failure branch included, and writes `docs/tasks/T-NNN.verify/<n>.md`. It also writes the acceptance verdict as `docs/tasks/T-NNN.validation/<n>.md` (verdict + the commit it checked). Verify `PASS` for the current commit and acceptance `PASS` → `VERIFIED → DONE` (the verify gate checks the record). Verify `FAIL` → `VERIFY_FAIL` → next run routes to `reanalyze`. Verify `PASS` but acceptance `FAIL` (a surviving mutation, docs drift, a claim without evidence) → back to `IN_PROGRESS` with the findings, then step 3 or 4 and a new review. `NEEDS_OWNER` (device, real account, paid service) → decision point with the exact action needed. With `deploys: false` + `surface: none` the validator skips verification and gives only the acceptance verdict; `DONE` still needs it (the verify gate checks the latest validation record, which must be for the current code). Never write a verdict yourself: the gate accepts only one written by `task-validator`.
-9. **Next** — budget left (`--tasks`) and no stop condition → back to §1. Otherwise §7.
+9. **Next** — the task reached a barrier (`CODE_COMPLETE`, or `NEEDS_REVIEW` waiting for a reviewer you are about to spawn, or a decision point). Then:
+   - `process.autonomy.continue: true` and no stop condition → back to §1 with the task added to `--pass`. A push question that can wait is **not** asked now: the pass keeps going, and push is asked once when the pass ends, for every task it brought to `CODE_COMPLETE` (DRAIN still checks the whole tail). Verification of those tasks follows the push.
+   - `continue: false` (the default) → §7 after this task, as before.
+   - The router says `stop` (pass cap used) or `idle` → ask the pending push, if any, then §7.
 
 Records are written only by their owners and only with Edit/Write: analysis by the investigator, review records by the reviewer, verify records by the validator. You never edit an earlier round.
 
@@ -115,7 +121,7 @@ Records are written only by their owners and only with Edit/Write: analysis by t
 
 Ask the owner (AskUserQuestion when available, 2–4 options, the recommended one first) only for:
 
-- which task, when the owner asked to choose or the router offers equal alternatives;
+- which task, when the owner asked to choose or the router offers equal alternatives — and only with `process.autonomy.start: ask` (with `auto` the router's `start` has `ask_owner: false`: take it);
 - large work → spec tool first;
 - `ESCALATE`, or a recurrence exit (b) architecture review (`/arch-review`) or (c) process amendment;
 - push (DRAIN);
@@ -131,7 +137,7 @@ Stop at the next safe point (after the current commit, never mid-edit) when any 
 
 - **Escalation** — a decision point the owner has not answered, a `BLOCKED` task with nothing else ready, two `REQUEST_CHANGES` records in a row on the task, an rca task that shows a recurrence itself.
 - **Pause** — `TEAMWRIGHT_PAUSE` appears at the repository root: finish the current local commit, push nothing, stop.
-- **Budget** — the `--tasks` budget is used up, or the session context is getting long (large diffs, many tool outputs): stop at the next barrier rather than continuing on a crowded context; the next `/teamwright:flow` resumes cleanly.
+- **Budget** — the router answers `stop` (the pass used its `process.batch` cap, or `--tasks`), or the session context is getting long (large diffs, many tool outputs): stop at the next barrier rather than continuing on a crowded context; the next `/teamwright:flow` resumes cleanly.
 - **Gate infrastructure broken** — a command that worked before is now `not runnable` (image missing, toolchain gone): report it; fixing the config goes through `config.next.yml` + `apply --config` with the owner.
 - **Idle** — the router returns `idle`.
 - **Interrupted** — a tool or the runtime fails mid-step in a way you cannot recover from in this session (the owner interrupts, a role agent crashes without a result, the context limit is near mid-edit): commit nothing half-done, say exactly where the task stands, and end with `Outcome: interrupted`; the next `/teamwright:flow` resumes from evidence (§4).

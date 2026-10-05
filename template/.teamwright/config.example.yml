@@ -37,3 +37,14 @@ tools:                         # one provider per capability; "none" = no tool
 # ui_verify_deferred: "decisions.md #6"  # owner decided: no UI verification yet (check-commands notes it)
 # no_mcp: [ui_verify]          # capabilities whose tool is used without its MCP server (not added to .mcp.json)
 language: en                   # language of generated project docs
+process:                       # parameters of the fixed pipeline; absent keys = defaults (/teamwright:settings)
+  review:
+    blocking: medium           # low | medium | high: from which severity a finding returns the task
+  batch:
+    max_tasks: 3               # tasks per /teamwright:flow pass, one after another (1..5)
+    by_priority:               # cap for a pass holding a task of this priority; the lowest wins
+      P0: 1
+      P1: 2
+  autonomy:
+    start: auto                # ask | auto: start the router's ready task without asking
+    continue: true             # after a barrier, take the next task; push is still asked

@@ -34,7 +34,7 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — the process reference; copied into projects on install (except `plugin.md`) and linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.
-- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), release check.
+- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), context-tool check (`tw-context.py`), process data (`tw-process.py`), release check.
 - `tests/` — regression tests; `tests/lib.sh` has the helpers (`hook_json`, `expect_deny`, `task_file`, `new_repo`).
 - `examples/` — the offline demo and its recorder.
 - `docs/design-decisions.md` — why the kit is shaped the way it is; `docs/usage.md` — user guide.
@@ -87,6 +87,10 @@ Checked on 2026-09-30 against code.claude.com/docs/en/plugins (create-marketplac
 - A `CLAUDE.md` at the plugin root is not loaded as context (`claude plugin validate` warns).
 - Marketplace names such as `claude-code-plugins`, `anthropic-*` variants, `github`, `npm` are reserved; `teamwright` is not.
 - PreToolUse hook output: `hookSpecificOutput.permissionDecision` is `allow | deny | ask | defer`; JSON **without** `permissionDecision` leaves the call to the normal permission flow, while top-level `systemMessage` (shown to the user) and `hookSpecificOutput.additionalContext` (given to the model) still apply. Gate-first mode uses exactly this: a warning without a decision.
+
+## Feedback from projects
+
+Projects that run teamwright send improvements back with `/teamwright:feedback`: an issue through the forms (label `from-project`) for an observation, a pull request from a fork for a tested change to the kit. Such reports carry numbers from `/teamwright:improve` and no project details. Triage them like any issue; a change they lead to cites the issue in the CHANGELOG.
 
 ## Pull requests
 

@@ -4,11 +4,11 @@ Guidance for agents working on **teamwright itself** — the Claude Code plugin 
 
 ## Layout
 
-- `skills/` — plugin commands (`/teamwright:adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `reconfigure`).
+- `skills/` — plugin commands (`/teamwright:adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `settings`, `improve`, `feedback`, `reconfigure`).
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — process reference; copied into projects on install, linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.
-- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), release check.
+- `scripts/` — installer (`tw-install.py`), router (`tw-next.py`), progress report (`tw-progress.py`), context-tool check (`tw-context.py`), process data (`tw-process.py`), release check.
 - `tests/` — regression tests in throwaway git repos (`tests/run.sh`).
 - `examples/` — the offline demo (`make demo`, run by `tests/test-demo.sh`) and its recorder.
 - `docs/design-decisions.md` — why the kit is shaped the way it is; `docs/usage.md` — user guide; `CONTRIBUTING.md` — the same rules for people.
