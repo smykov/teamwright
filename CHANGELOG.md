@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.1] - 2026-10-09
+
+### Fixed
+- **Findings tables outside `## Findings` were invisible.** The review gate and `tw-process.py` read only the table under a level-2 `## Findings` heading, while reviewers often put it under `#### Findings` or straight under `### Review round N`. Such a record had no findings for the gate: with `process.review.blocking` set, an honest `REQUEST_CHANGES` was refused as "without a blocking finding", and an `APPROVE` with blocking rows passed. `tw-process` counted those rounds as send-backs without a blocking finding and left their findings out of the severity and category counts. The table is now the first one with a Severity column under a heading that starts with "Findings" at any level, or the first such table in the record when no heading says so; a round-2 status table without a Severity column is not taken for it.
+
 ## [0.8.0] - 2026-10-09
 
 The rest of the first project feedback except the Spec Kit adapter (#1, designed separately): measuring a settings change, settings that did not reach a locally edited role, and acceptance rounds that never end.

@@ -200,8 +200,10 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    Deny messages quote the counted rounds.
 5. Shell commands that write review records or the `.teamwright/` ledgers and journal.
 6. With `process.review.blocking` set in `.teamwright/config.yml` (the owner's threshold,
-   `low` | `medium` | `high`): an `APPROVE` whose `## Findings` table holds a blocking
-   row, or a `REQUEST_CHANGES` with none. A row blocks when its Severity is at or above
+   `low` | `medium` | `high`): an `APPROVE` whose findings table holds a blocking
+   row, or a `REQUEST_CHANGES` with none. The findings table is the first table with a
+   Severity column under a heading starting with "Findings" (any level), or the first
+   such table in the record when no heading says so. A row blocks when its Severity is at or above
    the threshold, when it is Critical, or when its Category is `secret-leak`,
    `security`, `weakened-test`, `done-not-working` or `recurrence` — at any threshold.
    Severities other than Critical | High | Medium | Low are refused. Rows below the

@@ -199,6 +199,23 @@ out="$(wr T-40 1 APPROVE "Critical|correctness")"
 expect_deny "Critical always blocks" "$out" "blocking finding"
 out="$(wr T-40 1 APPROVE "Minor|correctness")"
 expect_deny "an unknown severity is refused" "$out" "Severity Critical"
+# the findings table is read wherever the reviewer put it, not only under `## Findings`
+printf 'version: 1\nprocess:\n  review:\n    blocking: medium\n' > "$P/.teamwright/config.yml"
+rv_head() {  # rv_head ID N VERDICT HEADING "Sev|Cat" -> one-row table under HEADING ("" = none)
+  local id="$1" n="$2" v="$3" h="$4" r="$5"
+  printf -- '---\ntask: %s\nround: %s\nreviewer: code-reviewer\nverdict: %s\n---\n\n### Review round %s\n\n' "$id" "$n" "$v" "$n"
+  [ -n "$h" ] && printf '%s\n\n' "$h"
+  printf '| # | Severity | Category | Where | Finding | Required change |\n|---|---|---|---|---|---|\n| 1 | %s | %s | a.py:1 | x | y |\n\n## Verdict rationale\n\nok\n' "${r%%|*}" "${r##*|}"
+}
+wh() { run Write "$S" "file_path=$(rd "$1")/$2.md" "content=$(rv_head "$@")" "${REV[@]}"; }
+out="$(wh T-40 1 APPROVE "#### Findings" "Medium|correctness")"
+expect_deny "a table under #### Findings is read: APPROVE with a Medium is denied" "$out" "blocking finding"
+out="$(wh T-40 1 APPROVE "" "High|correctness")"
+expect_deny "a table with no Findings heading is read: APPROVE with a High is denied" "$out" "blocking finding"
+out="$(wh T-40 1 REQUEST_CHANGES "" "Medium|correctness")"
+expect_allow "a table with no Findings heading is read: REQUEST_CHANGES with a Medium is allowed" "$out"
+out="$(wh T-40 1 REQUEST_CHANGES "#### New in the fix" "Low|docs-drift")"
+expect_deny "no Findings heading, only Low rows: REQUEST_CHANGES is still denied" "$out" "follow-ups"
 rm -f "$P/.teamwright/config.yml"
 
 finish
