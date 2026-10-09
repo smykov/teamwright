@@ -41,7 +41,7 @@ With `--gate`: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" check-comm
 3. **By sprint** — "Sprint | Goal | Done | Closed". **By stage** — "Stage | Done | Target | FR without tasks". An FR with no task means the stage's scope is not planned yet: its percentage overstates progress — say so.
 4. **Milestone** (if adapted) — the same per area, then the open task count and the stages it still needs, with their "Done when".
 5. **Now and next** — `in_flight`, then `next` and the first `ready` tasks with the router's reason.
-6. **Needs the owner** — `owner.decisions`, `open_questions`, `pending_forks`; when `next` itself waits for the owner, say it plainly: "the next step waits for you — …".
+6. **Needs the owner** — `owner.decisions`, `open_questions`, `pending_forks`; when `next` itself waits for the owner, say it plainly: "the next step waits for you — …". To see what each one unblocks and answer them: `/teamwright:blockers`.
 7. **Risks** — `risks` and `errors`; open follow-ups when they grow sprint over sprint. Nothing → omit the section.
 8. **Extra** — what `.teamwright/progress.md` asks for, from `extra`.
 

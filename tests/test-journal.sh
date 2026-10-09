@@ -101,6 +101,12 @@ expect_rc "agent finished, no Outcome line: none" "none none" "$(last_out)"
 j Agent s8 "subagent_type=code-reviewer" "description=T-7" @hook_event_name=PostToolUse
 hook_json "" s8 "@hook_event_name=Stop" "@last_assistant_message=Outcome: barrier" | bash "$J"
 expect_rc "an explicit Outcome line wins over waiting" "barrier message" "$(last_out)"
+# the flow's waiting line, with no journaled spawn (#3): a clean wait, not none
+hook_json "" s10 "@hook_event_name=Stop" "@last_assistant_message=Developer started.
+waiting for developer-app on T-7" | bash "$J"
+expect_rc "the flow's waiting line is journaled as waiting" "waiting waiting-line" "$(last_out)"
+hook_json "" s10 "@hook_event_name=Stop" "@last_assistant_message=we are waiting for the owner" | bash "$J"
+expect_rc "a sentence about waiting is not the waiting line" "none none" "$(last_out)"
 
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"

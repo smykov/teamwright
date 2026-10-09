@@ -21,6 +21,9 @@ mkdir -p specs/001 docs/sprints
 echo "decision" >> docs/decisions.md; echo "spec" > specs/001/spec.md; echo "goal" > docs/sprints/1.md
 git add -A; git commit -qm "docs(T-3): spec, sprint and decision for T-3" 2>/dev/null
 expect_rc "a docs/specs-only commit naming a TODO task does not block (no tail_code needed)" 0 "$(push)"
+echo "- new rule" >> PRINCIPLES.md; echo "process review" > docs/sprints/review.md
+git add -A; git commit -qm "docs(process): review - T-3 raised to P2" 2>/dev/null
+expect_rc "a process-review commit (PRINCIPLES.md + docs) naming a TODO task does not block (#4)" 0 "$(push)"
 
 code a.py "feat(T-3): first cut"
 expect_rc "code of a TODO task blocks the push" 1 "$(push)"

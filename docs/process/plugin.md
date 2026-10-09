@@ -9,10 +9,11 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress, :settings, :improve, :feedback (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress, :blockers, :settings, :improve, :feedback (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
 scripts/tw-next.py                read-only router for /teamwright:flow (next action, JSON or summary)
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
+scripts/tw-blockers.py            read-only: what waits for a person, by class and by what it unblocks (blockers)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, settings history, DRAIN exceptions, record sizes (improve)
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, status, journal merge
@@ -129,6 +130,20 @@ stages) and an `extra_command` whose JSON is reported next to the counts — for
 outside task records. `.teamwright/progress.md` holds what the project adds to the report in
 words. Both are written by `/teamwright:progress --adapt` or the progress step of adopt and init,
 from what the repository already has (an earlier progress command, the spec tool's task lists).
+
+## tw-blockers.py: what waits for a person
+
+`python3 scripts/tw-blockers.py [--project PATH] [--json]` is read-only. It lists every item the
+team cannot move by itself: unresolved rows of `docs/open-questions.md` (and ids named in
+`blocked_on` but missing from the table) with the tasks whose `blocked_on` names them and those
+that only mention them; tasks whose latest review verdict is `ESCALATE`; tasks whose latest
+acceptance verdict is `NEEDS_OWNER`; `BLOCKED` tasks with a reason other than open questions;
+`TODO` tasks with a free-text `blocked_on`; stale `blocked_on` (questions already answered);
+uncommitted changes and unpushed commits. Each item gets a class from its text (credentials,
+infrastructure, external, device, decision, other) and `unblocks`: its open tasks plus every
+open task depending on them, directly or not. Items are ordered by the highest priority they
+unblock, then how many. Task state and question status come from the router's readers
+(`tw-next.py`), so both agree. `/teamwright:blockers` renders it and records the owner's answers.
 
 ## tw-next.py: the flow router
 

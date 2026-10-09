@@ -88,6 +88,13 @@ python3 "$M" --json > "$J"; expect_rc "runs on the synthetic repo (--json)" 0 $?
 # q EXPR -> value of a Python expression over the report `r`
 q() { python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); v=eval(sys.argv[2]); print(json.dumps(v) if isinstance(v,(list,dict,bool)) or v is None else v)' "$J" "$1"; }
 S='r["git"]["summary"]["all"]'
+# from a git worktree (#7): the hooks journal into the main checkout, read it there
+NREC="$(q 'r["journal"]["n_records"]')"
+git worktree add -q "$TMP/mwt" -b mwt 2>/dev/null
+(cd "$TMP/mwt" && python3 "$M" --json > "$TMP/wt.json")
+expect_rc "from a worktree, the main checkout's journal is read" "$NREC" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["journal"]["n_records"])' "$TMP/wt.json")"
+git worktree remove --force "$TMP/mwt"; git branch -qD mwt
 
 # --- git
 expect_rc "commit count" 21 "$(q "${S}['commits']['value']")"
@@ -328,7 +335,8 @@ J="$TMP/waitlogs.json"
 python3 "$M" --json --logs "$A4" > "$J"
 G4='r["journal"]["summary"]["all"]'
 B4='r["journal"]["breakdown"]["all"]'
-expect_rc "sessions without outcome: by the last Stop (w1 barrier, w2 still waiting)" "[1, 2]" "$(q "[${G4}['sessions_without_outcome']['num'], ${G4}['sessions_without_outcome']['n']]")"
+expect_rc "sessions without outcome: by the last Stop (w1 barrier, w2 waiting is not none) (#3)" "[0, 2]" "$(q "[${G4}['sessions_without_outcome']['num'], ${G4}['sessions_without_outcome']['n']]")"
+expect_rc "sessions that ended waiting are counted on their own (#3)" "[1, 2]" "$(q "[${G4}['sessions_ended_waiting']['num'], ${G4}['sessions_ended_waiting']['n']]")"
 expect_rc "runtime helper SubagentStops are left out of subagent outcomes" "[1, 2]" "$(q "[${B4}['n_subagent_stop_records'], ${B4}['n_runtime_subagent_stops']]")"
 expect_rc "gate warnings and denials counted" "[1, 1]" "$(q "[${G4}['gate_warnings']['value'], ${G4}['gate_denials']['value']]")"
 expect_rc "gate denials are not permission denials" '{}' "$(q "${B4}['denials_by_tool']")"

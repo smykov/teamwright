@@ -108,9 +108,27 @@ def serena_languages(project):
     return langs
 
 
+def journal_dir(project):
+    """The journal directory: $TEAMWRIGHT_LOG_DIR, else <project>/.teamwright/logs; from a
+    git worktree without its own journal, the main checkout's (the hooks write to
+    $CLAUDE_PROJECT_DIR, which is the main checkout when the session runs in a worktree)."""
+    if os.environ.get("TEAMWRIGHT_LOG_DIR"):
+        return os.environ["TEAMWRIGHT_LOG_DIR"]
+    own = os.path.join(project, ".teamwright", "logs")
+    if os.path.isdir(own):
+        return own
+    try:
+        out = subprocess.run(["git", "-C", project, "worktree", "list", "--porcelain"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return own
+    first = next((l[len("worktree "):] for l in out.splitlines() if l.startswith("worktree ")), "")
+    main = os.path.join(first, ".teamwright", "logs") if first else ""
+    return main if main and os.path.isdir(main) else own
+
+
 def usage(project, provider, dirs, sessions):
-    path = os.path.join(os.environ.get("TEAMWRIGHT_LOG_DIR") or os.path.join(project, ".teamwright", "logs"),
-                        "tools.jsonl")
+    path = os.path.join(journal_dir(project), "tools.jsonl")
     rows, order = [], []
     for line in _read(path).splitlines():
         try:

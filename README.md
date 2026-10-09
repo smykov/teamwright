@@ -27,7 +27,7 @@ AI agents write plausible code fast and fail in a few predictable ways. They sto
 - **7 role agents:** requirements-reviewer, problem-investigator, test-writer, developer, technical-writer, code-reviewer, task-validator.
 - **9 hooks:** analysis, review and verify gates with a state guard, a session journal, a `CLAUDE.md` size check, and git hooks — secret scan, commit message, pre-push, patch guard.
 - **15 principles**, each with how it is checked.
-- **11 commands:** `adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `settings`, `parallel`, `improve`, `feedback`, `reconfigure`.
+- **12 commands:** `adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `blockers`, `settings`, `parallel`, `improve`, `feedback`, `reconfigure`.
 - **Tool adapters per capability:** Spec Kit, OpenSpec, Serena, CodeGraphContext, Context7, Playwright, Patrol, Flutter `integration_test`, Maestro, Espresso / XCUITest, your own test runner — or none. Docker runners for toolchains you do not want on the host.
 - **Process settings** per project — review threshold, tasks per pass, parallel worktrees, autonomy — on a pipeline that stays the same.
 - **Metrics CLI**, a **process review** (`/teamwright:improve`) and a way to send what it finds back here (`/teamwright:feedback`), an **offline demo**, **850 regression checks** of the hooks, installer, router, metrics and scripts.
@@ -186,6 +186,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | [`/teamwright:flow`](skills/flow/SKILL.md) | asks the router for the next action and drives the task through the lifecycle with fresh role agents |
 | [`/teamwright:status`](skills/status/SKILL.md) | read-only: mode, settings, whether the context tool indexes your languages and is used, install drift, hooks, tasks, the next action, whether the project is ready for `enforce` |
 | [`/teamwright:progress`](skills/progress/SKILL.md) | read-only report for you: done by sprint, plan stage, milestone and area in percent, what is next, what waits for you; `--adapt` fits it to how the repository already tracks work |
+| [`/teamwright:blockers`](skills/blockers/SKILL.md) | what waits for you — open questions, escalations, acceptance that needs you, blocked tasks — by class and by what each unblocks; then walks you through answering and records each answer so the flow picks the tasks up |
 | [`/teamwright:settings`](skills/settings/SKILL.md) | process settings: review blocking threshold, tasks per flow pass by priority, autonomy; the pipeline stays the same |
 | [`/teamwright:parallel`](skills/parallel/SKILL.md) | several tasks at once, each in its own worktree and session, when their seams do not overlap; merges each approved branch back (rebased, gate green) before one push |
 | [`/teamwright:improve`](skills/improve/SKILL.md) | measures what the process costs here (send-backs, findings by severity, DRAIN exceptions, context-tool use, before/after a settings change) and proposes changes: a setting, a project rule, or feedback |
@@ -239,6 +240,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
 | [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |
+| [`scripts/tw-ci-changes`](template/scripts/tw-ci-changes) | tells CI whether a push carried code or only task records since the previous run | tool |
 
 Every gate has a documented exit for the case where it is wrong (for example `analysis: skipped:trivial` for a typo fix). Gates and exits: [docs/process/gates.md](docs/process/gates.md). Why the kit is shaped this way: [docs/design-decisions.md](docs/design-decisions.md).
 

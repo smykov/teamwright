@@ -2,6 +2,20 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.7.2] - 2026-10-09
+
+Fixes from the first feedback sent by projects running the plugin (issues #2, #3, #4, #7, #8), and a command for what waits on the owner.
+
+### Added
+- **`/teamwright:blockers`** (`scripts/tw-blockers.py`, read-only): everything waiting for a person — open questions with the tasks they hold, escalated reviews, `NEEDS_OWNER` acceptance, `BLOCKED` and held tasks, stale `blocked_on`, uncommitted or unpushed work — classed (credentials, infrastructure, external, device, decision) and ordered by the open tasks each unblocks, dependents included. Then, on the owner's request, one question at a time with context and options; each answer is recorded as a decision row, the question's status, cleared `blocked_on` and `BLOCKED → TODO`, in one commit after "yes".
+- **`scripts/tw-ci-changes`**, installed into projects (#8): tells CI whether the push since the previous run of the ref carried code or only task records, so the gate job of a pull request is skipped on bookkeeping pushes. Usage, the job snippet and why not `[skip ci]`: `docs/usage.md` (CI: record-only pushes); init, adopt and improve point to it.
+
+### Fixed
+- Analysis gate (#2): the shell check looked at the whole command string, so `grep`, `cat`, `mkdir`, `git status` or a heredoc that only named a task record next to the word `status` were denied (14 of 37 denials in one project). It now denies only when the write target of `sed -i`, `perl -i`, a `>` redirect or a `tee` without `-a` is a task record — also after `cd docs/tasks`, which the old check missed.
+- pre-push DRAIN (#4): a commit touching only `PRINCIPLES.md`, `AGENTS.md`, `CLAUDE.md` and `docs/**` — the process-review commit `/teamwright:improve` prescribes — is bookkeeping and no longer refused when it names a `TODO` task.
+- Journal from a git worktree (#7): `tw-context.py` and `teamwright-metrics` read the main checkout's `.teamwright/logs` when the worktree has none (the hooks write there); `teamwright-metrics` also honours `TEAMWRIGHT_LOG_DIR`.
+- Session outcome while a role runs in the background (#3): a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line is journaled as `waiting` (`outcome_source: waiting-line`), even when the spawn is not journaled as returned. `teamwright-metrics` counts sessions whose last `Stop` is `waiting` as `sessions_ended_waiting`, no longer as `sessions_without_outcome`.
+
 ## [0.7.1] - 2026-10-05
 
 Documentation caught up with 0.5–0.7.

@@ -45,6 +45,11 @@ expect_rc "usage counts tool calls and code reads only" "2 25" "$(q '"%d %d" % (
 q '"\n".join(d["findings"])' | grep -q "only 7% of code reading went through serena.*developer" \
   && ok "low share is a finding naming the role" || bad "low share is a finding naming the role" "$(q '"|".join(d["findings"])')"
 
+# run from a git worktree (#7): the hooks journal into the main checkout
+git worktree add -q "$TMP/wt" -b wt 2>/dev/null
+expect_rc "from a worktree, the main checkout's journal is read" "2 25" \
+  "$(cd "$TMP/wt" && q '"%d %d" % (d["usage"]["tool"], d["usage"]["builtin"])')"
+
 sedi 's/context: serena/context: builtin/' .teamwright/config.yml
 expect_rc "builtin context: nothing to check" "0" "$(q 'len(d["findings"])')"
 finish

@@ -327,7 +327,7 @@ the agent's report.
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `tools.jsonl` | tool call: `ts`, `event` (`pre`/`post`/`failure`), `session_id`, `agent_id`, `agent_type`, `tool`, `detail`; Agent calls add `subagent_type`, `task_ids` (ids in the spawn description, else the first id in the prompt) |
 | `PermissionRequest`, `PermissionDenied` | `perms.jsonl` | permission decision needed / call denied (`PermissionDenied` fires for auto-mode denials; a deny-rule refusal shows as a `pre` line with no `post`) |
 | `PostToolUse` of Edit/Write on `docs/tasks/<ID>.verify/<n>.md` | `verify.jsonl` | verify record landed: task, round, kind, tool, environment, result, commit (never the command or the body) |
-| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`) — active task and its status, the agent's tool-call count |
+| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count |
 | any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
 
 `detail` classifies a call, it never replays it: program + subcommand of a shell command
@@ -427,8 +427,10 @@ was stopped. Asking a model to stop is racy; a hook is not.
 
 **Attribution** (one owner per commit):
 
-- A commit that touches only `docs/**` or the spec tool's directories (`specs/**`,
-  `openspec/**`) — task and review records, specs, decisions — belongs to no task: it
+- A commit that touches only `docs/**`, the spec tool's directories (`specs/**`,
+  `openspec/**`) or the root process documents (`PRINCIPLES.md`, `AGENTS.md`,
+  `CLAUDE.md`) — task and review records, specs, decisions, a process review from
+  `/teamwright:improve` — belongs to no task: it
   ships no code, so opening a `TODO` task or recording a decision must not dirty the
   tail (`$TEAMWRIGHT_DOC_PATHS_RE`).
 - Otherwise the owner is the first task id in the message that has a
@@ -523,7 +525,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
 | `TEAMWRIGHT_PAUSE_FILE` | `pre-push`, router | pause file (`TEAMWRIGHT_PAUSE` at the repository root) |
 | `TEAMWRIGHT_PUSH_STATUSES` | `pre-push` | statuses whose code may be pushed (`CODE_COMPLETE DEPLOYED VERIFIED DONE`) |
-| `TEAMWRIGHT_DOC_PATHS_RE` | `pre-push` | commits touching only these paths belong to no task (`^(docs\|specs\|openspec)/`) |
+| `TEAMWRIGHT_DOC_PATHS_RE` | `pre-push` | commits touching only these paths belong to no task (`^(docs\|specs\|openspec)/\|^(PRINCIPLES\|AGENTS\|CLAUDE)\.md$`) |
 | `TEAMWRIGHT_WIP_REFS_RE` | `pre-push` | remote refs that are CI-only pushes, not deliveries (`^refs/heads/wip/`) |
 | `TEAMWRIGHT_ALLOW_PUSH=1` | `pre-push` | one-off human override of DRAIN |
 | `PATCH_GUARD=off` | patch guard | one-off human override |

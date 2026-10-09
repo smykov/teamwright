@@ -118,6 +118,28 @@ out="$(run Bash s1 "command=echo 'status: DONE' > docs/tasks/T-1.md")"
 expect_deny "overwriting a task file through > is still denied" "$out" "Edit/Write"
 out="$(run Bash s1 "command=echo 'status: DONE' | tee docs/tasks/T-1.md")"
 expect_deny "tee without -a is still denied" "$out" "Edit/Write"
+# only the write target counts (issue #2): reading a record, writing elsewhere, or
+# writing text that names a record is not a status rewrite
+out="$(run Bash s1 "command=grep -n 'status:' docs/tasks/T-1.md; echo done | tee /tmp/x.log")"
+expect_allow "read a record, tee to another file: allowed" "$out"
+out="$(run Bash s1 "command=git status --short docs/tasks/ && sed -i 's/a/b/' /tmp/notes.txt")"
+expect_allow "git status on docs/tasks, sed -i on another file: allowed" "$out"
+out="$(run Bash s1 "command=cat > /tmp/note.md <<'X'
+the status line of docs/tasks/T-1.md
+X")"
+expect_allow "heredoc to another file that names a record: allowed" "$out"
+out="$(run Bash s1 "command=mkdir -p docs/tasks/T-1.reviews && git status")"
+expect_allow "mkdir under docs/tasks with git status: allowed" "$out"
+out="$(run Bash s1 "command=sed -n '/status/p' docs/tasks/T-1.md > /tmp/s.txt")"
+expect_allow "redirect of a read to another file: allowed" "$out"
+out="$(run Bash s1 "command=cat > docs/tasks/T-1.md <<'X'
+status: DONE
+X")"
+expect_deny "heredoc overwriting a record is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=cd docs/tasks && sed -i 's/status: TODO/status: DONE/' T-1.md")"
+expect_deny "sed -i on a record after cd docs/tasks is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=perl -pi -e 's/status: TODO/status: DONE/' docs/tasks/T-1.md")"
+expect_deny "perl -pi on a record is denied" "$out" "Edit/Write"
 
 # ---- the documented analysis blocks pass the gate, filled exactly as written ----
 # The task template (active block, and the commented rca block) and every analysis

@@ -30,7 +30,7 @@ Look at least at these, and say "fine" when they are:
 | Send-back share, rounds per task | `tw-process` verdicts, rounds | High share with mostly Low findings → the threshold, not the code, is the cost |
 | Findings by severity and category; categories that returned tasks | `tw-process` findings | Many `docs-drift` → docs referenced by line numbers, or no writer step; many `toothless-test` caught by review → tests are checked too late |
 | DRAIN exceptions | `tw-process` ratified | Each is a false positive or a deliberate risk: read the commits |
-| Bookkeeping share | `tw-process` bookkeeping | Most commits are `chore(task)` → CI runs on them? (`paths-ignore`) |
+| Bookkeeping share | `tw-process` bookkeeping | Most commits are `chore(task)` → CI runs on them? (`paths-ignore` on push, `scripts/tw-ci-changes` for pull requests — [usage](../../docs/usage.md#ci-record-only-pushes)) |
 | Record sizes | `tw-process` records | Large `analysis` blocks re-read by every role → move investigation history out |
 | Context tool | `tw-context` | A language not indexed, a role reading around the tool |
 | Lead time, rework, recurrence, escalations, interrupted sessions | `teamwright-metrics` | Where time goes; whether recurrences get their rca task |

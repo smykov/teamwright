@@ -61,6 +61,12 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 
 The skill then drives the lifecycle with fresh role agents run in the foreground, commits each role's result before the next step, and asks only at decision points: escalation, architecture review, push. It stops on a `TEAMWRIGHT_PAUSE` file or its budget, and always ends with a summary whose `Outcome:` line routes the next session. Router rules in full: [plugin.md](process/plugin.md#tw-nextpy-the-flow-router).
 
+## `/teamwright:blockers`
+
+What the team is waiting on you for, in one list: open questions (`docs/open-questions.md`) with the tasks each one holds, reviews escalated to you, acceptance checks that need you (`NEEDS_OWNER`), `BLOCKED` and held tasks, `blocked_on` fields that name questions already answered, and uncommitted or unpushed work. Each item has a class — credentials, infrastructure, external service, device or manual check, decision — and the open tasks it unblocks (with everything that depends on them); the list is ordered by that. Items outside the repository (a key, a DNS record, a check on a phone) are yours to do by hand; the next `/teamwright:flow` continues the task.
+
+Then, if you want, it goes through the questions and decisions one at a time: context from the records, the options with a recommendation, your answer. Each answer becomes a row in `docs/decisions.md`, the question's status in `docs/open-questions.md`, cleared `blocked_on` fields and `BLOCKED → TODO` for the tasks it settles — one commit at the end, after you say yes. `--answer` skips the list. The data comes from `scripts/tw-blockers.py` (read-only).
+
 ## Settings, improve and feedback
 
 The pipeline is the same in every project; a few of its steps take parameters — the review blocking threshold, how many tasks a flow pass takes (capped per priority), and whether the flow starts and continues without asking. adopt and init ask once; `/teamwright:settings` shows and changes them through the installer, and records the decision. Without settings the kit behaves as before them.
@@ -80,6 +86,35 @@ Requirements by id: `scripts/tw-req FR-03` prints the requirement, the spec sect
 A report for you rather than for the agents: tasks done by sprint, plan stage, milestone and area, in percent, what is in flight, what the router picks next and what waits for your decision. The counts come from the task records, `docs/plan.md`, `docs/sprints/` and git (`scripts/tw-progress.py`). `--gate` also runs every configured command.
 
 Repositories differ in how they track work: an earlier progress command, a spec tool's task lists not yet split into records, a release called MVP. `/teamwright:progress --adapt` (also a step of adopt and init) reads what the repository has and proposes `.teamwright/progress.json` and `.teamwright/progress.md` for your approval — areas, the milestone, an extra reader for work kept elsewhere. Rules: [plugin.md](process/plugin.md#tw-progresspy-the-progress-report).
+
+## CI: record-only pushes
+
+Most commits of a teamwright project are task records (`chore(task): T-042 FROM→TO`), and each push re-runs CI on code that did not change. Two parts stop that without ever skipping code:
+
+- `push` trigger: `paths-ignore: ["docs/tasks/**"]` — a push is skipped only when every file it changes matches.
+- Pull requests: the path filter sees the whole PR diff, so it never skips. Put a `changes` job in front of the gate job:
+
+```yaml
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.c.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: c
+        run: python3 scripts/tw-ci-changes --before "${{ github.event.before }}" --after "${{ github.event.pull_request.head.sha || github.sha }}"
+  gate:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    concurrency: { group: "gate-${{ github.ref }}", cancel-in-progress: true }
+    # ... the gate steps
+```
+
+`scripts/tw-ci-changes` answers `code=false` only when every file changed since the previous tip of the ref is a record (task, review and verify records, sprints, decisions, open questions); a new branch, a first PR event or a force-push is always `code=true`. A skipped job counts as passed for required checks. Keep `concurrency` on the gate **job**, not the workflow: a record-only push must not cancel the run that is checking the code under it.
+
+Do not put `[skip ci]` on status commits. DRAIN pushes code together with its `→CODE_COMPLETE` commit on top, so the tip of every delivery is a status commit, and `[skip ci]` there skips CI on the code being delivered.
 
 ## Toolchain runners: host or Docker
 
