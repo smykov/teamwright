@@ -90,7 +90,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Before the developer starts, the test-writer runs 2–3 deliberately wrong implementations in a throwaway worktree; each must be caught by a test, and the result is in the task record. [reviewer checks] — [test-writer](template/.claude/agents/test-writer.md)
 - Tests the host cannot run (another platform) run in CI on a `wip/<ID>` branch before review; that push is not a delivery. [hook allows only `wip/*`] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 - The gate is green before review; the reviewer and the validator run it again instead of trusting the author's report. [reviewer checks] — [AGENTS.md](template/AGENTS.md#gate)
-- Tests must bite: the reviewer names the line whose removal turns each test red, the validator applies 3–6 mutations in a throwaway worktree that its script removes, and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
+- Tests must bite: the reviewer names the line whose removal turns each test red, the validator re-runs the test-writer's wrong implementations and applies 3–6 mutations in a throwaway worktree that its script removes — after two failed rounds in a row, a sweep of every condition and guard instead of another sample — and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
 - Every task's acceptance names a failure branch, and an end-to-end test exercises it. [reviewer checks; the verify gate requires a `Failure branch:` line] — [task template](template/docs/tasks/_task-template.md)
 
 **Review**

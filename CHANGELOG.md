@@ -2,6 +2,18 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.0] - 2026-10-09
+
+The rest of the first project feedback except the Spec Kit adapter (#1, designed separately): measuring a settings change, settings that did not reach a locally edited role, and acceptance rounds that never end.
+
+### Added
+- `tw-process.py --since <date>` and `--split-date <date>` (#9): review facts — verdicts, rounds, findings by severity and category, returned-by-category — keyed by the date each review record was committed; `split` reports them before and after. New `send_backs_without_blocking`: `REQUEST_CHANGES` rounds with no finding at or above the threshold in force, with their ids. `/teamwright:improve` uses both after a settings change.
+- **Render drift** (#6): `tw-process.py` reports `render_drift` — a rendered file (AGENTS.md, a role file) whose settings line still carries another value than `process:` (a locally edited file the installer keeps as `kept-local`); only the settings fragment is compared, so local edits elsewhere do not count. The router lists it under `warnings`, and `/teamwright:settings` checks it after `apply` and offers to fix the line.
+- Validation `method: sample | sweep` (#5). After two `FAIL` rounds in a row the verify gate accepts only `method: sweep` — every condition, guard, return and write of the changed code mutated, each killed, survived or equivalent — or `NEEDS_OWNER`; the router's `verify` reason says so. The validator re-runs the test-writer's wrong implementations and every earlier round's mutations before its own, so the list only grows. Task field `checker: true` (a seam whose guarantee is rejecting bad input): the test-writer's bite check is a sweep before the first review.
+
+### Changed
+- The review gate's verdict-versus-threshold check (#6) already blocks in `enforce`; in `gate-first` it warns, as every gate does — the drift warning is what catches a role working from an old threshold there.
+
 ## [0.7.2] - 2026-10-09
 
 Fixes from the first feedback sent by projects running the plugin (issues #2, #3, #4, #7, #8), and a command for what waits on the owner.

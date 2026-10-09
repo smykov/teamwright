@@ -19,7 +19,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" --json     # tasks, sprin
 python3 scripts/metrics/teamwright-metrics --json [--since …]      # lead time, rework, review rounds, recurrence, journal facts
 ```
 
-The settings changed (`settings_history` has more than one entry) → also `teamwright-metrics --json --split-date <date of the last change>`: every metric before and after. Read the previous report in `docs/process-reviews/` if there is one: what was proposed, what was accepted.
+The settings changed (`settings_history` has more than one entry) → also `tw-process.py --json --split-date <date of the last change>` (verdicts, findings by severity and category, send-backs without a finding at the threshold in force — before and after) and `teamwright-metrics --json --split-date <date>` (lead time, rework, rounds). `--since <date>` narrows both to a period. Read the previous report in `docs/process-reviews/` if there is one: what was proposed, what was accepted.
 
 ## 2. Diagnosis — where the process costs more than it returns
 
@@ -27,7 +27,7 @@ Look at least at these, and say "fine" when they are:
 
 | Signal | From | Typical reading |
 |---|---|---|
-| Send-back share, rounds per task | `tw-process` verdicts, rounds | High share with mostly Low findings → the threshold, not the code, is the cost |
+| Send-back share, rounds per task | `tw-process` verdicts, rounds, `send_backs_without_blocking` | High share with mostly Low findings → the threshold, not the code, is the cost; send-backs with no finding at the threshold in force → the reviewer works from another threshold (a role file that kept an old value: `render_drift` in `tw-process`) |
 | Findings by severity and category; categories that returned tasks | `tw-process` findings | Many `docs-drift` → docs referenced by line numbers, or no writer step; many `toothless-test` caught by review → tests are checked too late |
 | DRAIN exceptions | `tw-process` ratified | Each is a false positive or a deliberate risk: read the commits |
 | Bookkeeping share | `tw-process` bookkeeping | Most commits are `chore(task)` → CI runs on them? (`paths-ignore` on push, `scripts/tw-ci-changes` for pull requests — [usage](../../docs/usage.md#ci-record-only-pushes)) |

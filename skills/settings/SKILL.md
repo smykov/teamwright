@@ -48,7 +48,7 @@ Add what the data says, one line each, from `python3 "${CLAUDE_PLUGIN_ROOT}/scri
        continue: true
    ```
 3. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan --config .teamwright/config.next.yml --json` — validation errors, and the re-rendered lines in `AGENTS.md` and `code-reviewer.md`. Show them.
-4. On "yes": `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" apply --config .teamwright/config.next.yml` (writes `config.yml`, deletes the proposal, re-renders). `kept-local` files (edited by hand) do not get the new values — say which.
+4. On "yes": `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" apply --config .teamwright/config.next.yml` (writes `config.yml`, deletes the proposal, re-renders). `kept-local` files (edited by hand) do not get the new values. Then `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-process.py" --json` and read `render_drift`: every file whose settings line still carries the old value. For each, offer to fix that one line (the owner's other edits stay) — a role that keeps the old threshold sends tasks back under it; the router warns until it is fixed.
 5. Add a row to `docs/decisions.md`: the keys, old → new, why (the owner's words or the data from step 1), proposed-by: agent / decided: owner. Commit on "yes": `chore(process): <keys>`.
 6. Say how to see the effect: `/teamwright:improve` compares before and after this commit.
 

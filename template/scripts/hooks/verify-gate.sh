@@ -45,6 +45,9 @@
 #   5. Acceptance verdicts - validation records docs/tasks/<ID>.validation/<n>.md
 #      (verdict PASS|FAIL|NEEDS_OWNER, commit, validator) - written by anyone but
 #      task-validator, by a shell command, out of round order, or over an existing round.
+#      After two FAIL rounds in a row, the next round must be `method: sweep` (every
+#      condition, guard, return and write of the changed code mutated) or NEEDS_OWNER:
+#      sampled mutations find one survivor per round and the loop does not end.
 #      Entering DONE needs the latest round PASS, written through this gate (ledger),
 #      fresh for the task's code - for every surface, including `deploys: false` +
 #      `surface: none`, where it is the only check.
@@ -300,11 +303,23 @@ if m and rel.startswith("docs/tasks/"):
         p.append("`verdict:` one of %s" % " | ".join(VERDICTS))
     if not SHA.match(w(rec, "commit")):
         p.append("`commit:` the sha of the revision that was checked (7-40 hex)")
+    method = w(rec, "method").lower() or "sample"
+    if method not in ("sample", "sweep"):
+        p.append("`method:` sample | sweep")
     if w(rec, "validator") != VALIDATOR:
         p.append("`validator: %s`" % VALIDATOR)
     if p:
         deny("validation record %s round %d is incomplete: %s. Template: "
              "docs/tasks/_validation-template.md." % (tid, n, "; ".join(p)))
+    prev = [w(r, "verdict") for _, r in task.validation_rounds(root, tid)][-2:]
+    if prev == ["FAIL", "FAIL"] and method != "sweep" and w(rec, "verdict") != "NEEDS_OWNER":
+        # two sampling rounds in a row each found a different survivor: a third sample
+        # would find a third. Like two REQUEST_CHANGES in review: stop sampling.
+        deny("validation of %s failed twice in a row; round %d is not another sample of 3-6 "
+             "mutations: either `method: sweep` - mutate every condition, guard, return and "
+             "write in the task's changed code, re-run the test-writer's wrong implementations "
+             "and every mutation of earlier rounds, record killed / survived / equivalent - or "
+             "`verdict: NEEDS_OWNER` to escalate." % (tid, n))
     if resolve(w(rec, "commit")) == "":
         deny("commit %s does not resolve in this repository; check a committed revision "
              "and record its sha." % w(rec, "commit"))

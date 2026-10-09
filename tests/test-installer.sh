@@ -766,4 +766,19 @@ tw plan --project "$PS" --config "$TMP/ps-ci.yml" > "$TMP/out" 2>&1
 has "empty ci_workflow is refused" "$TMP/out" "ci_workflow must name the CI workflow"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
+# render drift (#6): a settings change does not reach a locally edited role file
+drift() { python3 "$KIT/scripts/tw-process.py" --project "$PS" --json | python3 -c 'import json,sys; print(" ".join("%s:%s:%s->%s" % (d["file"], d["setting"], d["found"], d["expected"]) for d in json.load(sys.stdin)["render_drift"]))'; }
+expect_rc "freshly rendered files: no drift" "" "$(drift)"
+printf '\nLocal note: we also check migrations.\n' >> "$PS/.claude/agents/code-reviewer.md"
+sed 's/blocking: medium/blocking: high/' "$TMP/ps-next.yml" > "$TMP/ps-high.yml"
+tw apply --project "$PS" --config "$TMP/ps-high.yml" > "$TMP/out" 2>&1
+has "AGENTS.md follows the change" "$PS/AGENTS.md" "review blocks from **high** findings up"
+expect_rc "the edited reviewer file keeps the old threshold and is reported" \
+  ".claude/agents/code-reviewer.md:review_blocking:medium->high" "$(drift)"
+mkdir -p "$PS/docs/tasks"; task_file "$PS/docs/tasks/T-1.md" T-1 TODO bug full
+python3 "$KIT/scripts/tw-next.py" --project "$PS" --json | grep -q "render drift: .claude/agents/code-reviewer.md carries review_blocking medium, config says high" \
+  && ok "the router warns about the drift" || bad "the router warns about the drift"
+sed -i.bak 's/Blocking threshold: medium/Blocking threshold: high/' "$PS/.claude/agents/code-reviewer.md"
+expect_rc "fixed by hand: no drift, the local note stays" "" "$(drift)"
+
 finish

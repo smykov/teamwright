@@ -15,7 +15,7 @@ scripts/tw-next.py                read-only router for /teamwright:flow (next ac
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
 scripts/tw-blockers.py            read-only: what waits for a person, by class and by what it unblocks (blockers)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
-scripts/tw-process.py             read-only: review findings, settings history, DRAIN exceptions, record sizes (improve)
+scripts/tw-process.py             read-only: review findings, send-backs, settings history and render drift, DRAIN exceptions, record sizes; --since / --split-date (improve)
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, status, journal merge
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
@@ -169,7 +169,7 @@ commits). First match wins:
 
 In a worktree on `tw/<ID>` the router answers only for that task and ends `idle` once it is `CODE_COMPLETE`: no push and no verification there. The output also carries `settings` (effective `process:` values, `explicit` keys) and `parallel` (`own`, `elsewhere`).
 
-Within a step, tasks are ordered by priority (P0 first), then id. **Priority inheritance** (step 6): a task inherits the highest priority among the open tasks that depend on it, directly or transitively, and the reason says so (`inherits P1 from T-010, which depends on it`) — otherwise a P1 task waits behind unrelated P2 work while its own P2 prerequisite is never picked. **Warnings** (`warnings` in JSON, `warning:` lines in the summary): a task whose body mentions an unresolved `OQ-NN` while `blocked_on` is empty (set `blocked_on: OQ-NN` if the question must be answered first), and a `blocked_on` that names only questions already answered (clear it). Untracked files alone do not
+Within a step, tasks are ordered by priority (P0 first), then id. **Priority inheritance** (step 6): a task inherits the highest priority among the open tasks that depend on it, directly or transitively, and the reason says so (`inherits P1 from T-010, which depends on it`) — otherwise a P1 task waits behind unrelated P2 work while its own P2 prerequisite is never picked. **Warnings** (`warnings` in JSON, `warning:` lines in the summary): a task whose body mentions an unresolved `OQ-NN` while `blocked_on` is empty (set `blocked_on: OQ-NN` if the question must be answered first), a `blocked_on` that names only questions already answered (clear it), and **render drift** — a rendered file (AGENTS.md, a role file) edited locally whose settings line still carries a value other than `process:` in the config (`tw-process.py`, `render_drift`). After two acceptance `FAIL` rounds in a row the `verify` reason says the next round is `method: sweep` or `NEEDS_OWNER`. Untracked files alone do not
 trigger `resume`. JSON: `action`, `task` (id or null), `reason`, `role`, `ask_owner`,
 `alternatives` (up to 5 other applicable decisions in the same order), `state` (mode, pause,
 branch, dirty files, current task, unpushed count), `tasks` (with `ready`, `blockers`,

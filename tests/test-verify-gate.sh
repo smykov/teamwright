@@ -49,8 +49,8 @@ xd() { echo "$P/docs/tasks/$1.validation"; }
 validate() {
   local id="$1" v="$2" out content n; shift 2
   n=$(( $(ls "$(xd "$id")" 2>/dev/null | grep -c '^[0-9]*\.md$') + 1 ))
-  content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n---\n## Acceptance checked\n- every item against evidence\n' \
-    "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}")"
+  content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n%b---\n## Acceptance checked\n- every item against evidence\n' \
+    "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}" "${VMETHOD:+method: $VMETHOD\n}")"
   out="$(run Write "$S" "file_path=$(xd "$id")/$n.md" "content=$content" "$@")"
   if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; fi
   printf '%s' "$out"
@@ -207,6 +207,19 @@ out="$(run Write "$S" "file_path=$(xd T-12)/1.md" "content=x" "${VAL[@]}")"; exp
 out="$(run Bash "$S" "command=sed -i s/FAIL/PASS/ docs/tasks/T-12.validation/1.md")"; expect_deny "shell writes to validation records are denied" "$out" "never by shell commands"
 validate T-12 PASS "${VAL[@]}" >/dev/null
 out="$(to T-12 CODE_COMPLETE DONE)"; expect_allow "none + deploys false: DONE with acceptance PASS, no verify record" "$out"
+# two FAILs in a row: the third round is a sweep or NEEDS_OWNER (#5)
+vtask T-31 CODE_COMPLETE none false
+validate T-31 FAIL "${VAL[@]}" >/dev/null; validate T-31 FAIL "${VAL[@]}" >/dev/null
+out="$(validate T-31 PASS "${VAL[@]}")"; expect_deny "after two FAILs a third sample is refused" "$out" "method: sweep"
+out="$(VMETHOD=sample validate T-31 FAIL "${VAL[@]}")"; expect_deny "an explicit sample is refused too" "$out" "method: sweep"
+out="$(VMETHOD=bogus validate T-31 PASS "${VAL[@]}")"; expect_deny "an unknown method is refused" "$out" "sample | sweep"
+out="$(validate T-31 NEEDS_OWNER "${VAL[@]}")"; expect_allow "escalation to the owner is allowed" "$out"
+vtask T-32 CODE_COMPLETE none false
+validate T-32 FAIL "${VAL[@]}" >/dev/null; validate T-32 FAIL "${VAL[@]}" >/dev/null
+out="$(VMETHOD=sweep validate T-32 PASS "${VAL[@]}")"; expect_allow "a sweep after two FAILs is accepted" "$out"
+vtask T-33 CODE_COMPLETE none false
+validate T-33 FAIL "${VAL[@]}" >/dev/null; validate T-33 PASS "${VAL[@]}" >/dev/null; validate T-33 FAIL "${VAL[@]}" >/dev/null
+out="$(validate T-33 PASS "${VAL[@]}")"; expect_allow "FAIL, PASS, FAIL is not two in a row: a sample is fine" "$out"
 vtask T-17 CODE_COMPLETE none false
 mkdir -p "$(xd T-17)"; printf -- '---\ntask: T-17\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\n' "$(git -C "$P" rev-parse HEAD)" > "$(xd T-17)/1.md"
 out="$(to T-17 CODE_COMPLETE DONE)"; expect_deny "a PASS verdict not written through the gate does not count" "$out" "validation.jsonl"

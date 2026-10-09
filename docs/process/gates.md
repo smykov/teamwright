@@ -297,7 +297,12 @@ may be empty).
    `PASS`, matching its ledger entry, for the task's current code (same freshness rule as
    verify records) — for every `surface`, including `deploys: false` + `surface: none`,
    where it is the only check. A round whose file is gone while the ledger has it blocks
-   `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`).
+   `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`). After two `FAIL`
+   rounds in a row the next round must be `method: sweep` (every condition, guard,
+   return and write of the changed code mutated, earlier rounds' mutations and the
+   test-writer's wrong implementations re-run) or `verdict: NEEDS_OWNER`: sampled
+   mutations find one survivor per round, so a third sample does not end the loop — the
+   same stop rule as two `REQUEST_CHANGES` in review.
 
 **Deliberate exits** (all stay visible in the task file)
 

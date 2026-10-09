@@ -155,6 +155,16 @@ def acceptance(project, tid, rec):
     return verdict if rc == 0 and all(f.startswith("docs/tasks/") for f in changed.splitlines() if f) else ""
 
 
+def _fail_streak(vals):
+    """FAIL rounds at the end of a task's validation records."""
+    n = 0
+    for _, rec in reversed(vals):
+        if str(rec.get("verdict") or "").split()[:1] != ["FAIL"]:
+            break
+        n += 1
+    return n
+
+
 def _list(v):
     if isinstance(v, list):
         return [str(x).strip() for x in v if str(x).strip()]
@@ -234,6 +244,7 @@ def load_tasks(project, task):
             "review_rounds": len(reviews),
             "verify": task.first_word(verifies[-1][1].get("result", "")).upper() if verifies else "",
             "validation": acceptance(project, tid, vals[-1][1]) if vals else "",
+            "validation_fail_streak": _fail_streak(vals),
             # a line marked `non-blocking` (e.g. "non-blocking: OQ-04 - default chosen") is a
             # deliberate mention: the task does not wait for it, so no warning
             "mentions_oq": sorted(set(q for line in body.splitlines()
@@ -347,6 +358,22 @@ def warnings_for(tasks, oqs):
     return out
 
 
+def drift_warnings(project):
+    """A settings change that did not reach a locally edited rendered file (kept-local):
+    the role still works from the old value (tw-process.py render_drift)."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tw_process", os.path.join(KIT, "scripts", "tw-process.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        drift = mod.render_drift(project)
+    except Exception:  # a broken check must never stop the router
+        return []
+    return ["render drift: %s carries %s %s, config says %s - re-render it (tw-install.py apply "
+            "after merging the local edit) or fix the line by hand" % (
+                d["file"], d["setting"], d["found"] or "<line rewritten>", d["expected"]) for d in drift]
+
+
 def candidates(tasks, st, oqs=None):
     """Every applicable decision in router order (the first one is the answer)."""
     oqs = oqs or {}
@@ -412,8 +439,11 @@ def candidates(tasks, st, oqs=None):
                               ask=True))
             else:
                 out.append(_d("verify", t["id"], "%s, no acceptance verdict for the current code: task-validator "
-                              "checks Acceptance against evidence%s" % (
-                                  what, " (no verify record needed)" if no_record else ""),
+                              "checks Acceptance against evidence%s%s" % (
+                                  what, " (no verify record needed)" if no_record else "",
+                                  "; acceptance failed %d times in a row: this round is `method: sweep` "
+                                  "or NEEDS_OWNER, not another sample" % t["validation_fail_streak"]
+                                  if t.get("validation_fail_streak", 0) >= 2 else ""),
                               role="task-validator"))
         else:
             out.append(_d("verify", t["id"], "%s is %s without a PASS verify record"
@@ -534,7 +564,7 @@ def decide(project, taken=None):
                            blockers=blockers(t, oqs),
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
                       for t in _sorted(tasks.values())]
-    first["warnings"] = warnings_for(tasks, oqs)
+    first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
     first["settings"] = proc
     first["parallel"] = {"own": own, "elsewhere": elsewhere}
     first["budget"] = budget

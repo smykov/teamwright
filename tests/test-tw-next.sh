@@ -89,6 +89,11 @@ expect "acceptance FAIL: continue (back to IN_PROGRESS)" continue T-11
 j | grep -q "back to IN_PROGRESS" && ok "FAIL reason names IN_PROGRESS" || bad "FAIL reason names IN_PROGRESS"
 echo fix > fix11.txt; git add fix11.txt; git commit -qm "fix(core): T-11 address acceptance findings"
 expect "after the fix the old FAIL is stale: verify again (no loop)" verify T-11
+j | grep -q "method: sweep" && bad "one FAIL: no sweep demanded yet" || ok "one FAIL: no sweep demanded yet"
+validated T-11 FAIL; commit_all
+echo fix2 > fix11b.txt; git add fix11b.txt; git commit -qm "fix(core): T-11 second fix"
+expect "after a second FAIL and fix: verify again" verify T-11
+j | grep -q "failed 2 times in a row: this round is \`method: sweep\`" && ok "two FAILs in a row: the router asks for a sweep (#5)" || bad "two FAILs in a row: the router asks for a sweep (#5)" "$(j | grep reason)"
 validated T-11 NEEDS_OWNER; commit_all
 expect "acceptance NEEDS_OWNER: decide" decide T-11
 validated T-11 PASS; commit_all
