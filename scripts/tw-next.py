@@ -123,14 +123,21 @@ def git(project, *args):
         return 1, ""
 
 
+# Process records, not code - the same set as _task.RECORD_RE in the hooks (the verify
+# gate's FRESHNESS rule) and scripts/tw-ci-changes. A decision naming a task does not
+# make its acceptance stale.
+RECORD_RE = re.compile(r"^docs/tasks/|^docs/sprints/|^docs/process-reviews/"
+                       r"|^docs/(decisions|open-questions)\.md$")
+
+
 def last_code_commit(project, tid):
-    """Newest commit naming the task that touches files outside docs/tasks/ (the verify
-    gate's FRESHNESS rule)."""
+    """Newest commit naming the task that touches files other than process records
+    (the verify gate's FRESHNESS rule)."""
     pat = r"(^|[^A-Za-z0-9_-])" + re.escape(tid) + r"([^A-Za-z0-9_]|$)"
     rc, out = git(project, "log", "--format=%H", "-E", "--grep=" + pat, "HEAD")
     for sha in (out.split() if rc == 0 else []):
         rc2, files = git(project, "show", "--name-only", "--format=", sha)
-        if any(f and not f.startswith("docs/tasks/") for f in files.splitlines()):
+        if any(f and not RECORD_RE.search(f) for f in files.splitlines()):
             return sha
     return ""
 
@@ -152,7 +159,7 @@ def acceptance(project, tid, rec):
     if code:
         return verdict if git(project, "merge-base", "--is-ancestor", code, full)[0] == 0 else ""
     rc, changed = git(project, "diff", "--name-only", full, "HEAD")
-    return verdict if rc == 0 and all(f.startswith("docs/tasks/") for f in changed.splitlines() if f) else ""
+    return verdict if rc == 0 and all(RECORD_RE.search(f) for f in changed.splitlines() if f) else ""
 
 
 def _fail_streak(vals):

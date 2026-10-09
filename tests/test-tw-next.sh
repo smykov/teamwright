@@ -96,6 +96,9 @@ expect "after a second FAIL and fix: verify again" verify T-11
 j | grep -q "failed 2 times in a row: this round is \`method: sweep\`" && ok "two FAILs in a row: the router asks for a sweep (#5)" || bad "two FAILs in a row: the router asks for a sweep (#5)" "$(j | grep reason)"
 validated T-11 NEEDS_OWNER; commit_all
 expect "acceptance NEEDS_OWNER: decide" decide T-11
+mkdir -p docs; echo "| 1 | T-11 waits for the owner's check |" > docs/decisions.md; echo "| OQ-1 |" > docs/open-questions.md
+git add docs; git commit -qm "docs(decisions): #1 T-11 waits for the owner's check"
+expect "a decision naming the task is a record, not code: NEEDS_OWNER still stands" decide T-11
 validated T-11 PASS; commit_all
 expect "deploys false, surface none, acceptance PASS: continue (close)" continue T-11
 mk T-11 DONE; mk T-20 CODE_COMPLETE "deploys: false" "surface: none"; validated T-20 PASS; commit_all

@@ -43,6 +43,7 @@ mk T-8 DONE P2 "blocked_on: OQ-03" "depends_on: []"
 printf 'see OQ-03 for the format\n' >> docs/tasks/T-5.md
 git add -A; git commit -qm init
 rec T-6 reviews ESCALATE; rec T-7 validation NEEDS_OWNER "needs a signed-in account on the device"
+mk T-8 CODE_COMPLETE P2; rec T-8 validation NEEDS_OWNER "$(printf 'Verification: deploys: false, no server\n| sample check | not recorded | no (owner) |\nOnly the owner can decide this against the source pages.')"
 git add -A; git commit -qm records
 
 expect_rc "question OQ-01 holds T-1 and, through depends_on, T-2" "['T-1', 'T-2']" \
@@ -61,6 +62,8 @@ expect_rc "ESCALATE review is a decision with its record to read" "escalated doc
   "$(q '" ".join([(i["kind"], i["evidence"][0]) for i in d["items"] if i["id"]=="T-6"][0])')"
 expect_rc "NEEDS_OWNER acceptance, class from the record" "acceptance credentials" \
   "$(q '" ".join([(i["kind"], i["cls"]) for i in d["items"] if i["id"]=="T-7"][0])')"
+expect_rc "NEEDS_OWNER acceptance: the class comes from the owner's ask, not the whole record" "acceptance decision" \
+  "$(q '" ".join([(i["kind"], i["cls"]) for i in d["items"] if i["id"]=="T-8"][0])')"
 expect_rc "no tree item on a clean committed repo" "[]" "$(q '[i for i in d["items"] if i["kind"]=="tree"]')"
 echo x > dirty.txt; git add dirty.txt
 expect_rc "staged changes become a tree item" "1" "$(q 'len([i for i in d["items"] if i["kind"]=="tree"])')"

@@ -187,8 +187,9 @@ def report(project):
         if t["validation"] == "NEEDS_OWNER":
             rec = _latest(project, tid, ".validation")
             body = _record_text(project, rec)
+            asks = "\n".join(l for l in body.splitlines() if re.search(r"\bowner\b", l, re.I))
             add("acceptance", "acceptance NEEDS_OWNER: %s" % t["title"], [tid],
-                [rec, "docs/tasks/%s.md" % tid], cls=classify(body) if body else "decision",
+                [rec, "docs/tasks/%s.md" % tid], cls=classify(asks or body) if body else "decision",
                 status=t["status"], title=t["title"])
             continue
         free = t["blocked_on"] if not tw.OQ_RE.search(t["blocked_on"]) else ""

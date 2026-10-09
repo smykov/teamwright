@@ -54,9 +54,10 @@
 #
 # FRESHNESS. The task's code commits are commits whose message names the task id
 # (subject, body or trailer - the commit convention requires it) and that touch files
-# outside docs/tasks/. The newest of them must be contained in the verified commit.
-# If no commit names the task, the verified commit must equal HEAD, or every change
-# since it must be under docs/tasks/ (records committed after the check).
+# other than process records (docs/tasks/, docs/sprints/, docs/process-reviews/,
+# docs/decisions.md, docs/open-questions.md: a decision naming the task is not code).
+# The newest of them must be contained in the verified commit. If no commit names the
+# task, the verified commit must equal HEAD, or every change since it must be a record.
 #
 # LEDGER (local, gitignored): .teamwright/sessions/<ID>.verify.jsonl - who wrote which
 # round, kind, result, commit; <ID>.validation.jsonl - acceptance verdicts. Implementers: .teamwright/sessions/<ID>.dev (review gate).
@@ -140,15 +141,19 @@ def last_code_commit(tid):
     out = git("log", "--format=%H", "-E", "--grep=" + pat, "HEAD")
     for sha in (out or "").split():
         files = git("show", "--name-only", "--format=", sha) or ""
-        if any(f and not f.startswith("docs/tasks/") for f in files.splitlines()):
+        if any(f and not is_record(f) for f in files.splitlines()):
             return sha
     return ""
 
+def is_record(f):
+    return task.is_record(f) if hasattr(task, "is_record") else f.startswith("docs/tasks/")
+
 def records_only_since(c):
-    """True when every change between c and HEAD is under docs/tasks/ (task records,
-    review / verify / validation rounds): the code that was checked is still HEAD's."""
+    """True when every change between c and HEAD is a process record (task, review,
+    verify and validation records, decisions, open questions): the code that was
+    checked is still HEAD's."""
     out = git("diff", "--name-only", c, "HEAD")
-    return out is not None and all(f.startswith("docs/tasks/") for f in out.splitlines() if f)
+    return out is not None and all(is_record(f) for f in out.splitlines() if f)
 
 def sessions_dir():
     return os.path.join(root, ".teamwright", "sessions")

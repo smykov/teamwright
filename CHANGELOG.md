@@ -2,6 +2,12 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.2] - 2026-10-09
+
+### Fixed
+- **A decision naming a task made its acceptance stale.** The router and the verify gate treat a commit that names the task and touches anything outside `docs/tasks/` as a code change. A `docs(decisions): #34 T-002 waits for the owner's check` commit therefore made the task's `NEEDS_OWNER` verdict stale: `/teamwright:blockers` stopped listing the owner's check, and `/teamwright:flow` asked for another acceptance round on unchanged code, which would end in `NEEDS_OWNER` again. A `PASS` followed by such a commit was refused at `DONE` the same way. Process records — `docs/tasks/`, `docs/sprints/`, `docs/process-reviews/`, `docs/decisions.md`, `docs/open-questions.md` — no longer count as code; one set, shared by the hooks (`_task.RECORD_RE`), the router and `tw-ci-changes`, with a test that keeps them equal.
+- `/teamwright:blockers` classed a `NEEDS_OWNER` acceptance by every word of the validation record, so "deploys: false" made an owner's check of a source "infrastructure". The class now comes from the lines that say what the owner must do.
+
 ## [0.8.1] - 2026-10-09
 
 ### Fixed

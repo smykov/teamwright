@@ -282,8 +282,10 @@ may be empty).
      `VERIFY_FAIL` and back to `ANALYSIS`;
    - each counted record is fresh: its `commit` is an ancestor of (or equal to) `HEAD`
      and contains the task's last code commit — the newest commit whose message names
-     the task id and that touches files outside `docs/tasks/`. If no commit names the
-     task, the record must verify `HEAD` itself;
+     the task id and that touches files other than process records (`docs/tasks/`,
+     `docs/sprints/`, `docs/process-reviews/`, `docs/decisions.md`,
+     `docs/open-questions.md` — a decision naming the task is not a code change). If no
+     commit names the task, the record must verify `HEAD` itself;
    - each counted record matches its ledger entry (kind, result, commit), or is a
      person's committed record (`verifier: human:<name>`, no ledger entry).
 4. `kind: manual` without `verify_exception` in the task (at write time and at the

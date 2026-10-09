@@ -167,6 +167,18 @@ def review_rounds(root, tid):
 
 
 
+# Process records, not code: task, review, verify and validation records, sprints,
+# process reviews, decisions and open questions. A commit that touches only these
+# (a decision naming a task, a status change) does not make the task's checks stale.
+# Same set as scripts/tw-ci-changes and scripts/tw-next.py (RECORD_RE).
+RECORD_RE = re.compile(r"^docs/tasks/|^docs/sprints/|^docs/process-reviews/"
+                       r"|^docs/(decisions|open-questions)\.md$")
+
+
+def is_record(path):
+    return bool(RECORD_RE.search(path or ""))
+
+
 def findings(text):
     """[(severity, category)] from the findings table of a review record: the first table
     with a Severity column (Category optional) under a heading that starts with "Findings"

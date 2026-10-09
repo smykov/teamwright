@@ -24,4 +24,18 @@ git checkout -q -b side "$base"; echo c > docs/tasks/T-2.md; git add -A; git com
 expect_rc "previous tip not an ancestor (force-push): code=true" "code=true" "$(cc "$rec" HEAD)"
 GITHUB_OUTPUT="$TMP/out" python3 "$CC" --before "$base" --after "$rec" >/dev/null 2>&1
 expect_rc "the answer is appended to GITHUB_OUTPUT" "code=false" "$(cat "$TMP/out")"
+same="$(python3 - "$KIT" <<'PY'
+import importlib.util, os, re, sys
+kit = sys.argv[1]
+def load(name, path):
+    spec = importlib.util.spec_from_loader(name, importlib.machinery.SourceFileLoader(name, path))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+sys.path.insert(0, os.path.join(kit, "template", "scripts", "hooks"))
+import _task
+cc = load("cc", os.path.join(kit, "template", "scripts", "tw-ci-changes"))
+nx = load("nx", os.path.join(kit, "scripts", "tw-next.py"))
+print("same" if cc.RECORDS == _task.RECORD_RE.pattern == nx.RECORD_RE.pattern else "differ")
+PY
+)"
+expect_rc "one set of record paths: tw-ci-changes, the hooks and the router" "same" "$same"
 finish

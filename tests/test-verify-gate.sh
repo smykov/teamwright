@@ -268,5 +268,13 @@ vtask T-23 CODE_COMPLETE none false
 validate T-23 PASS "${VAL[@]}" >/dev/null
 git -C "$P" add docs/tasks >/dev/null && git -C "$P" commit -qm "docs(task): T-23 acceptance PASS"
 out="$(to T-23 CODE_COMPLETE DONE)"; expect_allow "records committed after the verdict keep it fresh (no code commit names the task)" "$out"
+# a decision or open question naming the task is a record, not code
+vtask T-24 CODE_COMPLETE none false
+validate T-24 PASS "${VAL[@]}" >/dev/null
+commit "docs(decisions): #9 T-24 scope note" docs/decisions.md >/dev/null
+commit "docs: OQ-3 raised by T-24" docs/open-questions.md >/dev/null
+out="$(to T-24 CODE_COMPLETE DONE)"; expect_allow "a decision commit naming the task keeps the acceptance PASS fresh" "$out"
+commit "docs: T-24 user guide" docs/guide.md >/dev/null
+out="$(to T-24 CODE_COMPLETE DONE)"; expect_deny "other docs naming the task still count as a change" "$out" "stale"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish
