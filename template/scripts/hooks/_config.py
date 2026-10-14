@@ -203,13 +203,19 @@ PROCESS_DEFAULTS = {
     "review": {"blocking": "low"},
     "batch": {"max_tasks": 1, "by_priority": {"P0": 1, "P1": 1, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "ask", "continue": False},
+    "ready": {"after": "verified"},
 }
 # Recommended for new projects (offered by adopt, init and /teamwright:settings).
 PROCESS_RECOMMENDED = {
     "review": {"blocking": "medium"},
     "batch": {"max_tasks": 3, "by_priority": {"P0": 1, "P1": 2, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "auto", "continue": True},
+    "ready": {"after": "verified"},
 }
+# A dependency counts as finished at VERIFIED/DONE (`verified`), or already at
+# CODE_COMPLETE/DEPLOYED (`code_complete`: the dependent starts while the dependency's
+# pipeline, deploy and verification still run; a VERIFY_FAIL there reopens the dependent).
+READY_AFTER = ("verified", "code_complete")
 # Findings that block whatever the threshold: the threshold saves rounds on style and
 # small drift, never on what is dangerous.
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
@@ -232,7 +238,7 @@ def process_errors(cfg):
         return ["process must be a mapping"]
     errs = []
     allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
-               "autonomy": ("start", "continue")}
+               "autonomy": ("start", "continue"), "ready": ("after",)}
     for k, v in p.items():
         if k not in allowed:
             errs.append("process.%s: unknown key (known: %s)" % (k, ", ".join(allowed)))
@@ -264,17 +270,21 @@ def process_errors(cfg):
         errs.append("process.autonomy.start must be ask or auto")
     if "continue" in a and str(a["continue"]).strip().lower() not in ("true", "false", "yes", "no"):
         errs.append("process.autonomy.continue must be true or false")
+    rd = p.get("ready") if isinstance(p.get("ready"), dict) else {}
+    if "after" in rd and str(rd["after"]).lower() not in READY_AFTER:
+        errs.append("process.ready.after must be one of %s" % ", ".join(READY_AFTER))
     return errs
 
 
 def process_of(cfg):
     """Effective settings: {review: {blocking}, batch: {max_tasks, by_priority},
-    autonomy: {start, continue}, explicit: [dotted keys set in the config]}.
+    autonomy: {start, continue}, ready: {after}, explicit: [dotted keys set in the config]}.
     Invalid values fall back to the defaults (the installer refuses them on apply)."""
     p = cfg.get("process") if isinstance(cfg, dict) and isinstance(cfg.get("process"), dict) else {}
     out = json.loads(json.dumps(PROCESS_DEFAULTS))
     explicit = []
-    r, b, a = (p.get(k) if isinstance(p.get(k), dict) else {} for k in ("review", "batch", "autonomy"))
+    r, b, a, rd = (p.get(k) if isinstance(p.get(k), dict) else {}
+                   for k in ("review", "batch", "autonomy", "ready"))
     if str(r.get("blocking", "")).lower() in SEVERITIES:
         out["review"]["blocking"] = str(r["blocking"]).lower()
         explicit.append("review.blocking")
@@ -295,6 +305,9 @@ def process_of(cfg):
     if "continue" in a:
         out["autonomy"]["continue"] = _bool(a["continue"])
         explicit.append("autonomy.continue")
+    if str(rd.get("after", "")).lower() in READY_AFTER:
+        out["ready"]["after"] = str(rd["after"]).lower()
+        explicit.append("ready.after")
     out["explicit"] = explicit
     return out
 

@@ -246,4 +246,21 @@ expect_rc "P2-only pass goes to max_tasks 3" "start" \
 expect_rc "settings are reported" "medium?low 3" \
   "$(field '["settings"]' | python3 -c 'import ast,sys; d=ast.literal_eval(sys.stdin.read()); print("medium?"+d["review"]["blocking"], d["batch"]["max_tasks"])')"
 
+
+# ---- process.ready.after: a CODE_COMPLETE dependency -----------------------------------
+fresh ready-after
+mk T-1 CODE_COMPLETE; mk T-2 TODO "depends_on: [T-1]"; commit_all
+rdy() { j | python3 -c 'import json,sys; print([t["ready"] for t in json.load(sys.stdin)["tasks"] if t["id"]=="T-2"][0])'; }
+cfg_ready() { printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  ready:\n    after: %s\n' "$1" > .teamwright/config.yml; }
+expect_rc "default (verified): a CODE_COMPLETE dependency keeps the task not ready" False "$(rdy)"
+cfg_ready code_complete
+expect_rc "ready.after code_complete: the task is ready" True "$(rdy)"
+expect_rc "ready.after code_complete: start offered" True \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d["action"], d["task"]) == ("start", "T-2") or any(a["action"] == "start" and a["task"] == "T-2" for a in d["alternatives"]))')"
+expect_rc "settings report ready.after" code_complete "$(field '["settings"]["ready"]["after"]')"
+mk T-1 ANALYSIS; commit_all
+expect_rc "ready.after code_complete: a dependency still in ANALYSIS blocks" False "$(rdy)"
+cfg_ready deployed
+expect_rc "an invalid ready.after falls back to verified" verified "$(field '["settings"]["ready"]["after"]')"
+
 finish

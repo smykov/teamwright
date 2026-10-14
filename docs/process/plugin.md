@@ -163,7 +163,7 @@ commits). First match wins:
 | 4 | `CODE_COMPLETE` / `DEPLOYED` without a PASS verify | `verify` (task-validator); PASS → `continue`; `deploys: false` and surface `none` → `continue` (close); `VERIFY_FAIL` → `reanalyze` |
 | 5 | `BLOCKED` with `blocked_on` naming the owner, a decision or an open question (or empty) | `decide` |
 | 5a | (main tree) a task on a `tw/<ID>` worktree whose record on that branch is `CODE_COMPLETE` or later | `merge` (`/teamwright:parallel`); tasks in worktrees are otherwise skipped |
-| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED, and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`; `process.autonomy.start: auto` → `ask_owner: false`) |
+| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED (or also CODE_COMPLETE / DEPLOYED with `process.ready.after: code_complete`), and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`; `process.autonomy.start: auto` → `ask_owner: false`) |
 | 6a | with `--pass IDS`: no ready task fits the pass cap (`process.batch.max_tasks`, lowered by the `by_priority` cap of every task in the pass) | `stop` (end the pass); `budget` reports taken / limit / left |
 | 7 | unpushed commits | `decide` (push); otherwise `idle` |
 
@@ -207,6 +207,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.batch.parallel` | 1–4 | no (default 1 = off) | tasks worked at the same time, each in its own worktree on `tw/<ID>` and its own session, when their seams do not overlap (`/teamwright:parallel`, `tw-parallel.py`). `{{BATCH_PARALLEL}}` |
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
+| `process.ready.after` | `verified` \| `code_complete` | no (default `verified`) | when a `depends_on` counts as finished for readiness: `VERIFIED`/`DONE`, or already `CODE_COMPLETE`/`DEPLOYED` (`tw-next.py`) |
 
 `process:` is a closed list: any other key fails validation. Missing keys are the behaviour before settings existed. Changed through `/teamwright:settings` (config.next.yml + `apply`), like every config change.
 
