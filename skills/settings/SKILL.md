@@ -20,6 +20,7 @@ The pipeline — statuses, roles, gates, records, "two send-backs → ESCALATE",
 | `batch.parallel` | 1–4 | 1 (off) | 1 | Tasks worked at the same time, each in its own worktree and session, when their seams do not overlap (`/teamwright:parallel`). Worth it when tasks are independent and each runs long; every extra session costs the owner's attention and the merges |
 | `autonomy.start` | `ask` · `auto` | `ask` | `auto` | Start the router's ready task without asking which one |
 | `autonomy.continue` | `true` · `false` | `false` | `true` | After a barrier, take the next task in the same pass instead of ending the session. Push stays the owner's decision: asked once at the end of the pass |
+| `ready.after` | `verified` · `code_complete` | `verified` | `verified` | When a `depends_on` counts as finished: at `VERIFIED`/`DONE`, or already at `CODE_COMPLETE`/`DEPLOYED` — the dependent starts while the dependency's pipeline, deploy and verification run. A `VERIFY_FAIL` on the dependency can then reopen work already done on the dependent |
 
 Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself.
 

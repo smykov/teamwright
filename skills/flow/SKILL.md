@@ -58,7 +58,7 @@ Router order (the helper applies it; you do not re-derive it):
 | 4 | `CODE_COMPLETE` / `DEPLOYED` without a `PASS` verify record for the current code | `verify` | §3 step 8 (after DRAIN when it deploys) |
 | 4 | `VERIFY_FAIL` | `reanalyze` | back to `ANALYSIS` — §3 step 2, with the failed record as evidence |
 | 5 | `BLOCKED` with an owner decision pending | `decide` | ask the owner the pending question (decision point) |
-| 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | `TODO → ANALYSIS`, §3 from step 2 |
+| 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`, or also `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | `TODO → ANALYSIS`, §3 from step 2 |
 | 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3 step 7) |
 | — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3 step 9 |
 | — | A task worked in its own worktree (`tw/<ID>`) is approved on its branch | `merge` | `/teamwright:parallel merge <ID>` |

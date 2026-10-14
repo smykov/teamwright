@@ -28,7 +28,8 @@ Decision order (first match wins):
      reanalyze   VERIFY_FAIL -> back to ANALYSIS
   5. decide      BLOCKED on an owner decision
   6. start       ready TODO -> ANALYSIS (the owner picks among `alternatives`).
-                 Ready: every depends_on is DONE/VERIFIED and blocked_on is empty, or
+                 Ready: every depends_on is DONE/VERIFIED (also CODE_COMPLETE/DEPLOYED with
+                 process.ready.after: code_complete) and blocked_on is empty, or
                  names only open questions (OQ-NN) already answered or dropped in
                  docs/open-questions.md. Order: effective priority (a task inherits
                  the highest priority of the open tasks that depend on it, directly or
@@ -57,6 +58,8 @@ KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 ACTIVE = ("ANALYSIS", "IN_PROGRESS")
 DONE = ("DONE", "VERIFIED")
+# What counts as a finished dependency, by `process.ready.after`.
+DEP_DONE = {"verified": DONE, "code_complete": DONE + ("CODE_COMPLETE", "DEPLOYED")}
 CLOSED = ("DONE", "DEFERRED")
 PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 OQ_RE = re.compile(r"\bOQ-\d+\b")
@@ -341,9 +344,13 @@ def _d(action, task=None, reason="", role=None, ask=False):
     return {"action": action, "task": task, "reason": reason, "role": role, "ask_owner": ask}
 
 
-def is_ready(t, tasks, oqs):
-    return t["status"] == "TODO" and not blockers(t, oqs) and \
-        all((tasks.get(d) or {}).get("status") in DONE for d in t["depends_on"])
+def deps_done(t, tasks, after="verified"):
+    ok = DEP_DONE.get(after, DONE)
+    return all((tasks.get(d) or {}).get("status") in ok for d in t["depends_on"])
+
+
+def is_ready(t, tasks, oqs, after="verified"):
+    return t["status"] == "TODO" and not blockers(t, oqs) and deps_done(t, tasks, after)
 
 
 def warnings_for(tasks, oqs):
@@ -381,7 +388,7 @@ def drift_warnings(project):
                 d["file"], d["setting"], d["found"] or "<line rewritten>", d["expected"]) for d in drift]
 
 
-def candidates(tasks, st, oqs=None):
+def candidates(tasks, st, oqs=None, after="verified"):
     """Every applicable decision in router order (the first one is the answer)."""
     oqs = oqs or {}
     ts = list(tasks.values())
@@ -467,7 +474,7 @@ def candidates(tasks, st, oqs=None):
 
     # 6. ready TODO, by effective priority, then how much it unblocks, then id
     eff = effective_priority(tasks)
-    ready = sorted([t for t in ts if is_ready(t, tasks, oqs)],
+    ready = sorted([t for t in ts if is_ready(t, tasks, oqs, after)],
                    key=lambda t: (eff[t["id"]][0], -eff[t["id"]][2], _num(t["id"]), t["id"]))
     for t in ready:
         rank, src, _n = eff[t["id"]]
@@ -498,7 +505,7 @@ def decide(project, taken=None):
         return res
     oqs = open_questions(project)
     own, elsewhere = parallel_state(project, task)
-    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs)
+    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])
     if own:
         # a worktree session works its own task only, and never pushes
         cands = [c for c in cands if c["task"] == own]
@@ -566,7 +573,7 @@ def decide(project, taken=None):
     first["alternatives"] = alts[:5]
     first["state"] = st
     eff = effective_priority(tasks)
-    first["tasks"] = [dict(t, ready=all((tasks.get(d) or {}).get("status") in DONE for d in t["depends_on"])
+    first["tasks"] = [dict(t, ready=deps_done(t, tasks, proc["ready"]["after"])
                            and not blockers(t, oqs),
                            blockers=blockers(t, oqs),
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
