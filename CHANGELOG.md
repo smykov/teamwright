@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.4] - 2026-10-22
+
+### Fixed
+- **pre-push took record templates for tasks.** A code commit whose message names no known task is attributed to the task whose record it changes; any `docs/tasks/<name>.md` counted, so a commit that edited `_review-template.md` next to code was refused as `_review-template=<none>`, and the push needed `TEAMWRIGHT_ALLOW_PUSH=1`. Only a file named by a task id (`TEAMWRIGHT_TASK_ID_RE`) owns a commit now, as in `commit-msg`.
+
 ## [0.8.3] - 2026-10-14
 
 ### Added

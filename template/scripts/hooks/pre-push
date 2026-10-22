@@ -101,7 +101,7 @@ for sha in sys.stdin.read().split():
             break
     if owner is None:
         for f in files:
-            m = re.match(r"^docs/tasks/([^/]+)\.md$", f)
+            m = re.match(r"^docs/tasks/(" + task.TASK_ID + r")\.md$", f)  # not _*-template.md
             if m and record(m.group(1)) is not None:
                 owner = m.group(1)
                 break
