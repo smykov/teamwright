@@ -67,6 +67,14 @@ expect_rc "commits without a known task id are not attributed" 0 "$(push)"
 echo y >> src/c.py; sedi 's/^title: .*/title: changed/' docs/tasks/T-4.md; git add -A; git commit -qm "misc" 2>/dev/null
 expect_rc "code commit that changes a task record is attributed to that task" 1 "$(push)"
 TEAMWRIGHT_ALLOW_PUSH=1 git push -q origin main 2>/dev/null
+# templates in docs/tasks/ are not task records: only a file named by a task id owns a commit
+for t in "$KIT"/template/docs/tasks/_*-template.md; do cp "$t" docs/tasks/; done
+git add -A; git commit -qm "chore: install record templates" 2>/dev/null
+expect_rc "adding the record templates (docs only) does not block" 0 "$(push)"
+echo z >> src/c.py; echo "# local note" >> docs/tasks/_review-template.md; echo "# note" >> docs/tasks/_task-template.md
+git add -A; git commit -qm "chore: adapt templates" 2>/dev/null
+expect_rc "a code commit that edits _*-template.md is not attributed to the template" 0 "$(push)"
+grep -q "template" "$TMP/err" && bad "no template is named as a task" "$(cat "$TMP/err")" || ok "no template is named as a task"
 
 # pause
 touch TEAMWRIGHT_PAUSE
