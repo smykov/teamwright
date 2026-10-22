@@ -25,7 +25,7 @@ expect_rc "previous tip not an ancestor (force-push): code=true" "code=true" "$(
 GITHUB_OUTPUT="$TMP/out" python3 "$CC" --before "$base" --after "$rec" >/dev/null 2>&1
 expect_rc "the answer is appended to GITHUB_OUTPUT" "code=false" "$(cat "$TMP/out")"
 same="$(python3 - "$KIT" <<'PY'
-import importlib.util, os, re, sys
+import importlib.machinery, importlib.util, os, re, sys
 kit = sys.argv[1]
 def load(name, path):
     spec = importlib.util.spec_from_loader(name, importlib.machinery.SourceFileLoader(name, path))

@@ -48,7 +48,7 @@ EOF
 xd() { echo "$P/docs/tasks/$1.validation"; }
 validate() {
   local id="$1" v="$2" out content n; shift 2
-  n=$(( $(ls "$(xd "$id")" 2>/dev/null | grep -c '^[0-9]*\.md$') + 1 ))
+  n=$(( $(find "$(xd "$id")" -maxdepth 1 -type f -name '*.md' 2>/dev/null | sed 's#.*/##' | grep -c '^[0-9]*\.md$') + 1 ))
   content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n%b---\n## Acceptance checked\n- every item against evidence\n' \
     "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}" "${VMETHOD:+method: $VMETHOD\n}")"
   out="$(run Write "$S" "file_path=$(xd "$id")/$n.md" "content=$content" "$@")"

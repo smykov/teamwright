@@ -149,7 +149,7 @@ move() {
     sedi "s/^status: $from\$/status: $to/" "$TASK"
     landed "$agent" Edit "$TASK"
     git -C "$P" add docs/tasks
-    commit "chore(task): T-001 $from→$to"
+    commit "chore(task): T-001 ${from}→${to}"
   fi
 }
 

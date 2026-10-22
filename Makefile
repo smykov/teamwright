@@ -19,7 +19,7 @@ lint:            ## shellcheck + python syntax + Markdown links + JSON validity
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	  shellcheck -S warning $(SH_FILES) && echo "shellcheck: ok"; \
 	else echo "shellcheck: not installed, skipped"; fi
-	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-blockers.py scripts/tw-context.py scripts/tw-process.py scripts/tw-parallel.py template/scripts/tw-req template/scripts/tw-ci-changes scripts/check-links.py examples/make-cast.py && echo "python: ok"
+	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-blockers.py scripts/tw-context.py scripts/tw-process.py scripts/tw-parallel.py template/scripts/tw-req template/scripts/tw-ci-changes scripts/check-links.py scripts/check-sh-names.py examples/make-cast.py && echo "python: ok"
 	@python3 scripts/check-links.py && echo "markdown links and anchors: ok"
 	@python3 -m json.tool template/.claude/settings.json >/dev/null && echo "settings.json: ok"
 	@python3 -m json.tool template/scripts/metrics/metrics.example.json >/dev/null && echo "metrics.example.json: ok"
@@ -30,6 +30,7 @@ lint:            ## shellcheck + python syntax + Markdown links + JSON validity
 	else echo "claude CLI not installed: plugin validate skipped"; fi
 	@for f in $(SH_FILES); do bash -n "$$f" || exit 1; done; echo "bash -n: ok"
 	@! grep -n "\$$(cat <<" $(SH_FILES) || { echo "heredoc inside \$$(...) breaks bash 3.2 (macOS): read it into a variable first"; exit 1; }; echo "bash 3.2 heredoc check: ok"
+	@python3 scripts/check-sh-names.py $(SH_FILES) && echo "bash 3.2 variable names before non-ASCII: ok"
 
 scan:            ## secret scan of the kit itself (gitleaks, else built-in fallback)
 	@if command -v gitleaks >/dev/null 2>&1; then \

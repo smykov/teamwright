@@ -15,7 +15,7 @@ make check            # lint + tests + secret scan
 | Command | What it runs |
 |---|---|
 | `make test` | regression tests in throwaway git repositories (`tests/test-*.sh`), including the demo |
-| `make lint` | shellcheck, `bash -n`, Python syntax, Markdown links and anchors (`scripts/check-links.py`), JSON validity, plugin manifests, version consistency, a bash 3.2 check |
+| `make lint` | shellcheck, `bash -n`, Python syntax, Markdown links and anchors (`scripts/check-links.py`), JSON validity, plugin manifests, version consistency, bash 3.2 checks (heredoc inside `$(...)`, `$name` before a non-ASCII character — `scripts/check-sh-names.py`) |
 | `make scan` | secret scan of the repository (gitleaks with `.gitleaks.toml`, else the built-in scanner) |
 | `make demo` | `examples/demo.sh`: one task through every gate |
 | `make release-check` | before tagging: the version was bumped since the last `v*` tag and the manifests and changelog agree |
@@ -50,7 +50,7 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 - **`template/docs/failures.md` ships empty.** Incidents belong to the project that has them.
 - **Metrics come from git and logs**, never from an agent's self-report. A missing source prints `no data`, not `0`.
 - **Hooks fail open on internal errors** and stay silent on allow; a block always names its exit.
-- **bash 3.2 compatible**: no associative arrays, `mapfile`, `${var,,}`, or a heredoc inside `$(...)` (read it into a variable with `IFS= read -r -d '' var <<'EOF' || true`).
+- **bash 3.2 compatible**: no associative arrays, `mapfile`, `${var,,}`, or a heredoc inside `$(...)` (read it into a variable with `IFS= read -r -d '' var <<'EOF' || true`); under `set -u` expand a possibly empty array as `${arr[@]+"${arr[@]}"}`; write `${name}` before a non-ASCII character (`"${from}→${to}"`).
 
 ## Versions and the changelog
 

@@ -24,7 +24,7 @@ fresh() {  # fresh NAME -> new git repo with one commit, cwd inside
 }
 commit_all() { git add -A; git commit -qm tasks; }
 validated() {  # validated ID VERDICT : next validation record at HEAD
-  local d="docs/tasks/$1.validation" n; mkdir -p "$d"; n=$(( $(ls "$d" | grep -c '\.md$') + 1 ))
+  local d="docs/tasks/$1.validation" n; mkdir -p "$d"; n=$(( $(find "$d" -maxdepth 1 -type f -name '*.md' | wc -l) + 1 ))
   printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: task-validator\n---\n' "$1" "$n" "$2" "$(git rev-parse HEAD)" > "$d/$n.md"
 }
 j() { python3 "$NEXT" --project . --json; }

@@ -63,7 +63,7 @@ while read -r _lref lsha rref rsha; do
   case "$lsha" in *[!0]*) ;; *) continue ;; esac          # branch deletion
   [[ "${rref:-}" =~ $WIP_RE ]] && continue                 # wip branch: CI only, not a delivery
   if [ -z "${rsha:-}" ] || [ "$rsha" = "$ZERO" ] || ! git cat-file -e "$rsha" 2>/dev/null; then
-    range=("$lsha" --not "${delivered[@]}")
+    range=("$lsha" --not ${delivered[@]+"${delivered[@]}"})
   else
     range=("$rsha..$lsha")
   fi

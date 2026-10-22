@@ -2,6 +2,13 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.5] - 2026-10-22
+
+### Fixed
+- **pre-push refused every push on bash 3.2 (the macOS default).** With no remote-tracking branches yet — a first push, or a new remote — the hook expanded an empty array under `set -u`, which bash before 4.4 treats as an unbound variable: `delivered[@]: unbound variable`, and the push was refused. The empty case now expands to nothing, as elsewhere in the hooks. The bash 3.2 CI job, which runs the existing pre-push tests in a `bash:3.2` container, was failing on this.
+- **The demo died on macOS** (`from→: unbound variable`): bash 3.2 takes the bytes of a non-ASCII character after `$name` as part of the name. `examples/demo.sh` writes `${from}→${to}`, and `make lint` now fails on `$name` before a non-ASCII character in any shell file (`scripts/check-sh-names.py`) — Linux CI could not see it otherwise.
+- Tests: `ls | grep` counts replaced with `find` (shellcheck SC2010); `test-tw-ci-changes.sh` imports `importlib.machinery` explicitly, which newer Python no longer pulls in through `importlib.util`.
+
 ## [0.8.4] - 2026-10-22
 
 ### Fixed
