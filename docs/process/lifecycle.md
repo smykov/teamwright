@@ -29,7 +29,7 @@ Template: `docs/tasks/_task-template.md`.
 | `status` | always | See the status machine below |
 | `sprint` | always | Sprint the task was **created** in; never changes |
 | `priority` | always | `P0`…`P3` by observable effect, not by importance to the author |
-| `depends_on` | optional | Task ids that must be `VERIFIED` or `DONE` first (the router's readiness rule, section 4) |
+| `depends_on` | optional | Task ids that must be `VERIFIED` or `DONE` first — or `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete` (the router's readiness rule, section 4) |
 | `deploys` | optional | `false` for work with no deployable artifact (docs, scripts, config) |
 | `surface` | always | What verification must exercise: `api` · `ui` · `both` · `none` (section 7). Left empty, the task cannot reach `VERIFIED` or `DONE` |
 | `verify_exception` | optional | One line: why the change cannot be checked by an api/ui test; the only thing that allows a `kind: manual` verify record. Reviewed like code |
@@ -122,14 +122,18 @@ Per type, in addition:
 The "what next" list is derived, never curated by hand:
 
 ```
-ready = { status: TODO, every depends_on is VERIFIED or DONE,
+ready = { status: TODO, every depends_on is finished,
           blocked_on is empty or names only OQ-NN that are resolved }
 resolved = the question's Status cell in docs/open-questions.md starts with
            answered, dropped, closed, resolved or done
 order = effective priority (P0 > P1 > P2 > P3) → number of open tasks it blocks (desc) → id (asc)
 effective priority = the highest priority of the task itself and of every open task
                      that depends on it, directly or transitively
+finished = VERIFIED or DONE; with process.ready.after: code_complete also
+           CODE_COMPLETE or DEPLOYED
 ```
+
+With `code_complete` the dependent starts while the dependency's pipeline, deploy and verification still run. Its worktree is based on the dependency's branch when the dependency is not merged yet. A `VERIFY_FAIL` on the dependency is then a reason to re-check the dependent: the investigator of the reanalysis names the dependents it affects.
 
 A task that is not ready is not picked, even if it looks easy.
 

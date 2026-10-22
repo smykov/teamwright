@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.3] - 2026-10-14
+
+### Added
+- **`process.ready.after: verified | code_complete`.** With `code_complete` the router counts a `depends_on` as finished already at `CODE_COMPLETE` or `DEPLOYED`, so the next task starts while the dependency's pipeline, deploy and verification run, instead of waiting for `VERIFIED`/`DONE`. The default `verified` keeps the old rule. Validated as part of the closed `process:` list; reported in the router's `settings`; tests in `test-tw-next.sh`.
+
 ## [0.8.2] - 2026-10-09
 
 ### Fixed
