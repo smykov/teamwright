@@ -231,7 +231,7 @@ def report(project, since=None, split=None):
         rounds = [r for r in rounds if r["date"] >= since]
     since_args = ["--since", since + " 00:00"] if since else []
     subjects = git(project, "log", "--format=%s", *since_args).splitlines()
-    ratified = [l for l in git(project, "log", "-G", r"^tail_code:\s*ratified", "--format=%h %cs %s",
+    ratified = [l for l in git(project, "log", "-G", r"^tail_code:[[:space:]]*ratified", "--format=%h %cs %s",
                                 *since_args, "--", "docs/tasks").splitlines() if l]
     sizes.sort(reverse=True)
     out = {

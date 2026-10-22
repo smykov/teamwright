@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.8.6] - 2026-10-22
+
+### Fixed
+- **`tw-process` counted no ratified tails on macOS.** It finds the commits that set `tail_code: ratified` with `git log -G`, and the pattern used `\s`, a GNU extension that git on macOS (POSIX regex) does not know; the count was always 0 there. The pattern is `[[:space:]]*` now. Found by the macOS CI job once the bash 3.2 failures were out of the way.
+
 ## [0.8.5] - 2026-10-22
 
 ### Fixed
