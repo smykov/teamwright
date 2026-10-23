@@ -9,9 +9,9 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :reconfigure, :status, :progress, :blockers, :settings, :improve, :feedback (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :router, :analyze, :red-tests, :implement, :review, :verify, :parallel, :reconfigure, :status, :progress, :blockers, :settings, :improve, :feedback (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
-scripts/tw-next.py                read-only router for /teamwright:flow (next action, JSON or summary)
+scripts/tw-next.py                read-only router for /teamwright:flow, :router and the stage commands (next action, stage, candidates; JSON or summary)
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
 scripts/tw-blockers.py            read-only: what waits for a person, by class and by what it unblocks (blockers)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
@@ -191,7 +191,7 @@ unblock, then how many. Task state and question status come from the router's re
 
 ## tw-next.py: the flow router
 
-`python3 scripts/tw-next.py [--project PATH] [--json] [--pass IDS]` (also `tw-install.py next`) is read-only
+`python3 scripts/tw-next.py [--project PATH] [--json] [--pass IDS] [--stage STAGE [--task IDS]]` (also `tw-install.py next`) is read-only
 and deterministic. It reads `docs/tasks/*.md` (status, priority, `depends_on`, `deploys`,
 `surface`, `blocked_on`), the latest round in `<ID>.reviews/` (verdict) and `<ID>.verify/`
 (result), `.teamwright/current-task`, the last `Stop` in `.teamwright/logs/outcomes.jsonl`
@@ -201,8 +201,8 @@ commits). First match wins:
 | # | Situation | `action` |
 |---|---|---|
 | 0 | `TEAMWRIGHT_PAUSE` exists | `paused` (reason names what would be next) |
-| 1 | current or interrupted task not closed; or tracked changes with one active task | `resume` that task; changes and no single active task → `decide` |
-| 2 | `ANALYSIS` / `IN_PROGRESS` | `continue` (role problem-investigator / developer) |
+| 1 | tracked changes in the tree (the current task, else the single active one), or the last `Stop` was `interrupted` | `resume` that task; changes and no single active task → `decide`. A current task on a clean tree is not a resume |
+| 2 | `ANALYSIS` / `IN_PROGRESS` | `continue` (role problem-investigator; in `IN_PROGRESS` by stage: test-writer for `red-tests`, developer for `implement`) |
 | 3 | `NEEDS_REVIEW` | `review` (code-reviewer); latest verdict APPROVE → `continue` (to CODE_COMPLETE), ESCALATE → `decide`, REJECT_RECURRENCE → `continue` (defer) |
 | 4 | `CODE_COMPLETE` / `DEPLOYED` without a PASS verify | `verify` (task-validator); PASS → `continue`; `deploys: false` and surface `none` → `continue` (close); `VERIFY_FAIL` → `reanalyze` |
 | 5 | `BLOCKED` with `blocked_on` naming the owner, a decision or an open question (or empty) | `decide` |
@@ -212,6 +212,8 @@ commits). First match wins:
 | 7 | unpushed commits | `decide` (push); otherwise `idle` |
 
 In a worktree on such a branch the router answers only for that task and ends `idle` once it is `CODE_COMPLETE`: no push and no verification there. `tw-progress.py` reads those tasks from their worktrees the same way, so their area comes from the analysis written there. The output also carries `settings` (effective `process:` values, `explicit` keys) and `parallel` (`own`, `elsewhere`, `worktrees`: path, branch and status per task).
+
+**Stages.** Every task-bound decision carries `stage`: `analyze` (ready `TODO`, `ANALYSIS`, `VERIFY_FAIL`), `red-tests` / `implement` (inside `IN_PROGRESS`: the task's `stage:` field checked against the evidence — `## Tests` filled = red tests written; on disagreement the evidence wins and `warnings` says so; no field = the evidence), `review` (`NEEDS_REVIEW`), `verify` (`CODE_COMPLETE`, `DEPLOYED`, `VERIFIED`). `process.stages.<stage>` holds a stage back while other work is due: it is due when `min` tasks wait there, a task of effective priority P0/P1 waits, or the oldest waiting task's record changed more than `max_wait_hours` ago; a held candidate moves behind the last due piece of work (owner decisions keep their place) and its reason ends `(held: …)`; with no due work, nothing is held. `work_available` (any `resume`, `continue`, `review`, `verify`, `reanalyze`, `start`, `merge`) is that single predicate, and also what makes `idle` idle. For the chosen stage the output adds `batch` (the router's default: the first candidates up to `process.stages.<stage>.batch`, `start`s kept within the `--pass` budget), `batch_cap`, `candidates` (every task waiting there, in router order: `priority`, `effective_priority`, `unblocks`, `depends_on`, `seam_paths`, `areas` from the config's `source_dirs`/`test_dirs`/`workdir`, `size` — seam paths, Acceptance items, review rounds — `overlaps`, by tw-parallel.py's seam rule, and `depends_on_candidates`), `model` (`process.models.<stage>`, `null` = the role files), `command` (`/teamwright:<stage> <batch>`, `/teamwright:parallel merge <ID>`, or `null`), `stages` (per stage: `waiting`, `due`, `why`, `batch`, `min`, `max_wait_hours`, `model`), `select` (`process.router.select`) and `headless` (`run`, `prompt`, `model`, `note`: what a CI job runs for one stage). `--stage S [--task IDS]` adds `request` for a stage command: `ok`, `batch`, `batch_cap`, `candidates`, `model`, and when refused a `hint` naming the command to run instead (another stage, the unfinished work in the tree, the pause); an explicit stage ignores `min`.
 
 Within a step, tasks are ordered by priority (P0 first), then id. **Priority inheritance** (step 6): a task inherits the highest priority among the open tasks that depend on it, directly or transitively, and the reason says so (`inherits P1 from T-010, which depends on it`) — otherwise a P1 task waits behind unrelated P2 work while its own P2 prerequisite is never picked. **Warnings** (`warnings` in JSON, `warning:` lines in the summary): a task whose body mentions an unresolved `OQ-NN` while `blocked_on` is empty (set `blocked_on: OQ-NN` if the question must be answered first), a `blocked_on` that names only questions already answered (clear it), and **render drift** — a rendered file (AGENTS.md, a role file) edited locally whose settings line still carries a value other than `process:` in the config (`tw-process.py`, `render_drift`). After two acceptance `FAIL` rounds in a row the `verify` reason says the next round is `method: sweep` or `NEEDS_OWNER`. Untracked files alone do not
 trigger `resume`. JSON: `action`, `task` (id or null), `reason`, `role`, `ask_owner`,
@@ -257,6 +259,11 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
 | `process.ready.after` | `verified` \| `code_complete` | no (default `verified`) | when a `depends_on` counts as finished for readiness: `VERIFIED`/`DONE`, or already `CODE_COMPLETE`/`DEPLOYED` (`tw-next.py`) |
+| `process.stages.<stage>.batch` | 1–10 | no (default 1) | `<stage>`: `analyze`, `red-tests`, `implement`, `review`, `verify`. Tasks one stage session takes, one after another (`tw-next.py` `batch_cap`) |
+| `process.stages.<stage>.min` | 1–10 | no (default 1) | tasks waiting at the stage before the router runs it while other work is due; P0/P1 tasks and "nothing else to do" run it at once |
+| `process.stages.<stage>.max_wait_hours` | 0–168 | no (default 0 = off) | the stage runs anyway once its oldest waiting task's record is this old |
+| `process.models.<stage>` | `opus` \| `sonnet` \| `haiku` \| `fable` \| `claude-…` | no (default: unset) | model of the stage's role spawns (the agent tool's `model` parameter; the technical-writer keeps its file's model) and of a headless job; unset = each role file's `model:` |
+| `process.router.select` | `script` \| `agent` | no (default `script`) | `script`: `tw-next.py` selects by status and counts, and lists the stage's candidates; the session only picks the batch from them. `agent`: the session reads the task records itself — more tokens, for task records the script cannot read |
 | `process.test_guard` | `block` \| `warn` \| `off` | no (default `block`) | the test guard (`scripts/hooks/test-guard.sh`): refuses tests and gates run directly instead of through `scripts/tw-test`/`tw-gate`/`tw-mutants`, and test output piped into `tail`/`grep`. Its own switch, independent of `mode` — it blocks in `gate-first` too; `TW_TEST_GUARD` in the environment Claude Code starts with wins ([gates.md](gates.md#test-guard)) |
 
 `process:` is a closed list: any other key fails validation. Missing keys are the behaviour before settings existed, except `test_guard` (new in 0.11.0, blocks by default). Changed through `/teamwright:settings` (config.next.yml + `apply`), like every config change.

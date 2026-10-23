@@ -795,6 +795,20 @@ has "test_select_command wrapped in tw-run is refused" "$TMP/out" "test_select_c
 awk '{print} /^  - name: backend$/{print "    test_select_command: \"pytest -q -n ${PYTEST_WORKERS:-4} {tests}\""}' "$TMP/ps.yml" > "$TMP/ps-ts3.yml"
 printf 'test_runner_patterns: ["^bin/specs"]\nprocess:\n  test_guard: warn\n' >> "$TMP/ps-ts3.yml"
 tw plan --project "$PS" --config "$TMP/ps-ts3.yml" > "$TMP/out" 2>&1; expect_rc "test guard keys accepted" 0 "$?"
+# stages, models and the selection mode (0.12)
+cp "$TMP/ps.yml" "$TMP/ps-st.yml"
+printf 'process:\n  stages:\n    review:\n      batch: 0\n      min: 3\n      linger: 2\n    deploy:\n      batch: 1\n    implement: 2\n  models:\n    review: gpt-9\n  router:\n    select: llm\n' >> "$TMP/ps-st.yml"
+tw plan --project "$PS" --config "$TMP/ps-st.yml" > "$TMP/out" 2>&1
+expect_rc "invalid stage settings: plan fails" 1 "$?"
+has "a stage batch out of range is refused" "$TMP/out" "process.stages.review.batch must be 1..10"
+has "an unknown stage key is refused" "$TMP/out" "process.stages.review.linger: unknown key"
+has "an unknown stage is refused" "$TMP/out" "process.stages.deploy: unknown key"
+has "a stage must be a mapping" "$TMP/out" "process.stages.implement must be a mapping"
+has "an unknown model is refused" "$TMP/out" "process.models.review must be a model alias"
+has "a bad selection mode is refused" "$TMP/out" "process.router.select must be one of script, agent"
+cp "$TMP/ps.yml" "$TMP/ps-st2.yml"
+printf 'process:\n  stages:\n    review:\n      batch: 3\n      min: 2\n      max_wait_hours: 4\n    red-tests:\n      batch: 2\n  models:\n    red-tests: sonnet\n    review: claude-opus-4-1\n  router:\n    select: agent\n' >> "$TMP/ps-st2.yml"
+tw plan --project "$PS" --config "$TMP/ps-st2.yml" > "$TMP/out" 2>&1; expect_rc "stages, models and router.select accepted" 0 "$?"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 # render drift (#6): a settings change does not reach a locally edited role file

@@ -205,6 +205,14 @@ PROCESS_DEFAULTS = {
     "autonomy": {"start": "ask", "continue": False},
     "ready": {"after": "verified"},
     "test_guard": "block",
+    # one stage per session (`/teamwright:router`, the stage commands): how many tasks a
+    # stage session takes, and when the router runs a stage whose queue is short
+    "stages": {},           # filled below: {stage: {batch, min, max_wait_hours}}
+    # model per stage; None = the role files' own `model:` front matter
+    "models": {},
+    # who picks the tasks of a stage: the router script (tw-next.py, deterministic, no task
+    # files read by the model) or the session agent reading the records itself
+    "router": {"select": "script"},
 }
 # Recommended for new projects (offered by adopt, init and /teamwright:settings).
 PROCESS_RECOMMENDED = {
@@ -212,6 +220,8 @@ PROCESS_RECOMMENDED = {
     "batch": {"max_tasks": 3, "by_priority": {"P0": 1, "P1": 2, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "auto", "continue": True},
     "ready": {"after": "verified"},
+    "models": {"analyze": "opus", "red-tests": "sonnet", "implement": "opus", "review": "opus",
+               "verify": "opus"},
 }
 # A dependency counts as finished at VERIFIED/DONE (`verified`), or already at
 # CODE_COMPLETE/DEPLOYED (`code_complete`: the dependent starts while the dependency's
@@ -225,6 +235,35 @@ TEST_GUARD = ("block", "warn", "off")
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
 MAX_BATCH = 5
 MAX_PARALLEL = 10
+# Stages of a task, in pipeline order. analyze covers TODO -> ANALYSIS -> IN_PROGRESS (and a
+# re-analysis after VERIFY_FAIL); red-tests and implement are the two sub-stages of
+# IN_PROGRESS (the task field `stage:`); review covers NEEDS_REVIEW; verify covers
+# CODE_COMPLETE / DEPLOYED / VERIFIED. Push (DRAIN) is not a stage: the owner decides it.
+STAGES = ("analyze", "red-tests", "implement", "review", "verify")
+# The sub-stages stored in a task's `stage:` field while it is IN_PROGRESS.
+TASK_STAGES = ("red-tests", "implement")
+# Per stage: batch = tasks one stage session takes (one after another), min = tasks waiting
+# before the router runs the stage while other work exists, max_wait_hours = the oldest
+# waiting task runs the stage anyway after this long (0 = no age rule). P0/P1 tasks and
+# "nothing else to do" always run it. Defaults: 1 / 1 / 0, the behaviour before stages.
+STAGE_KEYS = ("batch", "min", "max_wait_hours")
+STAGE_DEFAULTS = {"batch": 1, "min": 1, "max_wait_hours": 0}
+STAGE_LIMITS = {"batch": (1, 10), "min": (1, 10), "max_wait_hours": (0, 168)}
+ROUTER_SELECT = ("script", "agent")
+MODEL_ALIASES = ("opus", "sonnet", "haiku", "fable")
+MODEL_ID_RE = re.compile(r"^claude-[a-z0-9][a-z0-9.\-]*$")
+PROCESS_DEFAULTS["stages"] = {st: dict(STAGE_DEFAULTS) for st in STAGES}
+PROCESS_DEFAULTS["models"] = {st: None for st in STAGES}
+
+
+def model_ok(v):
+    """A model alias Claude Code accepts (`opus`, `sonnet`, ...) or a full model id."""
+    v = str(v or "").strip()
+    return v in MODEL_ALIASES or bool(MODEL_ID_RE.match(v))
+
+
+def _in_range(v, lo, hi):
+    return str(v).strip().isdigit() and lo <= int(v) <= hi
 
 
 def _bool(v):
@@ -242,7 +281,8 @@ def process_errors(cfg):
         return ["process must be a mapping"]
     errs = []
     allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
-               "autonomy": ("start", "continue"), "ready": ("after",), "test_guard": None}
+               "autonomy": ("start", "continue"), "ready": ("after",), "test_guard": None,
+               "stages": STAGES, "models": STAGES, "router": ("select",)}
     for k, v in p.items():
         if k not in allowed:
             errs.append("process.%s: unknown key (known: %s)" % (k, ", ".join(allowed)))
@@ -281,12 +321,33 @@ def process_errors(cfg):
     rd = p.get("ready") if isinstance(p.get("ready"), dict) else {}
     if "after" in rd and str(rd["after"]).lower() not in READY_AFTER:
         errs.append("process.ready.after must be one of %s" % ", ".join(READY_AFTER))
+    sg = p.get("stages") if isinstance(p.get("stages"), dict) else {}
+    for st, v in sg.items():
+        if st not in STAGES:
+            continue  # reported above as an unknown key
+        if not isinstance(v, dict):
+            errs.append("process.stages.%s must be a mapping (%s)" % (st, ", ".join(STAGE_KEYS)))
+            continue
+        for k, x in v.items():
+            if k not in STAGE_KEYS:
+                errs.append("process.stages.%s.%s: unknown key (known: %s)" % (st, k, ", ".join(STAGE_KEYS)))
+            elif not _in_range(x, *STAGE_LIMITS[k]):
+                errs.append("process.stages.%s.%s must be %d..%d" % ((st, k) + STAGE_LIMITS[k]))
+    ro = p.get("router") if isinstance(p.get("router"), dict) else {}
+    if "select" in ro and str(ro["select"]).strip().lower() not in ROUTER_SELECT:
+        errs.append("process.router.select must be one of %s" % ", ".join(ROUTER_SELECT))
+    md = p.get("models") if isinstance(p.get("models"), dict) else {}
+    for st, v in md.items():
+        if st in STAGES and not model_ok(v):
+            errs.append("process.models.%s must be a model alias (%s) or a model id (claude-...)"
+                        % (st, ", ".join(MODEL_ALIASES)))
     return errs
 
 
 def process_of(cfg):
     """Effective settings: {review: {blocking}, batch: {max_tasks, by_priority},
-    autonomy: {start, continue}, ready: {after}, explicit: [dotted keys set in the config]}.
+    autonomy: {start, continue}, ready: {after}, test_guard, stages: {stage: {batch, min,
+    max_wait_hours}}, models: {stage: model or None}, router: {select}, explicit: [dotted keys set in the config]}.
     Invalid values fall back to the defaults (the installer refuses them on apply)."""
     p = cfg.get("process") if isinstance(cfg, dict) and isinstance(cfg.get("process"), dict) else {}
     out = json.loads(json.dumps(PROCESS_DEFAULTS))
@@ -320,6 +381,22 @@ def process_of(cfg):
     if tg in TEST_GUARD:
         out["test_guard"] = tg
         explicit.append("test_guard")
+    sg = p.get("stages") if isinstance(p.get("stages"), dict) else {}
+    for st in STAGES:
+        v = sg.get(st) if isinstance(sg.get(st), dict) else {}
+        for k in STAGE_KEYS:
+            if k in v and _in_range(v[k], *STAGE_LIMITS[k]):
+                out["stages"][st][k] = int(v[k])
+                explicit.append("stages.%s.%s" % (st, k))
+    md = p.get("models") if isinstance(p.get("models"), dict) else {}
+    for st in STAGES:
+        if st in md and model_ok(md[st]):
+            out["models"][st] = str(md[st]).strip()
+            explicit.append("models.%s" % st)
+    ro = p.get("router") if isinstance(p.get("router"), dict) else {}
+    if str(ro.get("select", "")).strip().lower() in ROUTER_SELECT:
+        out["router"]["select"] = str(ro["select"]).strip().lower()
+        explicit.append("router.select")
     out["explicit"] = explicit
     return out
 

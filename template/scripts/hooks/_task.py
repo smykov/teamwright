@@ -128,6 +128,52 @@ def body(text):
     return ""
 
 
+def section(text, name):
+    """Body of the `## <name>` section of a task record ('' when absent), up to the next
+    `## ` heading."""
+    out, inside = [], False
+    for line in body(text).splitlines():
+        if re.match(r"^##\s", line):
+            if inside:
+                break
+            inside = line[2:].strip().lower() == name.lower()
+            continue
+        if inside:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _without_placeholders(text):
+    """Text with HTML comments and template placeholder blocks removed - a block that
+    starts a line with `<` and ends a line with `>` (`<test-writer: ...>`)."""
+    text = re.sub(r"(?s)<!--.*?-->", "", text)
+    return re.sub(r"(?ms)^<[^<\n][^\n]*?(\n[^\n]*?)*?>[ \t]*$", "", text)
+
+
+def tests_written(text):
+    """True when the record's `## Tests` section holds something besides the template
+    placeholder: the test-writer's first spawn wrote the red tests down."""
+    return bool(_without_placeholders(section(text, "Tests")).strip())
+
+
+def failure_branches(text):
+    """True when `## Tests` has a `### Failure branches` heading followed by a table row
+    (the test-writer's second spawn, in the implement stage)."""
+    sec = section(text, "Tests")
+    m = re.search(r"(?im)^###\s+failure branches\b.*$", sec)
+    if not m:
+        return False
+    rows = [l for l in sec[m.end():].splitlines() if l.strip().startswith("|")
+            and not set(l.strip().strip("|").replace("|", "")) <= set("-: ")]
+    return len(rows) >= 2  # header + one row
+
+
+def task_stage(rec):
+    """The `stage:` field of a task record, lower-case ('' when absent)."""
+    v = rec.get("stage") if isinstance(rec.get("stage"), str) else ""
+    return v.strip().lower()
+
+
 def _rounds(root, tid, suffix, with_body=False):
     d = os.path.join(root, "docs", "tasks", tid + suffix)
     try:

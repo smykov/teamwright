@@ -138,11 +138,13 @@ expect "ANALYSIS P1 before IN_PROGRESS P2" continue T-16
 expect_rc "analysis role" problem-investigator "$(field '["role"]')"
 mk T-16 DONE; commit_all
 expect "IN_PROGRESS: continue" continue T-15
-expect_rc "developer role" developer "$(field '["role"]')"
+expect_rc "IN_PROGRESS without tests written (no stage field): red-tests, test-writer" "red-tests test-writer" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["stage"], d["role"])')"
 j | grep -q '"action": "review"' && ok "review listed as an alternative" || bad "review listed as an alternative"
 
 # ---- 1. resume -----------------------------------------------------------------------------
 echo T-15 > .teamwright/current-task
+expect "current task on a clean tree: no resume, the stage continues" continue T-15
 echo change >> docs/tasks/T-1.md
 expect "current task + dirty tree: resume" resume T-15
 j | grep -q "uncommitted changes" && ok "resume says why" || bad "resume says why"
@@ -268,5 +270,127 @@ mk T-1 ANALYSIS; commit_all
 expect_rc "ready.after code_complete: a dependency still in ANALYSIS blocks" False "$(rdy)"
 cfg_ready deployed
 expect_rc "an invalid ready.after falls back to verified" verified "$(field '["settings"]["ready"]["after"]')"
+
+# ---- stages (0.12): the stage field against the evidence ----------------------------------
+tests_md() { printf '\n## Tests\n\n- guarantee 1: test_one (red: AssertionError)\n'; }
+fresh stages
+mk T-1 IN_PROGRESS "stage: red-tests"
+commit_all
+st_of() { j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["stage"], d["role"], len([w for w in d["warnings"] if "stage" in w]))'; }
+expect_rc "stage: red-tests, no tests yet: red-tests, test-writer, no warning" "red-tests test-writer 0" "$(st_of)"
+expect_rc "command names the stage and the batch" "/teamwright:red-tests T-1" "$(field '["command"]')"
+expect_rc "work available" True "$(field '["work_available"]')"
+expect_rc "no model configured: the role files decide" None "$(field '["model"]')"
+expect_rc "selection by the script by default" script "$(field '["select"]')"
+tests_md >> docs/tasks/T-1.md; commit_all
+expect_rc "stage: red-tests but ## Tests filled: the evidence wins (implement), with a warning" "implement developer 1" "$(st_of)"
+j | grep -q "evidence says implement" && ok "the warning names the evidence" || bad "the warning names the evidence"
+mk T-1 IN_PROGRESS "stage: implement"; commit_all
+expect_rc "stage: implement without tests: back to red-tests, with a warning" "red-tests test-writer 1" "$(st_of)"
+mk T-1 IN_PROGRESS "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
+expect_rc "stage: implement with tests: implement, developer, no warning" "implement developer 0" "$(st_of)"
+mk T-1 IN_PROGRESS; tests_md >> docs/tasks/T-1.md; commit_all
+expect_rc "legacy task (no stage field) with tests: implement from the evidence, no warning" "implement developer 0" "$(st_of)"
+j | grep -q "no stage field: from the evidence" && ok "legacy reason says the stage came from the evidence" || bad "legacy reason says the stage came from the evidence"
+mk T-1 IN_PROGRESS "stage: check"; commit_all
+j | grep -q "stage: check. is not a stage" && ok "an unknown stage value is warned about" || bad "an unknown stage value is warned about" "$(j | grep -A2 warnings)"
+mk T-1 IN_PROGRESS "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
+
+# resume: dirty tree or an interrupted outcome, never the current task alone
+echo T-1 > .teamwright/current-task
+expect "current task, clean tree, stage recorded: continue" continue T-1
+mkdir -p src; echo x > src/a.txt; git add src/a.txt
+expect "current task, dirty tree: resume" resume T-1
+expect_rc "resume carries the task's stage" implement "$(field '["stage"]')"
+git reset -q; rm -rf src
+mkdir -p .teamwright/logs; echo '{"event":"Stop","outcome":"interrupted","current_task":"T-1"}' > .teamwright/logs/outcomes.jsonl
+expect "interrupted outcome, clean tree: resume" resume T-1
+echo '{"event":"Stop","outcome":"barrier","current_task":"T-1","stage":"implement"}' >> .teamwright/logs/outcomes.jsonl
+expect "after a barrier: continue" continue T-1
+rm -f .teamwright/current-task
+
+# ---- stage requests (--stage, --task): stage commands ask first --------------------------
+req() { python3 "$NEXT" --project . --json --stage "$@" | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], " ".join(r["batch"]) or "-", r["hint"])'; }
+mk T-2 IN_PROGRESS "stage: red-tests"; commit_all
+expect_rc "implement on a task at red-tests: refused with the command to run" "False - T-2 is IN_PROGRESS, stage red-tests: /teamwright:red-tests T-2" "$(req implement --task T-2)"
+expect_rc "red-tests on that task: ok" "True T-2 " "$(req red-tests --task T-2)"
+expect_rc "a stage without a task: its waiting tasks" "True T-1 " "$(req implement)"
+req review | grep -q "^False - nothing waits at review; the router says: /teamwright:implement T-1" && ok "nothing at the stage: the router's command" || bad "nothing at the stage: the router's command" "$(req review)"
+mkdir -p src; echo x > src/a.txt; git add src/a.txt; echo T-2 > .teamwright/current-task
+req implement | grep -q "^False - .*finish it first: /teamwright:red-tests T-2" && ok "uncommitted work on another task: refused, finish it first" || bad "uncommitted work on another task: refused, finish it first" "$(req implement)"
+expect_rc "the resumed task's own stage runs" "True T-2 " "$(req red-tests --task T-2)"
+git reset -q; rm -rf src .teamwright/current-task
+python3 "$NEXT" --project . --task T-1 >/dev/null 2>&1; expect_rc "--task without --stage is an error" 2 "$?"
+mk T-1 DONE; mk T-2 DONE; commit_all
+
+# ---- batches and thresholds per stage ------------------------------------------------------
+fresh batches
+mk T-1 NEEDS_REVIEW; mk T-2 NEEDS_REVIEW; mk T-3 TODO; mk T-4 TODO; mk T-5 TODO
+commit_all
+cfg_st() { printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  stages:\n%b' "$1" > .teamwright/config.yml; }
+expect "defaults (min 1): review runs at once, as before stages" review T-1
+expect_rc "default batch 1" "T-1" "$(field '["batch"]' | python3 -c 'import ast,sys; print(" ".join(ast.literal_eval(sys.stdin.read())))')"
+cfg_st '    review:\n      batch: 3\n      min: 3\n    analyze:\n      batch: 2\n'
+expect "review min 3, two waiting: held, analysis starts" start T-3
+expect_rc "analyze batch 2" "T-3 T-4" "$(field '["batch"]' | python3 -c 'import ast,sys; print(" ".join(ast.literal_eval(sys.stdin.read())))')"
+expect_rc "stages report the held review" "False 2" "$(j | python3 -c 'import json,sys; s=json.load(sys.stdin)["stages"]["review"]; print(s["due"], len(s["waiting"]))')"
+j | grep -q "held: review stage waits - 2 waiting, min 3" && ok "held candidates say why" || bad "held candidates say why"
+expect_rc "with --pass the analyze batch keeps to the pass budget" "T-3" \
+  "$(python3 "$NEXT" --project . --json --pass "" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["batch"]))')"
+mk T-6 NEEDS_REVIEW; commit_all
+expect "three waiting: review is due" review T-1
+expect_rc "review batch 3 in router order" "T-1 T-2 T-6" "$(field '["batch"]' | python3 -c 'import ast,sys; print(" ".join(ast.literal_eval(sys.stdin.read())))')"
+mk T-6 DONE; mk T-2 NEEDS_REVIEW "priority: P1"; commit_all
+expect "a P1 task waiting: review runs below min" review T-2
+j | grep -q "P1 waiting (P0/P1 run at once)" && ok "urgent reason" || bad "urgent reason"
+mk T-2 NEEDS_REVIEW; mk T-3 DONE; mk T-4 DONE; mk T-5 DONE; commit_all
+expect "nothing else to do: the held stage runs" review T-1
+j | grep -q "nothing else to do" && ok "reason: nothing else to do" || bad "reason: nothing else to do"
+mk T-5 TODO; commit_all
+cfg_st '    review:\n      min: 3\n      max_wait_hours: 2\n'
+expect "review min 3, records fresh: analysis first" start T-5
+mk T-1 NEEDS_REVIEW "title: old one"; git add -A; GIT_COMMITTER_DATE="2001-01-01T00:00:00" git commit -qm old
+expect "the oldest waiting task is past max_wait_hours: review runs" review T-1
+j | grep -q "max_wait_hours 2" && ok "age reason" || bad "age reason" "$(j | grep why)"
+
+# ---- candidates: facts for the session's batch choice ------------------------------------
+fresh cands
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: server\n    source_dirs: [server/src]\n  - name: app\n    source_dirs: [app/lib]\nprocess:\n  stages:\n    review:\n      batch: 3\n' > .teamwright/config.yml
+mk T-1 NEEDS_REVIEW "analysis:" "  seam: server/src/billing.py"
+mk T-2 NEEDS_REVIEW "analysis:" "  seam: server/src/billing.py:40 and server/src/ledger.py"
+mk T-3 NEEDS_REVIEW "analysis:" "  seam: app/lib/cart.dart" "depends_on: [T-1]"
+mk T-4 NEEDS_REVIEW "analysis:" "  seam: the retry policy"
+mk T-5 TODO "depends_on: [T-3]" "priority: P1"
+commit_all
+cand() { j | python3 -c 'import json,sys; c={x["id"]:x for x in json.load(sys.stdin)["candidates"]}; print(eval(sys.argv[1]))' "$1"; }
+expect_rc "candidates: every task waiting at the chosen stage, in router order" "['T-1', 'T-2', 'T-3', 'T-4']" "$(cand 'list(c)')"
+expect_rc "batch cap reported" 3 "$(field '["batch_cap"]')"
+expect_rc "seam paths and areas from the config" "['server/src/billing.py'] ['server']" "$(cand 'c["T-1"]["seam_paths"], c["T-1"]["areas"]' | tr -d '(),' | sed 's/] \[/] [/')"
+expect_rc "overlapping seams named (tw-parallel rule)" "['T-2', 'T-4']" "$(cand 'c["T-1"]["overlaps"]')"
+expect_rc "a disjoint seam overlaps only the seam without a path" "['T-4']" "$(cand 'c["T-3"]["overlaps"]')"
+expect_rc "a dependency between candidates is named" "['T-1']" "$(cand 'c["T-3"]["depends_on_candidates"]')"
+expect_rc "unblocks and inherited priority" "1 P1" "$(cand 'str(c["T-3"]["unblocks"]) + " " + c["T-3"]["effective_priority"]')"
+expect_rc "a stage request carries the candidates too" "T-1 T-2 T-3 T-4" \
+  "$(python3 "$NEXT" --project . --json --stage review | python3 -c 'import json,sys; print(" ".join(x["id"] for x in json.load(sys.stdin)["request"]["candidates"]))')"
+
+# ---- work_available, models, headless, selection mode --------------------------------------
+fresh models
+mk T-1 DONE; commit_all
+expect_rc "idle: no work available" "idle False" "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["work_available"])')"
+expect_rc "idle: no headless job" False "$(field '["headless"]["run"]')"
+mk T-2 NEEDS_REVIEW; commit_all
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  models:\n    review: sonnet\n  router:\n    select: agent\n' > .teamwright/config.yml
+expect_rc "the stage's model is reported" sonnet "$(field '["model"]')"
+expect_rc "headless prompt for one stage per job" "True /teamwright:review T-2 sonnet" \
+  "$(j | python3 -c 'import json,sys; h=json.load(sys.stdin)["headless"]; print(h["run"], h["prompt"], h["model"])')"
+j | grep -q 'claude -p \\"/teamwright:review T-2\\" --model sonnet' && ok "headless note has the command line" || bad "headless note has the command line"
+expect_rc "selection mode agent is reported" agent "$(field '["select"]')"
+out="$(python3 "$NEXT" --project .)"
+printf '%s' "$out" | grep -q "stage: review | batch: T-2 | model: sonnet | run: /teamwright:review T-2" && ok "human summary: stage line" \
+  || bad "human summary: stage line" "$out"
+git init -q --bare "$TMP/remote2.git"; git remote add origin "$TMP/remote2.git"; git push -q -u origin main 2>/dev/null
+mk T-2 DONE; echo y > g.txt; git add -A; git commit -qm "chore: g"
+expect_rc "only a push decision: no work available, no job" "decide False False" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["work_available"], d["headless"]["run"])')"
 
 finish
