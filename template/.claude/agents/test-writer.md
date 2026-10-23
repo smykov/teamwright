@@ -117,6 +117,7 @@ Verification (VERIFY session) runs committed tests against the running system; i
    # copy your uncommitted test files in, write a wrong implementation, run the tests there
    ```
    **`checker: true` in the task** (the seam's whole guarantee is rejecting bad input): instead of 2–3 wrong implementations, sweep — mutate every condition, guard, return and write of the seam, one at a time; each must turn a test red or be shown equivalent. Sampling a checker leaves survivors for the validator to find one per round.
+   **One toolchain start for all mutants.** Starting the area's test runner (a container, an interpreter that loads models) usually costs more than the tests themselves, so do not start it once per mutant: write one loop that, for each mutant, applies it in the copy, runs only the task's test files and reverts, and run that loop as **one** command (`scripts/tw-run <area> -- 'sh <loop>'`, or the area's test wrapper with the loop as its command). Never the full suite per mutant.
    Write the result into the task record body under `## Tests` (never the front matter): one line per wrong implementation — what it did, which test went red. The reviewer reads it, and the task-validator re-runs every line, so write each so it can be repeated (file, symbol, the change).
 5. Lint the tests.
 
@@ -127,6 +128,7 @@ The first spawn runs before the implementation exists, so it cannot break the co
 1. **List the failure branches** of Acceptance: every `Failure branch:` line and every refusal, limit or error the criteria name.
 2. **Break each one once** in the implementation: the smallest change that stops the branch from happening — drop the guard, invert the check, skip the write, the message or the error. One mutation per branch, no matrices.
 3. **Run the test that guards it** on the broken copy. For `surface: api | both` that is the end-to-end API test verification will run; an in-process API test runs here; one that needs the deployed system → run the closest test that runs locally and mark the row `not runnable locally: <why>` (the validator runs it after deploy). For a UI test, also name the state its wait reaches **only after the branch ran** (a message, a stored row, a disabled control) — a wait already satisfied before the branch runs proves nothing.
+   Run all branch mutations through one loop, one toolchain start (see the first spawn).
 4. **A surviving mutation** → rewrite the test (never the implementation) and run again until it is killed.
 5. **Record it** under `## Tests`, below the first spawn's lines:
    ```
