@@ -89,7 +89,9 @@ has "per-area name in front matter" "$G/.claude/agents/developer-app.md" "name: 
 has "area placeholder rendered" "$G/.claude/agents/developer-backend.md" "| Stack | Python |"
 has "list placeholder joined" "$G/.claude/agents/developer-app.md" "app/lib, app/test"
 has "multi-area value in global file" "$G/.claude/agents/task-validator.md" "backend: scripts/tw-run backend -- make api"
-has "area command wrapped with tw-run" "$G/.claude/agents/test-writer-app.md" "scripts/tw-run app -- flutter test"
+has "area command wrapped with tw-run" "$G/.claude/agents/test-writer-app.md" "scripts/tw-run app -- patrol test"
+has "test-writer runs tests through tw-test" "$G/.claude/agents/test-writer-app.md" "scripts/tw-test app"
+hasnt "no tw-run test command in the role file (the test guard refuses it)" "$G/.claude/agents/test-writer-app.md" "scripts/tw-run app -- flutter test"
 has "requirements-reviewer role installed" "$G/.claude/agents/requirements-reviewer.md" "name: requirements-reviewer"
 python3 - "$G/docs/requirements.md" <<'PY2' && ok "requirements template has the ten sections" || bad "requirements template has the ten sections"
 import re, sys
@@ -102,7 +104,11 @@ hasnt "top-level gate_command: no tw-run" "$G/AGENTS.md" "tw-run backend -- make
 [ -x "$G/scripts/tw-run" ] && ok "tw-run installed executable" || bad "tw-run installed executable"
 [ -x "$G/scripts/tw-gate" ] && ok "tw-gate installed executable" || bad "tw-gate installed executable"
 [ -x "$G/scripts/tw-mutants" ] && ok "tw-mutants installed executable" || bad "tw-mutants installed executable"
-[ -f "$G/scripts/hooks/_job.sh" ] && ok "hooks/_job.sh installed (tw-gate, tw-mutants)" || bad "hooks/_job.sh installed"
+[ -x "$G/scripts/hooks/_job.sh" ] && ok "hooks/_job.sh installed executable (tw-gate, tw-mutants, tw-test)" || bad "hooks/_job.sh installed executable"
+[ -x "$G/scripts/tw-test" ] && ok "tw-test installed executable" || bad "tw-test installed executable"
+[ -x "$G/scripts/hooks/test-guard.sh" ] && ok "test-guard.sh installed executable" || bad "test-guard.sh installed executable"
+expect_rc "the kit's scripts are committed with the mode the installer gives them (no mode change in projects)" "" \
+  "$(git -C "$KIT" ls-files -s template/scripts | awk '$1 == "100644" && $4 ~ /(\.sh|\/tw-[a-z-]+|\/(pre-commit|commit-msg|pre-push))$/ {print $4}')"
 has ".gitignore has runner cache" "$G/.gitignore" ".teamwright/cache/"
 hasnt "GATE_COMMAND resolved" "$G/AGENTS.md" "{{GATE_COMMAND}}"
 has "unresolved placeholders reported" "$TMP/out" "unresolved      .claude/agents/developer-backend.md {{CONVENTIONS}}"
@@ -122,6 +128,7 @@ import json, sys
 s = json.load(open(sys.argv[1] + "/.claude/settings.json"))
 cmds = [h["command"] for g in s["hooks"]["PreToolUse"] for h in g["hooks"]]
 assert any("analysis-gate.sh" in c for c in cmds) and any("verify-gate.sh" in c for c in cmds)
+assert any("test-guard.sh" in h["command"] for g in s["hooks"]["PreToolUse"] if g.get("matcher") == "Bash" for h in g["hooks"])
 assert "Bash(git stash *)" in s["permissions"]["deny"]
 PY
 python3 - "$G" <<'PY' && ok ".mcp.json gets both adapter servers" || bad ".mcp.json gets both adapter servers"
@@ -385,13 +392,14 @@ areas:
     cache: [".pub-cache"]
     workdir: app
     test_command: "flutter test"
+    api_test_command: "flutter test integration_test"
     lint_command: "dart format --set-exit-if-changed . && flutter analyze"
     generate_command: "flutter gen-l10n"
 gate_command: "make check"
 YML
 tw apply --project "$R" --config "$TMP/r.yml" > "$TMP/out" 2>&1
 expect_rc "docker area accepted" 0 "$?"
-has "plain command wrapped" "$R/.claude/agents/test-writer.md" "scripts/tw-run app -- flutter test"
+has "plain command wrapped" "$R/.claude/agents/test-writer.md" "scripts/tw-run app -- flutter test integration_test"
 has "shell chain passed as one quoted string" "$R/.claude/agents/developer.md" \
   "scripts/tw-run app -- 'dart format --set-exit-if-changed . && flutter analyze'"
 printf 'version: 1\nareas:\n  - name: a\n    runner: docker\n  - name: b\n    runner: vm\n  - name: c\n    workdir: ../x\n    cache: x\n  - name: d\n    test_command: "scripts/tw-run d -- make test"\n' > "$TMP/rbad.yml"
@@ -414,7 +422,7 @@ has "apply shows the diff" "$TMP/out" '-    test_command: "flutter test"'
 has "config updated" "$R/.teamwright/config.yml" "flutter test --coverage"
 [ ! -e "$R/.teamwright/config.next.yml" ] && ok "proposal removed after apply" || bad "proposal removed after apply"
 has "removal reported" "$TMP/out" "removed .teamwright/config.next.yml"
-has "re-rendered with new command" "$R/.claude/agents/test-writer.md" "scripts/tw-run app -- flutter test --coverage"
+has "re-rendered with new command" "$R/.claude/agents/test-writer.md" "scripts/tw-run app -- flutter test --coverage integration_test"
 sed 's/^mode: enforce/mode: gate-first/' "$R/.teamwright/config.yml" > "$R/.teamwright/config.next.yml"
 (cd "$R" && CLAUDECODE=1 tw apply --config .teamwright/config.next.yml > "$TMP/out" 2>&1)
 expect_rc "proposal lowering the mode refused" 1 "$?"
@@ -774,6 +782,19 @@ has "generated without generate_command is refused" "$TMP/out" "generated names 
 has "copy_env must be a map" "$TMP/out" "copy_env must map variable names"
 awk '{print} /^  - name: backend$/{print "    generate_command: \"make gen\""; print "    generated: [backend/gen]"; print "    copy_env:"; print "      CARGO_TARGET_DIR: \"{cache}/target\""}' "$TMP/ps.yml" > "$TMP/ps-gen2.yml"
 tw plan --project "$PS" --config "$TMP/ps-gen2.yml" > "$TMP/out" 2>&1; expect_rc "generated and copy_env accepted" 0 "$?"
+# test guard keys: test_select_command, test_runner_patterns, process.test_guard
+awk '{print} /^  - name: backend$/{print "    test_select_command: \"pytest -q\""}' "$TMP/ps.yml" > "$TMP/ps-ts.yml"
+printf 'test_runner_patterns: ["(unclosed"]\nprocess:\n  test_guard: maybe\n' >> "$TMP/ps-ts.yml"
+tw plan --project "$PS" --config "$TMP/ps-ts.yml" > "$TMP/out" 2>&1
+has "test_select_command without {tests} is refused" "$TMP/out" "test_select_command must be a command with a {tests} placeholder"
+has "a bad test_runner_patterns regex is refused" "$TMP/out" "test_runner_patterns: '(unclosed' is not a valid regular expression"
+has "a bad process.test_guard is refused" "$TMP/out" "process.test_guard must be one of block, warn, off"
+awk '{print} /^  - name: backend$/{print "    test_select_command: \"scripts/tw-run backend -- pytest {tests}\""}' "$TMP/ps.yml" > "$TMP/ps-ts2.yml"
+tw plan --project "$PS" --config "$TMP/ps-ts2.yml" > "$TMP/out" 2>&1
+has "test_select_command wrapped in tw-run is refused" "$TMP/out" "test_select_command: write the bare command"
+awk '{print} /^  - name: backend$/{print "    test_select_command: \"pytest -q -n ${PYTEST_WORKERS:-4} {tests}\""}' "$TMP/ps.yml" > "$TMP/ps-ts3.yml"
+printf 'test_runner_patterns: ["^bin/specs"]\nprocess:\n  test_guard: warn\n' >> "$TMP/ps-ts3.yml"
+tw plan --project "$PS" --config "$TMP/ps-ts3.yml" > "$TMP/out" 2>&1; expect_rc "test guard keys accepted" 0 "$?"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 # render drift (#6): a settings change does not reach a locally edited role file

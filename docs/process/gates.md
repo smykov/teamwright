@@ -29,6 +29,7 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 | [Secret scan](#secret-scan) | git `pre-commit` (CI only if the project adds it) | T3 | Tokens, keys, `.env`, local settings in history |
 | [CLAUDE.md budget](#claudemd-budget) | Claude Code `SessionStart` + git `pre-commit` | T2 | A context file that grows into a second docs folder |
 | [Gate runs](#gate-runs-tw-gate) | `scripts/tw-gate <area>`, called by the developer, the flow, the reviewer and the validator | T1 (tooling) | The same full gate run by four roles on the same code; gate output lost to `\| tail`; a docs commit invalidating the cache; a gate cut by the 10-minute Bash limit; the server suite run for a CI-only change |
+| [Test guard](#test-guard) | Claude Code `PreToolUse` (Bash) + `scripts/tw-test <area> [tests]` | T3 (own switch `process.test_guard`, blocks by default) | Tests and gates run directly — with the wrong workers, flags that break fixtures — and their output cut with `\| tail`, then run again to see what failed |
 | [Mutation checks](#mutation-checks-tw-mutants) | `scripts/tw-mutants <area> <ID>`, called by the test-writer and the validator; the stop rules in the verify gate | T1 (tooling) + T3 (stop rules) | Mutation rounds without an end: every sweep a new, larger list, any survivor a FAIL, the runner started once per mutant |
 
 All files live in `scripts/hooks/`. Install the git hooks once per clone:
@@ -600,6 +601,83 @@ report; the reviewer and the validator still compare `git status` before and aft
 their verdict stays theirs. Files the gate depends on but git ignores (build caches,
 downloaded dependencies) are outside the key — `--fresh` when they matter.
 
+## Test guard
+
+`scripts/hooks/test-guard.sh` (Claude Code `PreToolUse`, Bash) and `scripts/tw-test` · T3
+
+**Incident it prevents.** In one project's autonomous run the test-writer, after fixing
+one test, ran the same ~4-minute suite four times in a row: twice through
+`… pytest -q -n 1 … tests/pipeline 2>&1 | grep -E "passed|failed" | tail -15` (the
+failures were cut off and lost), once with its output in a file but with
+`-p no:logging`, which removed the `caplog` fixture and produced 25 false errors, and
+once right — about 12 minutes lost, and with one worker instead of the configured
+`PYTEST_WORKERS`. The developer ran the project's gate script directly twice. The role
+files already said "never cut output, run long commands once with output to a file";
+agents ignored it, so the tooling enforces it.
+
+**The rule.** Tests run only through `scripts/tw-test`, gates through `scripts/tw-gate`,
+mutants through `scripts/tw-mutants`; lint, build and code generation through
+`scripts/tw-run <area> -- <cmd>`.
+
+**What the hook refuses** (one message naming the command to run instead and saying to
+read the log it prints):
+
+1. A test runner or gate called directly: `pytest`, `python -m pytest|unittest`,
+   `make test|tests|check|test-*`, `flutter|dart|deno|bun|go test`, `cargo test|nextest`,
+   `npm|pnpm|yarn [run] test[:*]`, `vitest`, `jest`, `phpunit`, `pest`,
+   `php artisan test`, `gradle(w) test|check`, `mvn test` — also behind `uv run`,
+   `poetry run`, `npx`, `pnpm exec` and the like, inside `sh -c '…'`, `eval`,
+   `docker run|exec`, a wrapper script's arguments, and inside
+   `scripts/tw-run <area> -- <cmd>`; plus every command the config names: each area's
+   `gate_command`, `test_command` and `test_select_command` and the top-level
+   `gate_command` (a repository script such as `tool/gate.sh` by its name, a
+   `make check`-style command by its first words), and the regular expressions in the
+   top-level `test_runner_patterns: [...]`.
+2. Test or gate output — the wrappers' own included — piped into `grep`, `tail`, `head`,
+   `sed`, `awk`, `cut`, `wc`, `sort`, `less`: the wrappers already print a summary and
+   keep the whole output in a log. Reading that log with `grep` or `sed -n` is fine.
+
+**What it allows.** The wrappers; `scripts/tw-run <area> -- <cmd>` for anything that is
+not a test run, and for the area's own `lint_command`, `generate_command`,
+`api_test_command` and `e2e_ui_command` (verification against a running service runs as
+rendered); everything else. The wrappers' internal runs go through `scripts/tw-run`
+inside the script, never through the Bash tool, so the hook never sees them. The command
+is parsed (quotes, pipes, `&&`, heredocs), not grepped: `git commit -m "fix pytest"` or
+`echo pytest` pass.
+
+**Mode — its own switch.** `gate-first` only warns, and this guard exists to stop
+agents, so it does not follow `mode:`. `process.test_guard: block | warn | off` in
+`.teamwright/config.yml` (default `block`, also in `gate-first`); `TW_TEST_GUARD=block|warn|off`
+in the environment Claude Code is started with wins — the human escape. An assignment
+inside the agent's command (`TW_TEST_GUARD=off pytest`) does not reach the hook, and
+agents cannot edit `config.yml` (state guard).
+
+**`scripts/tw-test <area> [selector ...] [--fresh] [--tree <copy>]`**, `--stop <area>`:
+
+- **Command:** the area's `test_select_command` with `{tests}` replaced by the selectors
+  (test files, node ids, filters, shell-quoted), e.g.
+  `test_select_command: "pytest -q -n ${PYTEST_WORKERS:-4} {tests}"`; without it the
+  selectors are appended to `test_command`; with none, `test_command` as written. Workers
+  and other knobs stay in the config string; tw-test knows no test framework. It runs
+  through `scripts/tw-run <area>` from the area's workdir, so selectors are relative to it.
+- **Output:** the whole output in `<logs>/test/<area>-<time>-<commit>-<id>.log`; on
+  screen PASS/FAIL, the exit code, the duration, the counts when the output is
+  recognisable (pytest, cargo test, go test, flutter/dart test, jest, vitest), the failed
+  tests with their first error line (at most 30), otherwise the last 15 lines, and the
+  log path. Exit code = the test command's.
+- **Cache:** keyed by the area's files (the same area-scoped key as tw-gate, plus files
+  the test command names), the resolved command and the selectors, in
+  `<logs>/test/cache/`. An identical repeat prints the cached summary and the log path —
+  a FAIL too, unlike the gate: the answer to a failure is its log, not another run.
+  `--fresh` runs anyway. Not reused: a run during which the files changed, exit 126/127
+  (not runnable), a killed run. Every run and cached answer is appended to
+  `<logs>/test/runs.jsonl`.
+- **Long runs:** detached and waited for up to `TW_WAIT_SECONDS`, like tw-gate: `RUNNING: tests <area> … - run the same command again to keep waiting`, exit 75; the
+  same command attaches. Another test run of the same area is waited for first.
+- **`--tree <copy>`:** runs in a throwaway copy (`TEAMWRIGHT_ROOT=<copy>`,
+  `TW_RUN_COPY=1`, the main checkout's caches) — the test-writer's wrong implementations
+  and the validator's hand-run tests; logs stay in the project.
+
 ## Mutation checks (tw-mutants)
 
 `scripts/tw-mutants <area> <ID> --tree <copy> [--check] [--only <name>]` · T1 (tooling);
@@ -689,7 +767,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_NONCODE_RE` | analysis gate | paths that are not code (`docs/`, `.claude/`, `.github/`, `.teamwright/`, top-level `*.md`) |
 | `TEAMWRIGHT_REVIEWER_AGENT` | review gate | the reviewer's `agent_type` (`code-reviewer`) |
 | `TEAMWRIGHT_ESCALATE_AFTER` | review gate | `REQUEST_CHANGES` rounds in a row before the next record must escalate (`2`) |
-| `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate`, `scripts/tw-mutants` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory, mutant reports to `mutants/` |
+| `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory, test logs to `test/`, mutant reports to `mutants/` |
 | `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
 | `TEAMWRIGHT_PAUSE_FILE` | `pre-push`, router | pause file (`TEAMWRIGHT_PAUSE` at the repository root) |
 | `TEAMWRIGHT_PUSH_STATUSES` | `pre-push` | statuses whose code may be pushed (`CODE_COMPLETE DEPLOYED VERIFIED DONE`) |
@@ -700,8 +778,9 @@ guard's variables. Unset means the default.
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
-| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate`, `scripts/tw-mutants` | another project root or config file |
-| `TW_WAIT_SECONDS`, `TW_POLL_SECONDS` | `scripts/tw-gate`, `scripts/tw-mutants` | how long a call waits for the detached run (default 540; `0` = start or attach and return 75 at once) and how often it looks (default 0.2 s, then 1 s) |
+| `TW_TEST_GUARD` | test guard | `block`, `warn` or `off`, set by the person who starts Claude Code; wins over `process.test_guard` |
+| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | another project root or config file |
+| `TW_WAIT_SECONDS`, `TW_POLL_SECONDS` | `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | how long a call waits for the detached run (default 540; `0` = start or attach and return 75 at once) and how often it looks (default 0.2 s, then 1 s) |
 | `TEAMWRIGHT_NO_GATE_RE` | `scripts/tw-gate --for-task`, `--for-diff` | files outside every area that need no local gate (records, docs, Markdown, CI and tool configuration by default) |
 | `TW_RUN_COPY`, `TW_CACHE_ROOT` | `scripts/tw-run` (set by `scripts/tw-mutants`) | apply the area's `copy_env`; whose `.teamwright/cache` holds the runner's caches |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |

@@ -232,6 +232,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `areas` | list of maps | yes, ≥1 | code areas; each needs `name` (lower-case, digits, `-`, `_`) |
 | `areas[].source_dirs` | list | no | `{{SOURCE_DIRS}}`; with `test_dirs` and `workdir`, also the area's scope for `scripts/tw-gate`: its cache key and which tasks need its gate (`--for-task`) |
 | `areas[].test_command`, `lint_command`, `api_test_command`, `e2e_ui_command` | string | no | `{{TEST_COMMAND}}` etc., written bare and rendered as `scripts/tw-run <area> -- <cmd>`; `""` renders as `n/a` |
+| `areas[].test_select_command` | string with `{tests}` | no | the area's test command for chosen tests, run by `scripts/tw-test <area> <tests>`: `{tests}` becomes the selectors, shell-quoted; workers stay in the string, e.g. `"pytest -q -n ${PYTEST_WORKERS:-4} {tests}"`. Without it tw-test appends the selectors to `test_command`. Written bare (no `scripts/tw-run`) |
 | `areas[].generate_command` | string | no | codegen run before the checks (by `check-commands`, and by the developer before the gate) |
 | `areas[].generated` | list | no | the outputs of `generate_command`, relative to the project root: `scripts/tw-mutants` copies them from the working tree into a throwaway copy when the copy's inputs are unchanged, instead of generating there |
 | `areas[].generate_inputs` | list | no | the paths `generate_command` reads (default: the whole tree); compared between the copy and the working tree |
@@ -247,6 +248,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `tools.<capability>` | provider name \| `none` | no | capabilities: `spec`, `context`, `docs`, `ui_verify`, `api_verify`; adapter `providers/<capability>/<provider>.md` |
 | `ui_verify_deferred` | string | no | the owner's recorded decision to run without UI verification for now (e.g. `"decisions.md #6"`): `check-commands` notes the missing `e2e_ui_command` instead of reporting it as not runnable |
 | `no_mcp` | list | no | capabilities whose provider's MCP server is not added to `.mcp.json` (the tool is used through its CLI only) |
+| `test_runner_patterns` | list of regular expressions | no | more commands the test guard treats as test runs (matched against each simple command), e.g. `["^bin/run-specs( \|$)"]` |
 | `language` | string | no | language of generated project docs |
 | `process.review.blocking` | `low` \| `medium` \| `high` | no (default `low`) | from which severity a review finding returns the task; Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` always block. Set → the review gate checks the verdict against the record's findings table. `{{REVIEW_BLOCKING}}` |
 | `process.batch.max_tasks` | 1–5 | no (default 1) | tasks per `/teamwright:flow` pass, one after another. `{{BATCH_MAX_TASKS}}` |
@@ -255,8 +257,9 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
 | `process.ready.after` | `verified` \| `code_complete` | no (default `verified`) | when a `depends_on` counts as finished for readiness: `VERIFIED`/`DONE`, or already `CODE_COMPLETE`/`DEPLOYED` (`tw-next.py`) |
+| `process.test_guard` | `block` \| `warn` \| `off` | no (default `block`) | the test guard (`scripts/hooks/test-guard.sh`): refuses tests and gates run directly instead of through `scripts/tw-test`/`tw-gate`/`tw-mutants`, and test output piped into `tail`/`grep`. Its own switch, independent of `mode` — it blocks in `gate-first` too; `TW_TEST_GUARD` in the environment Claude Code starts with wins ([gates.md](gates.md#test-guard)) |
 
-`process:` is a closed list: any other key fails validation. Missing keys are the behaviour before settings existed. Changed through `/teamwright:settings` (config.next.yml + `apply`), like every config change.
+`process:` is a closed list: any other key fails validation. Missing keys are the behaviour before settings existed, except `test_guard` (new in 0.11.0, blocks by default). Changed through `/teamwright:settings` (config.next.yml + `apply`), like every config change.
 
 Placeholder rule: `{{NAME}}` → key `name` in the area being rendered, then at the top level; lists are joined with `, `. A per-area file (`developer-<area>.md`, `test-writer-<area>.md`) uses only its own area and the top level: when its area lacks the key, the placeholder stays as written and is reported as `unresolved` — it never takes another area's value. An area key used in a shared file (`AGENTS.md`, `CLAUDE.md`, `task-validator.md`, ...) renders as the single area's value, or `area: value; area: value`. An unknown key stays as written and is reported as `unresolved`.
 

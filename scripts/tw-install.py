@@ -177,7 +177,16 @@ def load_config(path):
             if cw is not None and not (isinstance(cw, str) and cw.strip()):
                 errors.append("areas[%s].ci_workflow must name the CI workflow that runs the tests "
                               "the host cannot (e.g. windows.yml)" % n)
-            for k in COMMAND_KEYS:
+            ts = a.get("test_select_command")
+            if ts is not None:
+                if not (isinstance(ts, str) and "{tests}" in ts):
+                    errors.append("areas[%s].test_select_command must be a command with a {tests} placeholder, "
+                                  "e.g. \"pytest -q -n ${PYTEST_WORKERS:-4} {tests}\" (scripts/tw-test puts the "
+                                  "selected tests there)" % n)
+                elif ts.lstrip().startswith(("scripts/tw-test", "scripts/tw-gate")):
+                    errors.append("areas[%s].test_select_command: write the bare test command, not a "
+                                  "teamwright wrapper" % n)
+            for k in COMMAND_KEYS + ("test_select_command",):
                 if a.get(k) and str(a[k]).lstrip().startswith(TW_RUN):
                     errors.append("areas[%s].%s: write the bare command; tw-run is applied "
                                   "automatically" % (n, k))
@@ -194,6 +203,17 @@ def load_config(path):
     no_mcp = cfg.get("no_mcp")
     if no_mcp is not None and not (isinstance(no_mcp, list) and all(x in CAPABILITIES for x in no_mcp)):
         errors.append("no_mcp must be a list of capabilities (%s)" % ", ".join(CAPABILITIES))
+    trp = cfg.get("test_runner_patterns")
+    if trp is not None:
+        if not (isinstance(trp, list) and all(isinstance(x, str) and x.strip() for x in trp)):
+            errors.append("test_runner_patterns must be a list of regular expressions (commands the "
+                          "test guard treats as test runs)")
+        else:
+            for x in trp:
+                try:
+                    re.compile(x)
+                except re.error as e:
+                    errors.append("test_runner_patterns: %r is not a valid regular expression: %s" % (x, e))
     errors += _config.process_errors(cfg)
     if errors:
         raise SystemExit("tw-install: invalid config %s:\n  %s" % (path, "\n  ".join(errors)))

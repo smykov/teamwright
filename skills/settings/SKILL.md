@@ -22,7 +22,9 @@ The pipeline — statuses, roles, gates, records, "two send-backs → ESCALATE",
 | `autonomy.continue` | `true` · `false` | `false` | `true` | After a barrier, take the next task in the same pass instead of ending the session. Push stays the owner's decision: asked once at the end of the pass |
 | `ready.after` | `verified` · `code_complete` | `verified` | `verified` | When a `depends_on` counts as finished: at `VERIFIED`/`DONE`, or already at `CODE_COMPLETE`/`DEPLOYED` — the dependent starts while the dependency's pipeline, deploy and verification run. A `VERIFY_FAIL` on the dependency can then reopen work already done on the dependent |
 
-Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself.
+| `test_guard` | `block` · `warn` · `off` | `block` | `block` | The test guard: tests only through `scripts/tw-test`, gates through `scripts/tw-gate` — a direct test runner or gate script, and test output piped into `tail`/`grep`, are refused (`block`) or only warned about. Its own switch, not `mode`: it blocks in `gate-first` too |
+
+Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself — except `test_guard`, which blocks from 0.11.0 on.
 
 ## 1. Show
 

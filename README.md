@@ -92,6 +92,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Tests the host cannot run (another platform) run in CI on a `wip/<ID>` branch before review; that push is not a delivery. [hook allows only `wip/*`] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 - The gate is green before review; the reviewer and the validator run it again instead of trusting the author's report. [reviewer checks] — [AGENTS.md](template/AGENTS.md#gate)
 - The full gate runs once per state of the code: `scripts/tw-gate <area>` keeps its whole output in a log and records a PASS for the content of the area's files, so the next role — also after a docs-only commit — gets `PASS (cached: …)` instead of another run; a FAIL is always rerun. `--for-task <ID>` names the gates a task's changes need (a CI-only change needs none). A gate longer than Claude Code's 10-minute Bash limit runs detached: the call returns `RUNNING` (exit 75) and the same command again attaches to it. While working, the developer runs only the task's tests and the touched modules. [tool] — [gate runs](docs/process/gates.md#gate-runs-tw-gate)
+- Tests run only through `scripts/tw-test <area> [<tests>]`: the area's configured test command once per state of its files, the whole output in a log, a summary with the failed tests and their first error line; a repeat — a failure too — answers from the cache instead of running again. Calling a test runner or the gate script directly, or piping test output into `tail`/`grep`, is refused. [hook: test-guard, blocks unless `process.test_guard` says otherwise] — [test guard](docs/process/gates.md#test-guard)
 - Tests must bite: the reviewer names the line whose removal turns each test red, the validator re-runs the task's mutant catalog (`docs/tasks/<ID>.mutants/`, exact replacements kept in the repository) and adds 15–30 mutants aimed at the guarantees and the changed lines, in a throwaway worktree that its script removes; only a survivor that breaks a stated guarantee fails the task, others become follow-ups; after two failed rounds in a row, a sweep of the changed lines instead of another sample, and after two failed sweeps the owner decides — and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
 - Every task's acceptance names a failure branch, and an end-to-end test exercises it. [reviewer checks; the verify gate requires a `Failure branch:` line] — [task template](template/docs/tasks/_task-template.md)
 
@@ -219,13 +220,14 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 
 ## What gets installed
 
-Paths are in your repository after install; each links to its source in [`template/`](template/). The tiers of the three Claude Code gates are those of `enforce` mode: in `gate-first` they warn.
+Paths are in your repository after install; each links to its source in [`template/`](template/). The tiers of the three Claude Code gates are those of `enforce` mode: in `gate-first` they warn (the test guard has its own switch).
 
 | Component | What it does | Tier |
 |---|---|---|
 | [`scripts/hooks/analysis-gate.sh`](template/scripts/hooks/analysis-gate.sh) | no `IN_PROGRESS` and no code edits of the active task without a filled analysis block | T3 |
 | [`scripts/hooks/review-gate.sh`](template/scripts/hooks/review-gate.sh) | review records only from a code-reviewer that did not implement the task; `CODE_COMPLETE` only with an approval and a logged reviewer start; after two send-backs in a row the third record must escalate (or reject a recurrence), never approve; with a review threshold set, the verdict must match the findings table; the state guard | T3 |
 | [`scripts/hooks/verify-gate.sh`](template/scripts/hooks/verify-gate.sh) | `VERIFIED` / `DONE` only with a `PASS` verify record for the current code, of the kind the task's `surface` needs; `DONE` also with the task-validator's acceptance `PASS` for that code | T3 |
+| [`scripts/hooks/test-guard.sh`](template/scripts/hooks/test-guard.sh) | refuses tests and gates run directly instead of through `tw-test`/`tw-gate`/`tw-mutants`, and test output cut with `tail`/`grep`; its own switch `process.test_guard: block \| warn \| off` (blocks by default, also in `gate-first`) | T3 |
 | [`scripts/hooks/journal.sh`](template/scripts/hooks/journal.sh) | logs tool calls, permission events and session outcomes to `.teamwright/logs/` | facts |
 | [`scripts/hooks/pre-push`](template/scripts/hooks/pre-push) | pushes only code of approved tasks (docs-only commits belong to no task; `wip/*` branches are CI-only, not deliveries); a `TEAMWRIGHT_PAUSE` file stops all pushes | T3 |
 | [`scripts/hooks/pre-commit`](template/scripts/hooks/pre-commit) | secret scan (gitleaks or a built-in fallback); refuses `.env`, `*.local.json` | T3 |
@@ -241,6 +243,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`docs/process/`](docs/process/) | the process reference (all of it except `plugin.md`) | T0 |
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
 | [`scripts/tw-gate`](template/scripts/tw-gate) | runs an area's full gate once per state of the area's files, full output in a log, PASS reused on the same content; detached, so it outlives the 10-minute Bash limit (exit 75, call again); `--for-task` lists a task's gates | tool |
+| [`scripts/tw-test`](template/scripts/tw-test) | the one way to run tests while working: the area's test command for the tests you name, full output in a log, a short summary (counts, failed tests with their first error, log path), cached per state of the area's files — FAIL included; detached like tw-gate | tool |
 | [`scripts/tw-mutants`](template/scripts/tw-mutants) | re-runs a task's mutant catalog on a throwaway copy in one runner start, with generated code copied or generated and a per-copy build cache; fails only on a survivor that breaks a named guarantee | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
 | [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |

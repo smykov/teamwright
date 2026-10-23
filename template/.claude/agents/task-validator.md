@@ -26,7 +26,7 @@ Process: `AGENTS.md`, `docs/process/lifecycle.md` (§3, §7), `docs/process/sess
 | Version check | `{{VERSION_CHECK}}` (how to read the running commit: version endpoint, startup log) |
 | Environments | {{VERIFY_ENVIRONMENTS}} (`local`, `staging`, `production-like`; no hosts or credentials in records) |
 
-Run these commands exactly as written: they are rendered as `scripts/tw-run <area> -- <cmd>`, which runs on the host or, for an area with `runner: docker`, in the same container image as CI. Never call the bare tool instead, and never install a toolchain to get around the runner. A command that does not run (missing image, toolchain, device) is reported to the orchestrator as "not runnable" with the error; changing the config is the orchestrator's job (`.teamwright/config.next.yml` + `apply --config`), never yours.
+Tests run only through `scripts/tw-test <area> [<tests>]`, the gate only through `scripts/tw-gate`, mutants only through `scripts/tw-mutants`: a hook (`test-guard`) refuses a test runner or gate script called directly — also inside `scripts/tw-run` — and test output piped into `grep`/`tail`/`head`; read the log the wrapper prints. The API and UI test commands below are the exception: run them as rendered, against the running service. Run these commands exactly as written: they are rendered as `scripts/tw-run <area> -- <cmd>`, which runs on the host or, for an area with `runner: docker`, in the same container image as CI. Never call the bare tool instead, and never install a toolchain to get around the runner. A command that does not run (missing image, toolchain, device) is reported to the orchestrator as "not runnable" with the error; changing the config is the orchestrator's job (`.teamwright/config.next.yml` + `apply --config`), never yours.
 
 ## Read
 
@@ -104,7 +104,7 @@ verifier: task-validator
    # tests you run by hand in the copy: make it runnable once (generated code), then run
    # them with the area's copy_env and the main checkout's caches:
    #   scripts/tw-mutants <area> --tree "$copy/tree" --prepare
-   #   TEAMWRIGHT_ROOT="$copy/tree" TW_RUN_COPY=1 TW_CACHE_ROOT="$PWD" scripts/tw-run <area> -- '<test cmd>'
+   #   scripts/tw-test <area> --tree "$copy/tree" <test files>
    ```
    tw-mutants makes the copy runnable itself: when the area has `generated:` outputs and the copy's inputs equal the working tree's, it copies them in; otherwise it runs `generate_command` in the copy, in the same runner start (exit 4 when that fails). Like tw-gate it waits up to ~9 minutes: `RUNNING: …` with exit 75 → the snippet keeps the copy and names it; call `scripts/tw-mutants <area> <id> --tree <that copy>` again until it returns a result, then `git worktree remove --force <that copy>`; never a `sleep` loop or a background call.
    Never `mktemp -d /tmp/...`: when the area's tests run in a container started by the host's Docker (`runner: docker`, or a project wrapper), a hardcoded `/tmp` inside the agent's own container is invisible to the host, and the test container gets an empty directory.

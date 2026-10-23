@@ -72,7 +72,7 @@ set -uo pipefail
 
 die() { echo "tw-gate: $*" >&2; exit 2; }
 usage="usage: scripts/tw-gate <area>|--top [--fresh] | --for-task <ID> | --for-diff <base> | --stop <area>|--top"
-AREA=""; FRESH=0; TOP=0; STOP=0; FOR=""; FORARG=""; JOB=""
+AREA=""; FRESH=0; TOP=0; STOP=0; FOR=""; FORARG=""; JOB=""; KEYONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --fresh) FRESH=1; shift ;;
@@ -80,6 +80,7 @@ while [ $# -gt 0 ]; do
     --stop) STOP=1; shift ;;
     --for-task|--for-diff) [ $# -ge 2 ] || die "$usage"; FOR="$1"; FORARG="$2"; shift 2 ;;
     --_job) [ $# -ge 2 ] || die "$usage"; JOB="$2"; shift 2 ;;   # internal: the detached run
+    --_key) KEYONLY=1; shift ;;   # internal (scripts/tw-test): print tree, key, head, clean of the area's scope
     -h|--help) echo "$usage"; exit 0 ;;
     -*) die "unknown option $1; $usage" ;;
     *) [ -z "$AREA" ] || die "$usage"; AREA="$1"; shift ;;
@@ -180,7 +181,9 @@ fi
 IFS= read -r -d '' _tw_py <<'PY' || true
 import os, shlex, sys
 sys.dont_write_bytecode = True
-config_py, cfg_path, name, root = sys.argv[1:5]
+config_py, cfg_path, name, root, keyonly = sys.argv[1:6]
+keyonly = keyonly == "1"
+extra = os.environ.get("TW_GATE_SCOPE_CMD", "") if keyonly else ""
 sys.path.insert(0, os.path.dirname(config_py))
 import _config
 try:
@@ -216,9 +219,9 @@ else:
         sys.stderr.write("tw-gate: no area %r in %s\n" % (name, cfg_path)); sys.exit(2)
     gen = str(area.get("generate_command") or "").strip()
     gate, kind = str(area.get("gate_command") or "").strip(), "area"
-    if not gate:
+    if not gate and not keyonly:
         gate, kind = str(cfg.get("gate_command") or "").strip(), "top"
-    if not gate:
+    if not gate and not keyonly:
         sys.stderr.write("tw-gate: no gate_command for area %r or at the top level of %s\n"
                          % (name, cfg_path)); sys.exit(2)
     wrap = lambda c: "scripts/tw-run %s -- %s" % (name, shlex.quote(c))
@@ -233,7 +236,7 @@ else:
         if inside(c):
             scope.append(c)
         scope += list(KIT)
-        for cmd in (gen, gate):
+        for cmd in (gen, gate, extra):
             try:
                 toks = shlex.split(cmd)
             except ValueError:
@@ -251,7 +254,7 @@ sys.stdout.write("".join(x + "\0" for x in [gen, kind, gate, shown] + scope))
 PY
 fields=()
 while IFS= read -r -d '' f; do fields+=("$f"); done < <(
-  python3 -c "$_tw_py" "$CONFIG_PY" "$CFG" "$AREA" "$ROOT"
+  python3 -c "$_tw_py" "$CONFIG_PY" "$CFG" "$AREA" "$ROOT" "$KEYONLY"
 ) || exit 2
 [ "${#fields[@]}" -ge 4 ] || exit 2
 GEN="${fields[0]}"; KIND="${fields[1]}"; GATE="${fields[2]}"; SHOWN="${fields[3]}"
@@ -263,7 +266,7 @@ else NAME="$AREA"; LABEL="$AREA"; RUNARG="$AREA"; fi
 LOGROOT="${TEAMWRIGHT_LOG_DIR:-$ROOT/.teamwright/logs}"
 LOGDIR="$LOGROOT/gate"
 JOBS="$LOGDIR/jobs"
-mkdir -p "$JOBS" || die "cannot create $JOBS"
+[ "$KEYONLY" = 1 ] || mkdir -p "$JOBS" || die "cannot create $JOBS"
 RECORD="$LOGDIR/$NAME.json"
 
 HEAD="$(git rev-parse HEAD 2>/dev/null || echo none)"
@@ -297,6 +300,10 @@ TREE="$(tree_id)"
 KEY="$(scope_key "$TREE")"
 CLEAN=false; is_clean && CLEAN=true
 SCOPE_TEXT=""; [ "${#SCOPE[@]}" -gt 0 ] && SCOPE_TEXT="$(printf '%s\n' "${SCOPE[@]}")"
+if [ "$KEYONLY" = 1 ]; then   # scripts/tw-test keys its cache on the same area scope
+  printf '%s\0' "$TREE" "$KEY" "$HEAD" "$CLEAN"
+  exit 0
+fi
 
 # record JSON helpers (python: escaping, atomic replace)
 IFS= read -r -d '' _rec_py <<'PY' || true

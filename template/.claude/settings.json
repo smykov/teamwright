@@ -44,6 +44,12 @@
           { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/review-gate.sh\"" },
           { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/verify-gate.sh\"" }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/test-guard.sh\"" }
+        ]
       }
     ],
     "PostToolUse": [

@@ -8,6 +8,7 @@ areas:                         # one or more code areas; developer/test-writer r
   - name: backend
     source_dirs: [backend/src]
     test_command: "npm --prefix backend test"
+    test_select_command: "npm --prefix backend test -- --maxWorkers=${JEST_WORKERS:-4} {tests}"   # optional: scripts/tw-test backend <tests>
     lint_command: "npm --prefix backend run lint && npx --prefix backend tsc --noEmit"
     api_test_command: "npm --prefix backend run test:e2e"
     e2e_ui_command: ""
@@ -41,6 +42,7 @@ tools:                         # one provider per capability; "none" = no tool
   api_verify: project-runner   # project-runner
 # ui_verify_deferred: "decisions.md #6"  # owner decided: no UI verification yet (check-commands notes it)
 # no_mcp: [ui_verify]          # capabilities whose tool is used without its MCP server (not added to .mcp.json)
+# test_runner_patterns: ["^bin/run-specs( |$)"]   # optional: more commands the test guard treats as test runs
 language: en                   # language of generated project docs
 process:                       # parameters of the fixed pipeline; absent keys = defaults (/teamwright:settings)
   review:
@@ -54,3 +56,4 @@ process:                       # parameters of the fixed pipeline; absent keys =
   autonomy:
     start: auto                # ask | auto: start the router's ready task without asking
     continue: true             # after a barrier, take the next task; push is still asked
+  test_guard: block            # block | warn | off: tests only via scripts/tw-test, gates via tw-gate (own switch, not mode)
