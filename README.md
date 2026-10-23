@@ -92,7 +92,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Tests the host cannot run (another platform) run in CI on a `wip/<ID>` branch before review; that push is not a delivery. [hook allows only `wip/*`] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 - The gate is green before review; the reviewer and the validator run it again instead of trusting the author's report. [reviewer checks] — [AGENTS.md](template/AGENTS.md#gate)
 - The full gate runs once per state of the code: `scripts/tw-gate <area>` keeps its whole output in a log and records a PASS for that exact content, so the next role on the same commit gets `PASS (cached: …)` instead of another run; a FAIL is always rerun. While working, the developer runs only the task's tests and the touched modules. [tool] — [gate runs](docs/process/gates.md#gate-runs-tw-gate)
-- Tests must bite: the reviewer names the line whose removal turns each test red, the validator re-runs the test-writer's wrong implementations and failure-branch mutations and applies 3–6 mutations in a throwaway worktree that its script removes — after two failed rounds in a row, a sweep of every condition and guard instead of another sample — and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
+- Tests must bite: the reviewer names the line whose removal turns each test red, the validator re-runs the task's mutant catalog (`docs/tasks/<ID>.mutants/`, exact replacements kept in the repository) and adds 15–30 mutants aimed at the guarantees and the changed lines, in a throwaway worktree that its script removes; only a survivor that breaks a stated guarantee fails the task, others become follow-ups; after two failed rounds in a row, a sweep of the changed lines instead of another sample, and after two failed sweeps the owner decides — and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
 - Every task's acceptance names a failure branch, and an end-to-end test exercises it. [reviewer checks; the verify gate requires a `Failure branch:` line] — [task template](template/docs/tasks/_task-template.md)
 
 **Review**
@@ -241,6 +241,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`docs/process/`](docs/process/) | the process reference (all of it except `plugin.md`) | T0 |
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
 | [`scripts/tw-gate`](template/scripts/tw-gate) | runs an area's full gate once per state of the code, full output in a log, PASS reused on the same content | tool |
+| [`scripts/tw-mutants`](template/scripts/tw-mutants) | re-runs a task's mutant catalog on a throwaway copy in one runner start; fails only on a survivor that breaks a named guarantee | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
 | [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |
 | [`scripts/tw-ci-changes`](template/scripts/tw-ci-changes) | tells CI whether a push carried code or only task records since the previous run | tool |

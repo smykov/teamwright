@@ -111,14 +111,27 @@ Verification (VERIFY session) runs committed tests against the running system; i
 3. Run `{{TEST_COMMAND}} <files>`: they must fail on missing behaviour or on the assertion — not on a typo, import or fixture error.
 4. **Bite check — before the developer, not at review.** Red alone does not prove a test bites: a test that is red because nothing exists yet can still pass a lazy implementation. In a throwaway worktree, write **2–3 deliberately wrong implementations** of the seam — the cheapest ones that a weak reading of the task would accept: return a constant or the happy-path value, skip the side effect (no write, no message, no log), handle only the first case, swallow the error — and run the tests against each. Every wrong implementation must leave at least one test red; one that turns everything green means the tests do not pin the guarantee: strengthen them and repeat. For a bug or characterization test, mutate the existing code instead (invert the condition, drop the guard). One script, cleaned up whatever happens:
    ```sh
-   copy="$(mktemp -d)"
+   copy="$(mktemp -d)"   # no /tmp path: mktemp honours $TMPDIR, which must be a path the Docker host can mount
    trap 'git worktree remove --force "$copy/tree"; rmdir "$copy"' EXIT
    git worktree add --detach "$copy/tree" HEAD
    # copy your uncommitted test files in, write a wrong implementation, run the tests there
    ```
-   **`checker: true` in the task** (the seam's whole guarantee is rejecting bad input): instead of 2–3 wrong implementations, sweep — mutate every condition, guard, return and write of the seam, one at a time; each must turn a test red or be shown equivalent. Sampling a checker leaves survivors for the validator to find one per round.
-   **One toolchain start for all mutants.** Starting the area's test runner (a container, an interpreter that loads models) usually costs more than the tests themselves, so do not start it once per mutant: write one loop that, for each mutant, applies it in the copy, runs only the task's test files and reverts, and run that loop as **one** command (`scripts/tw-run <area> -- 'sh <loop>'`, or the area's test wrapper with the loop as its command). Never the full suite per mutant.
-   Write the result into the task record body under `## Tests` (never the front matter): one line per wrong implementation — what it did, which test went red. The reviewer reads it, and the task-validator re-runs every line, so write each so it can be repeated (file, symbol, the change).
+   Never `mktemp -d /tmp/...`: when the area's tests run in a container started by the host's Docker (`runner: docker`, or a project wrapper), a hardcoded `/tmp` inside the agent's own container is a path the host cannot see, and the test container gets an empty directory.
+   **Mutations of existing code go into the catalog** `docs/tasks/<ID>.mutants/` (a bug's or characterization test's mutations here, the checker sweep and the failure-branch mutations of the second spawn): one file per mutant, `<NN>-<slug>.mutant`, an exact replacement that `scripts/tw-mutants` applies and the validator re-runs every round:
+   ```
+   guarantee: <the Acceptance/DoD line it breaks, e.g. "AC-2: empty header -> 400">  (`-` if none)
+   file: <path from the project root>
+   added_by: test-writer
+   --- old
+   <exact text, found exactly once in the file>
+   --- new
+   <the broken text>
+   --- end
+   ```
+   plus `test-command` in the same directory: one line, the command that runs only the task's tests as the area runs them. Write them with Edit/Write; the orchestrator commits them with the tests. Wrong implementations of a seam that does not exist yet cannot be replayed as replacements: they stay as lines under `## Tests` (below).
+   **Run the catalog in one toolchain start:** `scripts/tw-mutants <area> <ID> --tree "$copy/tree"` checks every entry against the copy, runs the task's tests once unmutated (that baseline must be green — before the fix of a bug, point `test-command` at the tests that pass today) and then once per mutant, all in **one** `scripts/tw-run <area>` start with the copy as the project root — starting the area's runner (a container, an interpreter that loads models) costs more than the tests, so never start it per mutant, and never run the full suite per mutant. Exit 1 names each surviving mutant with its guarantee; exit 2 names a broken entry. Wrong implementations outside the catalog: one loop in one `scripts/tw-run <area> -- 'sh <loop>'` call, the same way.
+   **`checker: true` in the task** (the seam's whole guarantee is rejecting bad input): sweep instead of sampling — mutate every condition, guard, return and write **on the lines the task changes or adds** in the seam, one at a time; each must turn a test red or be marked `equivalent: <why no input can tell it apart>`. The sweep needs the implementation, so it runs in the second spawn (below), into the catalog. A whole-seam sweep only when the task is `critical: true` (code whose failure loses or corrupts data: sync, recovery after a restore, data deletion) — a sweep of every line ever written there grows each round and never ends.
+   Write the result into the task record body under `## Tests` (never the front matter): one line per wrong implementation — what it did, which test went red — and the catalog's path with the `tw-mutants` summary line. The reviewer reads it, and the task-validator re-runs the catalog every round, so write each line so it can be repeated (file, symbol, the change).
 5. Lint the tests.
 
 ## Failure-branch bite (second spawn, before review)
@@ -128,8 +141,10 @@ The first spawn runs before the implementation exists, so it cannot break the co
 1. **List the failure branches** of Acceptance: every `Failure branch:` line and every refusal, limit or error the criteria name.
 2. **Break each one once** in the implementation: the smallest change that stops the branch from happening — drop the guard, invert the check, skip the write, the message or the error. One mutation per branch, no matrices.
 3. **Run the test that guards it** on the broken copy. For `surface: api | both` that is the end-to-end API test verification will run; an in-process API test runs here; one that needs the deployed system → run the closest test that runs locally and mark the row `not runnable locally: <why>` (the validator runs it after deploy). For a UI test, also name the state its wait reaches **only after the branch ran** (a message, a stored row, a disabled control) — a wait already satisfied before the branch runs proves nothing.
-   Run all branch mutations through one loop, one toolchain start (see the first spawn).
-4. **A surviving mutation** → rewrite the test (never the implementation) and run again until it is killed.
+   Write each branch mutation into the catalog `docs/tasks/<ID>.mutants/` (`guarantee:` the Acceptance line, `added_by: test-writer`) and run them all with `scripts/tw-mutants <area> <ID> --tree "$copy/tree"` — one toolchain start (see the first spawn). A branch whose guarding test needs the deployed system stays out of the catalog; mark its row `not runnable locally` below.
+   **`checker: true`:** add the sweep here — every condition, guard, return and write on the task's changed lines (`git diff` of the task's work), one catalog entry each; the whole seam only with `critical: true`.
+   **Budget:** the catalog this spawn leaves is what the validator starts from; aim the entries at the guarantees and the changed lines, not at every line of the file.
+4. **A surviving mutation** → rewrite the test (never the implementation) and run again until it is killed. A survivor whose `guarantee:` is `-` (it breaks no stated guarantee) is not a reason to keep rewriting: report it as a follow-up.
 5. **Record it** under `## Tests`, below the first spawn's lines:
    ```
    ### Failure branches
@@ -141,7 +156,7 @@ The first spawn runs before the implementation exists, so it cannot break the co
 
 The copy carries the uncommitted implementation; the working tree is never touched. One script, cleaned up whatever happens:
 ```sh
-copy="$(mktemp -d)"
+copy="$(mktemp -d)"   # no /tmp path: $TMPDIR must be a path the Docker host can mount (first spawn)
 trap 'git worktree remove --force "$copy/tree"; rm -rf "$copy"' EXIT
 git worktree add --detach "$copy/tree" HEAD
 git diff HEAD --binary > "$copy/wip.patch"
@@ -149,12 +164,12 @@ if [ -s "$copy/wip.patch" ]; then git -C "$copy/tree" apply "$copy/wip.patch"; f
 git ls-files -o --exclude-standard | while IFS= read -r f; do
   mkdir -p "$copy/tree/$(dirname "$f")" && cp "$f" "$copy/tree/$f"
 done
-# per branch: save the file, break it, run the guarding test in "$copy/tree", restore the file
+scripts/tw-mutants <area> <ID> --tree "$copy/tree"   # the catalog is read from the working tree, applied in the copy
 ```
 
 ## Limits
 
-- No implementation code in the working tree, not even stubs to make tests compile. The wrong implementations of the bite check and the failure-branch mutations live only in the throwaway worktree and die with it; in the second spawn you change tests only.
+- No implementation code in the working tree, not even stubs to make tests compile. The wrong implementations of the bite check and the failure-branch mutations are applied only in the throwaway worktree and die with it (the catalog in `docs/tasks/<ID>.mutants/` holds them as text); in the second spawn you change tests and the catalog only.
 - Never weaken an existing test; a contradiction with the contract → report it.
 - Do not commit or spawn agents.
 
@@ -168,6 +183,7 @@ Not covered: <what, why> | none
 E2E (surface <api|ui|both|none>): <file::test — Acceptance line> | not run: <why>
 Red run: N failed — reason: <missing behaviour X | assertion Y>
 Bite check: <wrong implementation — test that caught it>; … | survived: <wrong implementation> → tests strengthened
+Catalog: docs/tasks/<id>.mutants/ — <tw-mutants summary line> | none (no existing code mutated)
 ```
 
 Second spawn (`mode: failure-branch bite`):
@@ -175,5 +191,6 @@ Second spawn (`mode: failure-branch bite`):
 ```
 Task: <id>
 Failure branches: <Acceptance line — test — mutation — killed | killed after rewrite | not runnable locally: why>; …
+Catalog: docs/tasks/<id>.mutants/ — <tw-mutants summary line>; follow-ups: <mutant — what it changed> | none
 Tests rewritten: <file::test — what changed> | none
 ```

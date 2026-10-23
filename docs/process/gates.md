@@ -29,6 +29,7 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 | [Secret scan](#secret-scan) | git `pre-commit` (CI only if the project adds it) | T3 | Tokens, keys, `.env`, local settings in history |
 | [CLAUDE.md budget](#claudemd-budget) | Claude Code `SessionStart` + git `pre-commit` | T2 | A context file that grows into a second docs folder |
 | [Gate runs](#gate-runs-tw-gate) | `scripts/tw-gate <area>`, called by the developer, the flow, the reviewer and the validator | T1 (tooling) | The same full gate run by four roles on the same code; gate output lost to `\| tail` |
+| [Mutation checks](#mutation-checks-tw-mutants) | `scripts/tw-mutants <area> <ID>`, called by the test-writer and the validator; the stop rules in the verify gate | T1 (tooling) + T3 (stop rules) | Mutation rounds without an end: every sweep a new, larger list, any survivor a FAIL, the runner started once per mutant |
 
 All files live in `scripts/hooks/`. Install the git hooks once per clone:
 
@@ -303,11 +304,14 @@ may be empty).
    verify records) — for every `surface`, including `deploys: false` + `surface: none`,
    where it is the only check. A round whose file is gone while the ledger has it blocks
    `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`). After two `FAIL`
-   rounds in a row the next round must be `method: sweep` (every condition, guard,
-   return and write of the changed code mutated, earlier rounds' mutations and the
-   test-writer's wrong implementations and failure-branch mutations re-run) or `verdict: NEEDS_OWNER`: sampled
-   mutations find one survivor per round, so a third sample does not end the loop — the
-   same stop rule as two `REQUEST_CHANGES` in review.
+   rounds in a row the next round must be `method: sweep` (the catalog
+   `docs/tasks/<ID>.mutants/` re-run, then every condition, guard, return and write on
+   the task's changed lines mutated) or `verdict: NEEDS_OWNER`: sampled mutations find
+   one survivor per round, so a third sample does not end the loop — the same stop rule
+   as two `REQUEST_CHANGES` in review. After two **sweep** rounds with `FAIL` (since the
+   last `PASS` or `NEEDS_OWNER` round) the next verdict must be `NEEDS_OWNER`, not a third
+   sweep: each sweep finds new survivors on the same code. See
+   [Mutation checks](#mutation-checks-tw-mutants).
 
 **Deliberate exits** (all stay visible in the task file)
 
@@ -553,6 +557,62 @@ report; the reviewer and the validator still compare `git status` before and aft
 their verdict stays theirs. Files the gate depends on but git ignores (build caches,
 downloaded dependencies) are outside the key — `--fresh` when they matter.
 
+## Mutation checks (tw-mutants)
+
+`scripts/tw-mutants <area> <ID> --tree <copy> [--check] [--only <name>]` · T1 (tooling);
+the stop rules are the verify gate's (T3, check 6 above)
+
+**Incident it prevents.** Mutation testing in acceptance had no stopping point: every
+sweep wrote a new, larger list of mutants and found new survivors, and any survivor
+failed the task. One task failed acceptance four times, each time on a new gap in one CI
+step; one sweep ran about 109 mutants × 40 s, over an hour. Each mutant also started the
+area's runner (a container) again, which cost more than its tests.
+
+**The rules** (the kit's default for every project; a project narrows them in its own
+role files and records why in `docs/decisions.md`). Mutants on the task's diff are
+evidence for the reviewer and the validator, not a gate on every line — the practice at
+Google, where mutants on changed lines are shown in code review as hints (Petrović,
+Ivanković, "State of Mutation Testing at Google", ICSE-SEIP 2018; Petrović, Ivanković,
+Fraser, Just, "Practical Mutation Testing at Scale: A view from Google", IEEE TSE 2021,
+arXiv 2102.11378).
+
+1. **Severity.** Acceptance fails only on a surviving mutant that breaks a stated
+   Acceptance/DoD guarantee, and the mutant names that guarantee. Other survivors are
+   follow-ups in the validation record, not a `FAIL`.
+2. **Budget.** A `sample` round: 15–30 mutants aimed at the guarantees and the task's
+   changed lines. A `sweep` (and the test-writer's sweep for `checker: true`): every
+   condition, guard, return and write on the task's changed lines, not the whole seam.
+   A whole-seam sweep only for a `critical: true` task — code whose failure loses or
+   corrupts data (sync, recovery after a restore, data deletion).
+3. **Catalog in the repository**, `docs/tasks/<ID>.mutants/`: one `<NN>-<slug>.mutant`
+   file per mutant — `guarantee:` (`-` for none), `file:`, `added_by:`, optional `test:`
+   and `equivalent: <why>`, then the exact replacement between `--- old`, `--- new` and
+   `--- end` (the old text must occur exactly once) — and `test-command`, the command
+   that runs only the task's tests. The test-writer starts it; each validation round
+   re-runs it first and then only adds. It is a process record (like the rest of
+   `docs/tasks/`), so committing it does not make a verdict stale.
+4. **Stop.** Two `FAIL` rounds in a row → the next is a sweep or `NEEDS_OWNER`; two
+   sweep rounds with `FAIL` → the next verdict is `NEEDS_OWNER` (accept the rest as
+   follow-ups, or rethink the task). The verify gate refuses anything else.
+5. **Machine mutation tools** (mutmut, PIT, Stryker, cargo-mutants) stay off the
+   acceptance path: a project that wants them runs them in a scheduled CI job whose
+   survivors become follow-ups.
+
+**What the tool does.** `--tree` is a throwaway copy (a `git worktree`), never the
+working tree — tw-mutants refuses the project root. It checks every entry against the
+copy, writes the mutated files and one POSIX `sh` loop into `<copy>/.tw-mutants/`, and
+runs the loop in **one** `scripts/tw-run <area>` start with the copy as the project root:
+the task's tests once unmutated (the baseline must be green, otherwise every mutant
+would look killed), then for each mutant put the mutated file in place, run its tests,
+put the original back. For `runner: docker` the container mounts the copy, so the copy
+must be on a path the Docker host can see: create it with `mktemp -d` (it honours
+`$TMPDIR`), never a hardcoded `/tmp` inside an agent's container. Output: one line per
+mutant (`killed`, `SURVIVED … breaks: <guarantee>`, `survived, follow-up`, `equivalent`)
+and a summary, also kept in `<logs>/mutants/<ID>-<time>.txt`. Exit 0 when no survivor
+breaks a guarantee, 1 when one does, 2 for a usage error or a catalog entry that no
+longer matches the code, 3 for a red baseline, the runner's code (e.g. 127) when it
+cannot start. `--check` validates the catalog without running anything.
+
 ## Environment variables
 
 Set by the person who starts Claude Code or runs git; agents cannot change the state
@@ -569,7 +629,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_NONCODE_RE` | analysis gate | paths that are not code (`docs/`, `.claude/`, `.github/`, `.teamwright/`, top-level `*.md`) |
 | `TEAMWRIGHT_REVIEWER_AGENT` | review gate | the reviewer's `agent_type` (`code-reviewer`) |
 | `TEAMWRIGHT_ESCALATE_AFTER` | review gate | `REQUEST_CHANGES` rounds in a row before the next record must escalate (`2`) |
-| `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory |
+| `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate`, `scripts/tw-mutants` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory, mutant reports to `mutants/` |
 | `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
 | `TEAMWRIGHT_PAUSE_FILE` | `pre-push`, router | pause file (`TEAMWRIGHT_PAUSE` at the repository root) |
 | `TEAMWRIGHT_PUSH_STATUSES` | `pre-push` | statuses whose code may be pushed (`CODE_COMPLETE DEPLOYED VERIFIED DONE`) |
@@ -580,7 +640,7 @@ guard's variables. Unset means the default.
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
-| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate` | another project root or config file |
+| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate`, `scripts/tw-mutants` | another project root or config file |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 
 ## Overriding deliberately

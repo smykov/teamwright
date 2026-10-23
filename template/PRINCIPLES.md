@@ -34,7 +34,7 @@ Each **Why** names, in one generic sentence, the kind of incident that produced 
 ### P-005 — Tests must bite
 - **Why:** green, happy-path-only tests kept passing while the code they were meant to guard was broken on the failure branch.
 - **Tier:** T1
-- **How checked:** reviewer names the line whose removal turns each test red; the task-validator applies targeted mutations on a throwaway copy of the tree and fails the task if one survives; acceptance includes the failure branch (empty result, partial write, timeout, duplicate), not only the happy path.
+- **How checked:** reviewer names the line whose removal turns each test red; the task-validator re-runs the task's mutant catalog (`docs/tasks/<ID>.mutants/`) and adds targeted mutations on a throwaway copy of the tree, and fails the task if one that breaks a stated Acceptance/DoD guarantee survives (other survivors become follow-ups; after two failing sweeps the owner decides); acceptance includes the failure branch (empty result, partial write, timeout, duplicate), not only the happy path.
 
 ### P-006 — Verify against data and logs, not against the system's own words
 - **Why:** a pipeline reported success while every deploy job had been skipped, and the failed delivery went unnoticed because nobody checked the running version.

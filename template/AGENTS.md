@@ -26,7 +26,7 @@ Commands run exactly as rendered, through `scripts/tw-run <area> -- <cmd>`: on t
 | developer | implements in the seam until tests are green | starts without `analysis`; weakens tests | `.claude/agents/developer.md` |
 | technical-writer | syncs `docs/`, appends decisions / failures | changes code | `.claude/agents/technical-writer.md` |
 | code-reviewer | fresh-context review, recurrence detection; writes the review record | runs as a fork of the author; edits code; changes statuses | `.claude/agents/code-reviewer.md` |
-| task-validator | VERIFY session: runs API tests / end-to-end UI tests / deploy smoke against the running system, writes the verify record; DoD vs reality, gate, targeted mutations on a throwaway copy | edits code or tests; mutates the working tree; counts an interactive exploration as evidence | `.claude/agents/task-validator.md` |
+| task-validator | VERIFY session: runs API tests / end-to-end UI tests / deploy smoke against the running system, writes the verify record; DoD vs reality, gate, the task's mutant catalog plus targeted mutations on a throwaway copy (`scripts/tw-mutants`) | edits code or tests; mutates the working tree; counts an interactive exploration as evidence | `.claude/agents/task-validator.md` |
 | Owner (human) | decides escalations, architecture reviews (`/arch-review`), amendments to `PRINCIPLES.md` | reviews every diff | — |
 
 Tools without subagents: run each role as a **separate session** with its file as the prompt. The reviewer must never share context with the author.

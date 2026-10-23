@@ -131,6 +131,21 @@ id of HEAD plus uncommitted and untracked changes) and the command are the same 
 tree did not change during the run. Exit code is the gate's; 2 on a usage or config error.
 What it records and when it reruns: [gates.md](gates.md#gate-runs-tw-gate).
 
+## tw-mutants: a task's mutant catalog, in one runner start
+
+`template/scripts/tw-mutants` is installed into every project as `scripts/tw-mutants`:
+
+```bash
+scripts/tw-mutants <area> <ID> --tree <throwaway copy> [--check] [--only <name>]
+```
+
+It reads `docs/tasks/<ID>.mutants/` from the working tree (one `.mutant` file per exact
+replacement, with the guarantee it breaks, and `test-command`), checks every entry against
+the copy, and runs the baseline and every mutant in one `scripts/tw-run <area>` start with
+the copy as the project root. Exit 0 when no survivor breaks a guarantee, 1 when one does,
+2 on a usage error or a stale entry, 3 on a red baseline. Format, rules and stop rules:
+[gates.md](gates.md#mutation-checks-tw-mutants).
+
 ## tw-progress.py: the progress report
 
 `python3 scripts/tw-progress.py [--project PATH] [--json]` is read-only. It counts task records

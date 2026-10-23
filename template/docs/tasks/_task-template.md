@@ -32,8 +32,13 @@ class: ""
 recurrence_of: []
 # true when the seam is a checker or guard - code whose whole guarantee is rejecting bad
 # input (a validator, a manifest check, a permission guard). The test-writer's bite check
-# is then an exhaustive sweep before the first review, not 2-3 wrong implementations.
+# is then a sweep of every condition, guard, return and write on the task's changed lines
+# (test-writer, second spawn), not 2-3 wrong implementations.
 checker: false
+# true when the seam is critical code - its failure loses or corrupts data (sync, recovery
+# after a restore, data deletion): a mutation sweep then covers the whole seam, not only
+# the task's changed lines. Mutants live in docs/tasks/<ID>.mutants/ (scripts/tw-mutants).
+critical: false
 # rca task id, when this task is deferred into a root task
 absorbed_by: ""
 # soft hold reason; clear to "" when resolved
@@ -82,7 +87,8 @@ tail_code: ""
 ## Tests
 
 <test-writer: guarantee → test; bite check — each deliberately wrong implementation and the test that caught it.
-Second spawn, before review: ### Failure branches — guarantee → test → mutation (file::symbol, change) → killed.>
+Second spawn, before review: ### Failure branches — guarantee → test → mutation (file::symbol, change) → killed.
+Mutations of existing code are kept as entries in docs/tasks/<ID>.mutants/; name the catalog and the tw-mutants summary here.>
 
 ## Investigation
 
