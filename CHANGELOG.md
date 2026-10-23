@@ -9,6 +9,8 @@ All notable changes to teamwright. Versions follow [semantic versioning](https:/
 
 ### Changed
 - **Roles run the gate through tw-gate.** The developer runs only the task's tests and the touched modules while working (`{{TEST_COMMAND}} <files>`, now in its parameters), and the full gate once before handing over, never cutting its output; the flow's Gate step, the code-reviewer and the task-validator run `scripts/tw-gate <area>` and accept a cached PASS on the same commit, still comparing `git status` before and after; their judgement stays independent. `AGENTS.md`, the role files, the flow, parallel and init skills, `gates.md` (new section *Gate runs*), `lifecycle.md`, `sessions.md`, `tools.md`, `plugin.md`, `usage.md`, `design-decisions.md` and the README describe it. Projects pick it up after `/plugin update` and `tw-install.py apply`.
+- **A long gate is never run in the background.** The developer gives it a long timeout instead: in a run without an owner the session ends with the turn, and a background gate dies with it (the same autonomous run: a background role ended the session at `ANALYSIS`).
+- **test-writer: one toolchain start for all mutants.** The bite check, the `checker: true` sweep and the failure-branch mutations run as one loop — apply a mutant, run only the task's tests, revert — in one `scripts/tw-run <area>` call, never the full suite per mutant. On a docker area each start loads the image and its models; per-mutant starts were most of a 22-minute first spawn.
 
 ## [0.10.0] - 2026-10-23
 
