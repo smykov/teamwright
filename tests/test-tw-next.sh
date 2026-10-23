@@ -23,9 +23,9 @@ fresh() {  # fresh NAME -> new git repo with one commit, cwd inside
   git add -A; git commit -qm init
 }
 commit_all() { git add -A; git commit -qm tasks; }
-validated() {  # validated ID VERDICT : next validation record at HEAD
+validated() {  # validated ID VERDICT [METHOD] : next validation record at HEAD
   local d="docs/tasks/$1.validation" n; mkdir -p "$d"; n=$(( $(find "$d" -maxdepth 1 -type f -name '*.md' | wc -l) + 1 ))
-  printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: task-validator\n---\n' "$1" "$n" "$2" "$(git rev-parse HEAD)" > "$d/$n.md"
+  printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: task-validator\nmethod: %s\n---\n' "$1" "$n" "$2" "$(git rev-parse HEAD)" "${3:-sample}" > "$d/$n.md"
 }
 j() { python3 "$NEXT" --project . --json; }
 field() { j | python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
@@ -94,6 +94,12 @@ validated T-11 FAIL; commit_all
 echo fix2 > fix11b.txt; git add fix11b.txt; git commit -qm "fix(core): T-11 second fix"
 expect "after a second FAIL and fix: verify again" verify T-11
 j | grep -q "failed 2 times in a row: this round is \`method: sweep\`" && ok "two FAILs in a row: the router asks for a sweep (#5)" || bad "two FAILs in a row: the router asks for a sweep (#5)" "$(j | grep reason)"
+validated T-11 FAIL sweep; commit_all
+echo fix3 > fix11c.txt; git add fix11c.txt; git commit -qm "fix(core): T-11 third fix"
+j | grep -q "this round is \`method: sweep\`" && ok "one failing sweep: still sweep or NEEDS_OWNER" || bad "one failing sweep: still sweep or NEEDS_OWNER" "$(j | grep reason)"
+validated T-11 FAIL sweep; commit_all
+echo fix4 > fix11d.txt; git add fix11d.txt; git commit -qm "fix(core): T-11 fourth fix"
+j | grep -q "failed in two sweep rounds: this round is NEEDS_OWNER" && ok "two failing sweeps: the router asks for NEEDS_OWNER, not a third sweep" || bad "two failing sweeps: the router asks for NEEDS_OWNER, not a third sweep" "$(j | grep reason)"
 validated T-11 NEEDS_OWNER; commit_all
 expect "acceptance NEEDS_OWNER: decide" decide T-11
 mkdir -p docs; echo "| 1 | T-11 waits for the owner's check |" > docs/decisions.md; echo "| OQ-1 |" > docs/open-questions.md
