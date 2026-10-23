@@ -224,7 +224,7 @@ TEST_GUARD = ("block", "warn", "off")
 # small drift, never on what is dangerous.
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
 MAX_BATCH = 5
-MAX_PARALLEL = 4
+MAX_PARALLEL = 10
 
 
 def _bool(v):
