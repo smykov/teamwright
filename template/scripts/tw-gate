@@ -119,8 +119,30 @@ if [ -n "$FOR" ]; then
     git rev-parse --verify -q "$FORARG^{commit}" >/dev/null || die "--for-diff: no commit '$FORARG'"
     changed="$(git diff --name-only "$FORARG" -- 2>/dev/null)"
   else
-    id_re="(^|[^A-Za-z0-9_-])$(printf '%s' "$FORARG" | sed 's/[.[\*^$()+?{|]/\\&/g')([^A-Za-z0-9_]|$)"
-    changed="$(git log --format= --name-only -E --grep="$id_re" 2>/dev/null; git diff --name-only HEAD -- 2>/dev/null)"
+    # Only the task's own commits: on a branch, those since it left the default branch (a
+    # commit on main that merely mentions the id in its body is not the task's, e.g. a CI fix
+    # "after the run of T-051"); everywhere, a commit whose subject names this id first - task
+    # commits carry it there (`feat(srv): T-7 ...`); an id only in the body is a mention.
+    range=""
+    def="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
+    [ -n "$def" ] || for b in origin/main origin/master main master; do
+      git rev-parse --verify -q "$b^{commit}" >/dev/null && { def="$b"; break; }; done
+    if [ -n "$def" ] && [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" != "${def#origin/}" ]; then
+      mb="$(git merge-base HEAD "$def" 2>/dev/null)"
+      [ -n "$mb" ] && [ "$mb" != "$(git rev-parse HEAD)" ] && range="$mb..HEAD"
+    fi
+    changed="$(git log --format='%x01%H%n%B%x02' ${range:+"$range"} 2>/dev/null | python3 -c '
+import re, subprocess, sys
+tid = sys.argv[1]
+for rec in sys.stdin.read().split("\x01")[1:]:
+    sha, _, msg = rec.partition("\n")
+    subject = msg.split("\x02")[0].strip().split("\n")[0]
+    ids = re.findall(r"(?<![A-Za-z0-9_-])([A-Z][A-Z0-9]*-[0-9]+)(?![A-Za-z0-9_])", subject)
+    if ids and ids[0] == tid:
+        out = subprocess.run(["git", "show", "--format=", "--name-only", sha.strip()],
+                             capture_output=True, text=True).stdout
+        sys.stdout.write(out)
+' "$FORARG"; git diff --name-only HEAD -- 2>/dev/null)"
   fi
   changed="$changed
 $(git ls-files -o --exclude-standard 2>/dev/null)"

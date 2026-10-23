@@ -130,7 +130,6 @@ echo z > srv/src/z.txt; git add -A; git commit -qm "feat(srv): T-70 z"
 mkdir -p .github/workflows; echo ci > .github/workflows/ci.yml; git add -A; git commit -qm "ci: T-8 workflow"
 echo tool > tools/other.sh; git add -A; git commit -qm "chore: T-9 tool"
 mkdir -p docs/tasks; echo r > docs/tasks/T-8.md; git add -A; git commit -qm "chore(task): T-8 record"
-expect_rc "--for-task: the task's area" "srv" "$(gate --for-task T-7)"
 expect_rc "--for-task: a CI-only change needs no local gate" "" "$(bash scripts/tw-gate --for-task T-8 2>/dev/null)"
 gate --for-task T-8 | grep -q "no local gate needed" && ok "--for-task says why nothing" || bad "--for-task says why nothing"
 expect_rc "--for-task: a file outside every area -> --top" "--top" "$(gate --for-task T-9)"
@@ -138,6 +137,13 @@ echo w > app/w.txt
 expect_rc "--for-task: uncommitted changes count" "app srv" "$(gate --for-task T-7 | tr '\n' ' ' | sed 's/ $//')"
 rm app/w.txt
 expect_rc "--for-diff: since a base" "srv --top" "$(gate --for-diff HEAD~4 | tr '\n' ' ' | sed 's/ $//')"
+echo m > app/m.txt; git add -A; git commit -qm "ci: retry step" -m "after the run of T-7 the push failed"
+echo n > tools/n.sh; git add -A; git commit -qm "fix(app): T-12 n" -m "found while doing T-7"
+expect_rc "--for-task: a commit that names the task only in its body is not the task's" "srv" "$(gate --for-task T-7)"
+git checkout -q -b task/T-7-run
+echo b > srv/src/b.txt; git add -A; git commit -qm "feat(srv): T-7 b"
+expect_rc "--for-task on a task branch: only the branch's own commits" "srv" "$(gate --for-task T-7 | tr '\n' ' ' | sed 's/ $//')"
+git checkout -q -
 gate --for-diff nope >/dev/null; expect_rc "--for-diff: unknown base exits 2" 2 "$?"
 
 # ---- detached run, bounded wait ----
