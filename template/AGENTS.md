@@ -41,13 +41,13 @@ Why these roles and how they hand over: `docs/process/roles.md`.
 
 | Session | Does | Ends with |
 |---|---|---|
-| DEV | plan → analysis → red tests → implement → gate → docs → local commit (no push) | task in `NEEDS_REVIEW` |
+| DEV | plan → analysis → red tests → implement → gate → docs → local commit (no push); three stages — analyze, red-tests, implement — in one session or one per session: `IN_PROGRESS` crosses a session boundary when the task's `stage:` (`red-tests \| implement`) is recorded and the tree is clean | task in `NEEDS_REVIEW` (only from `stage: implement`) |
 | REVIEW | `code-reviewer` subagent, fresh context, reviews one task | review record `docs/tasks/<id>.reviews/<n>.md` with verdict `APPROVE \| REQUEST_CHANGES \| REJECT_RECURRENCE \| ESCALATE` |
 | DRAIN | push, only if every task in the unpushed tail is `CODE_COMPLETE`, `DEPLOYED`, `VERIFIED` or `DONE` (or `tail_code: ratified`) | pushed |
 | VERIFY | `task-validator`: deploy smoke + API tests / end-to-end UI run per the task's `surface`, failure branch included | verify record `docs/tasks/<id>.verify/<n>.md` with `result: PASS \| FAIL` → `VERIFIED` or `VERIFY_FAIL` |
 | ARCH-REVIEW (on demand) | `/arch-review` with the owner, for a recurrence whose exit is architecture | owner decision in `docs/decisions.md`; spec/plan or tasks |
 
-**Where to start:** `/teamwright:flow` (Claude Code) computes the next action deterministically — resume an interrupted task, continue, review, verify, re-analyse, ask the owner, or start the next ready task — and drives the lifecycle from there. Other runtimes: `python3 <kit>/scripts/tw-next.py --json` prints the same decision (`<kit>` = the plugin directory or a checkout of the kit; the router is not copied into the project).
+**Where to start:** `/teamwright:flow` (Claude Code) computes the next action deterministically — resume an interrupted task, continue, review, verify, re-analyse, ask the owner, or start the next ready task — and drives the lifecycle from there. `/teamwright:router` runs one stage of it per session; `/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify` run a named stage and refuse when the router says the task is elsewhere (`docs/process/sessions.md` §8). The router selects and counts the tasks; a stage session does not read task files to look for work. Other runtimes: `python3 <kit>/scripts/tw-next.py --json` prints the same decision (`<kit>` = the plugin directory or a checkout of the kit; the router is not copied into the project).
 
 Every session ends with an outcome: `barrier | idle | escalate | interrupted`; hooks journal tool calls and outcomes into `.teamwright/logs/`. Details: `docs/process/sessions.md` §2.
 

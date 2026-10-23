@@ -52,7 +52,7 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 
 `/teamwright:flow` is how work starts and resumes. A deterministic router (`scripts/tw-next.py`) picks the next action, in this order:
 
-1. Finish an interrupted task.
+1. Finish unfinished work in the tree (uncommitted changes, or a session that ended `interrupted`).
 2. Continue a task in `ANALYSIS` or `IN_PROGRESS`.
 3. Review a task in `NEEDS_REVIEW`.
 4. Verify a task in `CODE_COMPLETE` or `DEPLOYED`; re-analyse after a failed verification.
@@ -60,6 +60,58 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 6. Start the next ready task by priority and dependencies. A prerequisite inherits the priority of the task waiting on it; a task with `blocked_on: OQ-NN` waits for that open question.
 
 The skill then drives the lifecycle with fresh role agents run in the foreground, commits each role's result before the next step, and asks only at decision points: escalation, architecture review, push. It stops on a `TEAMWRIGHT_PAUSE` file or its budget, and always ends with a summary whose `Outcome:` line routes the next session. Router rules in full: [plugin.md](process/plugin.md#tw-nextpy-the-flow-router).
+
+## One stage per session: `/teamwright:router` and the stage commands
+
+Every decision of the router names a **stage** — analyze, red-tests, implement, review, verify. `/teamwright:router` asks the router and runs exactly that one stage on the batch it allows, then stops with `Stage:`, `Batch:` and `Outcome:` lines; the next stage is a new session with a fresh context. `/teamwright:analyze`, `/teamwright:red-tests`, `/teamwright:implement`, `/teamwright:review` and `/teamwright:verify` run a stage you name, and refuse, naming the right command, when the router says the task is elsewhere (`/teamwright:implement T-12` on a task without red tests → `/teamwright:red-tests T-12`). The script selects and counts; the session picks the batch from the candidates it lists. Per-stage batches, thresholds and models are settings (`/teamwright:settings`): for example `stages.review: {batch: 3, min: 2, max_wait_hours: 4}` and `models.red-tests: sonnet`. Details: [sessions.md §8](process/sessions.md#8-stages-one-stage-per-session).
+
+### Autonomous runs: one stage per job
+
+A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs: `work_available`, `stage`, `model`, and `headless.prompt` (`/teamwright:<stage> <ids>`). Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — the router answers `decide` and the job stops. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project (adapt the names; the real workflow lives in your repository):
+
+```yaml
+name: teamwright stage
+on:
+  workflow_dispatch:
+concurrency: teamwright          # one stage at a time per repository
+permissions: { contents: write, actions: write }   # push to wip/, dispatch the next stage
+jobs:
+  stage:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: wip/teamwright, fetch-depth: 0 }
+      - name: Ask the router
+        id: route
+        run: |
+          python3 "$TEAMWRIGHT_KIT/scripts/tw-next.py" --json > route.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json; r = json.load(open("route.json")); h = r["headless"]
+          print("run=%s" % ("true" if h["run"] else "false"))
+          print("prompt=%s" % (h["prompt"] or ""))
+          print("model=%s" % (h["model"] or "opus"))
+          print("reason=%s" % r["reason"].replace("\n", " "))
+          PY
+      - name: One stage
+        if: steps.route.outputs.run == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ steps.route.outputs.prompt }}
+          claude_args: --model ${{ steps.route.outputs.model }}
+      - name: Keep the work, start the next stage
+        if: steps.route.outputs.run == 'true'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git push origin HEAD:wip/teamwright
+          gh workflow run teamwright-stage.yml
+      - name: Nothing to run
+        if: steps.route.outputs.run != 'true'
+        run: echo "router: ${{ steps.route.outputs.reason }}"
+```
+
+`concurrency` keeps one stage running per repository (reviewers one at a time); a `decide` (push, an escalation, `NEEDS_OWNER`) stops the chain until a person acts.
 
 ## `/teamwright:blockers`
 

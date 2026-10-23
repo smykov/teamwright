@@ -1,7 +1,7 @@
 ---
 name: settings
-description: Show or change the project's process settings — the review blocking threshold, how many tasks a flow pass takes (per priority), and autonomy (start a ready task without asking, continue after a barrier). The pipeline stays the same; only these parameters change. Changes go through config.next.yml and the installer, with the owner's approval, and are recorded in docs/decisions.md.
-argument-hint: "[<key> <value>] — e.g. review.blocking medium, batch.max_tasks 3, autonomy.start auto"
+description: Show or change the project's process settings — the review blocking threshold, how many tasks a flow pass takes (per priority), autonomy (start a ready task without asking, continue after a barrier), batches and thresholds per stage, the model per stage, and who selects the tasks (the router script or the agent). The pipeline stays the same; only these parameters change. Changes go through config.next.yml and the installer, with the owner's approval, and are recorded in docs/decisions.md.
+argument-hint: "[<key> <value>] — e.g. review.blocking medium, batch.max_tasks 3, stages.review.min 2, models.red-tests sonnet"
 disable-model-invocation: true
 allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" plan *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-process.py" *) Bash(git status *) Bash(git log *)
 ---
@@ -21,8 +21,13 @@ The pipeline — statuses, roles, gates, records, "two send-backs → ESCALATE",
 | `autonomy.start` | `ask` · `auto` | `ask` | `auto` | Start the router's ready task without asking which one |
 | `autonomy.continue` | `true` · `false` | `false` | `true` | After a barrier, take the next task in the same pass instead of ending the session. Push stays the owner's decision: asked once at the end of the pass |
 | `ready.after` | `verified` · `code_complete` | `verified` | `verified` | When a `depends_on` counts as finished: at `VERIFIED`/`DONE`, or already at `CODE_COMPLETE`/`DEPLOYED` — the dependent starts while the dependency's pipeline, deploy and verification run. A `VERIFY_FAIL` on the dependency can then reopen work already done on the dependent |
-
 | `test_guard` | `block` · `warn` · `off` | `block` | `block` | The test guard: tests only through `scripts/tw-test`, gates through `scripts/tw-gate` — a direct test runner or gate script, and test output piped into `tail`/`grep`, are refused (`block`) or only warned about. Its own switch, not `mode`: it blocks in `gate-first` too |
+
+| `stages.<stage>.batch` | 1–10 | 1 | 1 (review: up to 3 when reviews pile up) | `<stage>` = `analyze`, `red-tests`, `implement`, `review`, `verify`. How many tasks one stage session (`/teamwright:router`, a stage command) takes, one after another. Larger batches save context rebuilds; each task still gets its own records |
+| `stages.<stage>.min` | 1–10 | 1 | 1 | Tasks waiting at the stage before the router runs it while other work is due. P0/P1 tasks and "nothing else to do" run it at once. E.g. `review.min: 2` reviews two tasks in one session instead of one now and one later; the cost is a task that waits |
+| `stages.<stage>.max_wait_hours` | 0–168 | 0 (off) | 0 | With `min` above 1: the stage runs anyway once its oldest waiting task is this old |
+| `models.<stage>` | `opus` · `sonnet` · `haiku` · `fable` · `claude-…` | unset (the role files' `model:`) | analyze, implement, review, verify `opus`; red-tests `sonnet` | The model of the stage's role agents (the agent tool's `model` parameter) and of an autonomous job's session. A cheap model on review or on a risky seam is a false saving (`docs/process/sessions.md` §5) |
+| `router.select` | `script` · `agent` | `script` | `script` | Who finds the work: the router script selects by status and counts, and lists the candidates with their facts — the session only picks the batch (few tokens, deterministic); `agent` — the session reads the task records itself (more tokens each session; for task records the script cannot read) |
 
 Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself — except `test_guard`, which blocks from 0.11.0 on.
 
@@ -37,6 +42,8 @@ Add what the data says, one line each, from `python3 "${CLAUDE_PLUGIN_ROOT}/scri
 1. From the arguments, or ask (AskUserQuestion, up to four keys at once, the recommended value first, one line on its consequence). Name the trade-off plainly when there is one:
    - `review.blocking: high` → Medium findings, docs drift among them, stop returning tasks: the follow-up task grows and docs drift until it is done.
    - `batch.max_tasks` above 1 with `autonomy.continue: true` → longer sessions; the flow still stops at a barrier when the context gets long.
+   - `stages.<stage>.min` above 1 → that stage waits while other work exists: tasks sit there longer, sessions are fewer and fuller. Pair it with `max_wait_hours`.
+   - `models.<stage>` cheaper than `opus` on analyze, implement or review → more send-backs; measure with `/teamwright:improve` before keeping it.
 2. **Agents cannot edit `.teamwright/config.yml`** (state guard) — that is what keeps an agent from loosening its own threshold. Copy it to `.teamwright/config.next.yml` with the Write tool and change only the `process:` keys:
    ```yaml
    process:
