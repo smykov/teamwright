@@ -102,6 +102,7 @@ hasnt "top-level gate_command: no tw-run" "$G/AGENTS.md" "tw-run backend -- make
 [ -x "$G/scripts/tw-run" ] && ok "tw-run installed executable" || bad "tw-run installed executable"
 [ -x "$G/scripts/tw-gate" ] && ok "tw-gate installed executable" || bad "tw-gate installed executable"
 [ -x "$G/scripts/tw-mutants" ] && ok "tw-mutants installed executable" || bad "tw-mutants installed executable"
+[ -f "$G/scripts/hooks/_job.sh" ] && ok "hooks/_job.sh installed (tw-gate, tw-mutants)" || bad "hooks/_job.sh installed"
 has ".gitignore has runner cache" "$G/.gitignore" ".teamwright/cache/"
 hasnt "GATE_COMMAND resolved" "$G/AGENTS.md" "{{GATE_COMMAND}}"
 has "unresolved placeholders reported" "$TMP/out" "unresolved      .claude/agents/developer-backend.md {{CONVENTIONS}}"
@@ -766,6 +767,13 @@ has "AGENTS.md renders the parallel setting" "$PS/AGENTS.md" "tasks in parallel 
 awk '{print} /^  - name: backend$/{print "    ci_workflow: \"\""}' "$TMP/ps.yml" > "$TMP/ps-ci.yml"
 tw plan --project "$PS" --config "$TMP/ps-ci.yml" > "$TMP/out" 2>&1
 has "empty ci_workflow is refused" "$TMP/out" "ci_workflow must name the CI workflow"
+awk '{print} /^  - name: backend$/{print "    generated: [../out]"; print "    copy_env: [x]"}' "$TMP/ps.yml" > "$TMP/ps-gen.yml"
+tw plan --project "$PS" --config "$TMP/ps-gen.yml" > "$TMP/out" 2>&1
+has "generated outside the project is refused" "$TMP/out" "generated must be a list of paths relative"
+has "generated without generate_command is refused" "$TMP/out" "generated names the outputs of generate_command"
+has "copy_env must be a map" "$TMP/out" "copy_env must map variable names"
+awk '{print} /^  - name: backend$/{print "    generate_command: \"make gen\""; print "    generated: [backend/gen]"; print "    copy_env:"; print "      CARGO_TARGET_DIR: \"{cache}/target\""}' "$TMP/ps.yml" > "$TMP/ps-gen2.yml"
+tw plan --project "$PS" --config "$TMP/ps-gen2.yml" > "$TMP/out" 2>&1; expect_rc "generated and copy_env accepted" 0 "$?"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 # render drift (#6): a settings change does not reach a locally edited role file

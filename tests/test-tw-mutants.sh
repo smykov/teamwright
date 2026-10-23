@@ -16,6 +16,16 @@ areas:
     workdir: app
     runner: docker
     image: example/test:1
+  - name: gen
+    workdir: app
+    generate_command: "echo gen >> $TMP/gen.runs; mkdir -p gen; echo generated > gen/out.txt"
+    generated: [app/gen]
+    generate_inputs: [app]
+    copy_env:
+      TW_T_DIR: "{cache}/target"
+  - name: genbad
+    workdir: app
+    generate_command: "exit 5"
 YML
 # a fake docker: logs each start and the mounted root, then runs the command there
 cat > "$TMP/docker" <<SH
@@ -79,7 +89,7 @@ echo "LOGGED"
 --- end
 M
 cd "$P" || exit 1
-printf '.teamwright/logs/\n' > .gitignore
+printf '.teamwright/logs/\napp/gen/\n' > .gitignore
 git init -q -b main . && git add -A && git commit -qm init
 W="$(mktemp -d)"; git worktree add -q --detach "$W/tree" HEAD
 mut() { bash scripts/tw-mutants "$@" 2>&1; }
@@ -147,5 +157,42 @@ mut app T-1 --tree "$P" >/dev/null; expect_rc "the working tree is refused as --
 mut app T-1 >/dev/null; expect_rc "no --tree: exit 2" 2 "$?"
 mut app T-9 --tree "$W/tree" >/dev/null; expect_rc "no catalog: exit 2" 2 "$?"
 mut nope T-1 --tree "$W/tree" --check >/dev/null; expect_rc "unknown area: exit 2" 2 "$?"
+
+# ---- generated code in the copy: copied when the inputs are unchanged, else generated ----
+C2="$P/docs/tasks/T-2.mutants"; mkdir -p "$C2"
+printf 'test -f gen/out.txt || exit 9; echo "$TW_T_DIR" > %s/envseen; sh check.sh\n' "$TMP" > "$C2/test-command"
+cp "$C/01-accept-empty.mutant" "$C2/"
+mkdir -p app/gen && echo generated > app/gen/out.txt
+gruns() { if [ -f "$TMP/gen.runs" ]; then wc -l < "$TMP/gen.runs" | tr -d ' '; else echo 0; fi; }
+W2="$(mktemp -d)"; git worktree add -q --detach "$W2/tree" HEAD
+out="$(mut gen T-2 --tree "$W2/tree")"; rc=$?
+expect_rc "generated outputs, inputs unchanged: exit 0, nothing generated" "0 0" "$rc $(gruns)"
+printf '%s' "$out" | grep -q "generated outputs copied from the working tree, inputs unchanged: app/gen" && ok "says the outputs were copied" || bad "says the outputs were copied" "$out"
+[ -f "$W2/tree/app/gen/out.txt" ] && ok "outputs are in the copy" || bad "outputs are in the copy"
+expect_rc "copy_env: {cache} is the main checkout's copy cache" "$P/.teamwright/cache/gen/copy/target" "$(cat "$TMP/envseen")"
+echo "# changed in the copy" >> "$W2/tree/app/lib.sh"
+out="$(mut gen T-2 --tree "$W2/tree")"; rc=$?
+expect_rc "inputs changed: generate_command runs in the copy, in the same start" "0 1" "$rc $(gruns)"
+printf '%s' "$out" | grep -q "its inputs differ from the working tree's" && ok "says why it generates" || bad "says why it generates" "$out"
+out="$(mut gen --tree "$W2/tree" --prepare)"; rc=$?
+expect_rc "--prepare: generates when the inputs differ" "0 2" "$rc $(gruns)"
+out="$(mut genbad T-2 --tree "$W2/tree")"; rc=$?
+expect_rc "generate_command fails in the copy: exit 4" 4 "$rc"
+printf '%s' "$out" | grep -q "^GENERATE FAILED" && ok "generate failure is named" || bad "generate failure is named" "$out"
+out="$(mut app --tree "$W2/tree" --prepare)"; expect_rc "--prepare without generate_command: nothing to do" 0 "$?"
+git worktree remove --force "$W2/tree"
+
+# ---- detached run, bounded wait ----
+C3="$P/docs/tasks/T-3.mutants"; mkdir -p "$C3"
+printf 'echo s >> %s/slow.starts; sleep 1; sh check.sh\n' "$TMP" > "$C3/test-command"
+cp "$C/01-accept-empty.mutant" "$C3/"
+out="$(TW_WAIT_SECONDS=0 mut app T-3 --tree "$W/tree")"; rc=$?
+expect_rc "over the wait budget: exit 75" 75 "$rc"
+printf '%s' "$out" | grep -q "^RUNNING: mutants T-3 (pid [0-9]*), started .* run the same command again" && ok "RUNNING line" || bad "RUNNING line" "$out"
+out="$(TW_WAIT_SECONDS=30 mut app T-3 --tree "$W/tree")"; rc=$?
+expect_rc "called again: attaches and gets the result" 0 "$rc"
+printf '%s' "$out" | grep -q "attached to the running catalog of T-3" && ok "attached" || bad "attached" "$out"
+printf '%s' "$out" | grep -q "^1 killed, 0 survived" && ok "attached: the full report" || bad "attached: the full report" "$out"
+expect_rc "attaching starts nothing new (baseline + 1 mutant)" 2 "$(wc -l < "$TMP/slow.starts" | tr -d ' ')"
 git worktree remove --force "$W/tree"
 finish

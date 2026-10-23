@@ -156,6 +156,23 @@ def load_config(path):
             wd = a.get("workdir")
             if wd is not None and (not isinstance(wd, str) or wd.startswith("/") or ".." in wd.split("/")):
                 errors.append("areas[%s].workdir must be a relative path inside the project" % n)
+            for k in ("generated", "generate_inputs", "source_dirs", "test_dirs"):
+                v = a.get(k)
+                if v is None:
+                    continue
+                vs = v if isinstance(v, list) else [v]
+                if not all(isinstance(x, str) and x.strip() and not x.startswith("/")
+                           and ".." not in x.split("/") for x in vs):
+                    errors.append("areas[%s].%s must be a list of paths relative to the project root" % (n, k))
+            if a.get("generated") and not str(a.get("generate_command") or "").strip():
+                errors.append("areas[%s].generated names the outputs of generate_command, which the area "
+                              "does not have" % n)
+            ce = a.get("copy_env")
+            if ce is not None and not (isinstance(ce, dict) and all(
+                    re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(k)) and isinstance(v, (str, int, float))
+                    for k, v in ce.items())):
+                errors.append("areas[%s].copy_env must map variable names to values, e.g. "
+                              "CARGO_TARGET_DIR: \"{cache}/target\"" % n)
             cw = a.get("ci_workflow")
             if cw is not None and not (isinstance(cw, str) and cw.strip()):
                 errors.append("areas[%s].ci_workflow must name the CI workflow that runs the tests "

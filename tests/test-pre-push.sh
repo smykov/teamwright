@@ -99,4 +99,10 @@ code e.py "feat(T-4): even more"
 touch "$TEAMWRIGHT_PAUSE_FILE"
 expect_rc "pause blocks wip pushes too" 1 "$(git push -q origin feature:wip/T-4 2>/dev/null; echo $?)"
 rm "$TEAMWRIGHT_PAUSE_FILE"
+git checkout -q main
+git commit -q --allow-empty -m "chore(task): T-3 status [skip ci]"
+expect_rc "a [skip ci] tip is not refused" 0 "$(push)"
+grep -q "WARNING the pushed tip .* CI-skip marker" "$TMP/err" && ok "a [skip ci] tip is warned about" || bad "a [skip ci] tip is warned about" "$(cat "$TMP/err")"
+git commit -q --allow-empty -m "chore(task): T-3 note"
+push >/dev/null; grep -q "CI-skip marker" "$TMP/err" && bad "no warning without the marker" || ok "no warning without the marker"
 finish
