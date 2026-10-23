@@ -214,6 +214,11 @@ def config_matchers():
                 label = "%s (the %s of %s)" % (" ".join(w[:3]), key, ("area " + area) if area else "project")
                 p = w[0]
                 if "/" in p or any(os.path.isfile(os.path.join(root, d, p)) for d in ("", wd)):
+                    # a script that only wraps another command (`tool/gate.sh sh -c '...'`, a docker
+                    # wrapper) is no signature: the project runs lint, codegen and migrations through it
+                    # too. Its inner command is checked instead (pytest inside is still refused).
+                    if any(base(x) in SHELLS and y == "-c" for x, y in zip(w[1:], w[2:])):
+                        continue
                     out.append(("file", base(p), label, area, what))
                 elif p not in SHELLS and not re.fullmatch(r"python[0-9.]*|node|ruby|perl|php", p):
                     pre = [p]

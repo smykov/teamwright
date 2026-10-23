@@ -6,7 +6,7 @@ echo "test-guard"
 GATE="$HOOKS/test-guard.sh"
 P="$TMP/proj"; mkdir -p "$P/.teamwright" "$P/tool" "$P/server/tests"
 export CLAUDE_PROJECT_DIR="$P"
-touch "$P/tool/gate.sh"
+touch "$P/tool/gate.sh" "$P/tool/wrap.sh"
 cat > "$P/.teamwright/config.yml" <<'YML'
 version: 1
 mode: gate-first
@@ -22,6 +22,9 @@ areas:
   - name: app
     workdir: app
     test_command: "flutter test"
+  - name: infra
+    workdir: tool
+    gate_command: "tool/wrap.sh sh -c 'cd tool && ruff check . && pytest -q'"
 gate_command: "make check"
 test_runner_patterns: ["^bin/run-specs( |$)"]
 YML
@@ -68,6 +71,10 @@ expect_allow "tw-run with the area's api_test_command" "$(run "scripts/tw-run se
 expect_allow "grep on a log" "$(run 'grep -n FAILED .teamwright/logs/test/server-1.log | head')"
 expect_allow "a commit message naming pytest" "$(run 'git commit -m "fix: pytest flake"')"
 expect_allow "echo" "$(run 'echo pytest')"
+# a gate script that only wraps another command is not itself a signature (ai-resume tool/gate.sh)
+expect_allow "a wrapper gate script running a formatter" "$(run "tool/wrap.sh sh -c 'cd tool && ruff format x.py'")"
+expect_allow "a wrapper gate script running a migration" "$(run "scripts/tw-run infra -- \"tool/wrap.sh sh -c 'alembic upgrade head'\"")"
+expect_deny "a wrapper gate script running pytest" "$(run "tool/wrap.sh sh -c 'cd tool && pytest -q tests'")" "TEST GUARD"
 expect_allow "make build" "$(run 'make build')"
 expect_allow "an assignment in the command is not an escape, but plain commands pass" "$(run 'TW_TEST_GUARD=off ls')"
 expect_deny "an agent's TW_TEST_GUARD=off does not switch the guard off" "$(run 'TW_TEST_GUARD=off pytest')" "TEST GUARD"
