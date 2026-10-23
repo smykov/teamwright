@@ -108,6 +108,26 @@ expect_rc "the flow's waiting line is journaled as waiting" "waiting waiting-lin
 hook_json "" s10 "@hook_event_name=Stop" "@last_assistant_message=we are waiting for the owner" | bash "$J"
 expect_rc "a sentence about waiting is not the waiting line" "none none" "$(last_out)"
 
+# the stage the session ran (0.12): `Stage: <stage>` in the end block
+last_stage() { python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["outcome"], r.get("stage", "?") or "-")' "$L/outcomes.jsonl"; }
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Done this session: T-12 red tests
+Stage: red-tests
+Outcome: barrier" | bash "$J"
+expect_rc "Stop records the stage the session ran" "barrier red-tests" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=**Stage:** flow
+Outcome: idle" | bash "$J"
+expect_rc "a flow run records stage flow" "idle flow" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Outcome: barrier" | bash "$J"
+expect_rc "no Stage line: empty stage" "barrier -" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Stage: deploy
+Outcome: barrier" | bash "$J"
+expect_rc "an unknown stage word is not recorded" "barrier -" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Stage: review
+Batch: T-3 T-7 - disjoint seams, both in the server area
+Outcome: barrier" | bash "$J"
+expect_rc "the chosen batch and its reason are recorded" "T-3,T-7|disjoint seams, both in the server area" \
+  "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
+
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"
 expect_allow "unwritable log dir fails silently" "$out"

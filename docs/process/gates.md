@@ -19,7 +19,7 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 
 | Gate | Where it runs | Tier | Prevents |
 |------|---------------|------|----------|
-| [Analysis gate](#analysis-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) + `PostToolUse` | T3 | Coding before the root cause is known |
+| [Analysis gate](#analysis-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) + `PostToolUse` | T3 | Coding before the root cause is known; a task handed to review from the red-tests stage |
 | [Review gate](#review-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) | T3 | Self-review, skipped review, endless review loops, recurrence accepted as a patch |
 | [Verify gate](#verify-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) | T3 | "Done" that does not work in the running system |
 | [Journal](#journal) | Claude Code tool, permission and stop events | — (facts) | Metrics and gates built on self-report |
@@ -128,7 +128,16 @@ root cause cost a full review round; the same seam was reopened five times in a 
 3. A shell command that rewrites a task status in `docs/tasks/` (`sed -i`, `perl -i`,
    `>`, `tee`) — status changes must go through Edit/Write so the gates see them.
    Appending (`>>`, `tee -a`) is allowed: it lands after the front matter, where `status:`
-   is never read, so a note cannot change the task's state.
+   is never read, so a note cannot change the task's state. The same holds for a command
+   that rewrites the `stage:` field.
+4. **Stage order** — an edit of `docs/tasks/<ID>.md` that breaks the order of the
+   `stage:` field, the sub-stage of `IN_PROGRESS` (`sessions.md` §8): a value other than
+   `red-tests` or `implement`; removing the field from an `IN_PROGRESS` task; leaving
+   `ANALYSIS` straight into `stage: implement` (the red tests come first); and
+   `IN_PROGRESS → NEEDS_REVIEW` while the task is at `stage: red-tests` — only the
+   implement stage hands a task to review. `red-tests → implement` and back
+   (`implement → red-tests`, or either value when review or verification return the task to
+   `IN_PROGRESS`) pass. A task without the field (started before stages) is not checked.
 
 **Deliberate exits** (all stay visible in the task file)
 
@@ -139,6 +148,8 @@ root cause cost a full review round; the same seam was reopened five times in a 
 | Root cause cannot be proven with current evidence | `ANALYSIS → BLOCKED` with `blocked_on: <reason>` (what evidence or person it waits for) |
 | Instance of a known root | `absorbed_by: <rca task>` + `DEFERRED` |
 | The task *is* the investigation | `type: rca` with root cause + evidence + decision |
+| A red test turns out wrong during implement | `stage: red-tests` in the same edit as the note why; the test-writer rewrites it |
+| No red tests are possible (rca exit (b)/(c), no code) | `## Tests: none — <why>` and `stage: implement` |
 
 **Active task.** The gate keeps `.teamwright/current-task` itself: on `PostToolUse` (the
 edit has landed) it writes the task id when the task is `IN_PROGRESS` and clears the
@@ -342,7 +353,7 @@ the agent's report.
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `tools.jsonl` | tool call: `ts`, `event` (`pre`/`post`/`failure`), `session_id`, `agent_id`, `agent_type`, `tool`, `detail`; Agent calls add `subagent_type`, `task_ids` (ids in the spawn description, else the first id in the prompt) |
 | `PermissionRequest`, `PermissionDenied` | `perms.jsonl` | permission decision needed / call denied (`PermissionDenied` fires for auto-mode denials; a deny-rule refusal shows as a `pre` line with no `post`) |
 | `PostToolUse` of Edit/Write on `docs/tasks/<ID>.verify/<n>.md` | `verify.jsonl` | verify record landed: task, round, kind, tool, environment, result, commit (never the command or the body) |
-| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count |
+| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count; `stage` from a `Stage: analyze\|red-tests\|implement\|review\|verify\|flow` line, and `batch` / `batch_reason` from `Batch: <ids> - <why>` (the tasks the session chose from the router's candidates) |
 | any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
 
 `detail` classifies a call, it never replays it: program + subcommand of a shell command

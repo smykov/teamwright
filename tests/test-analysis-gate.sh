@@ -177,6 +177,51 @@ for f in $(python3 -c "$_docs_py" "$KIT" "$TMP/docs-blocks"); do
 done
 [ "$n" -ge 4 ] && ok "found the template and investigator blocks ($n)" || bad "found the template and investigator blocks" "only $n"
 
+# ---- 4. the stage field (0.12) ---------------------------------------------------------
+staged() {  # staged STATUS [STAGE] -> T-1 with a full analysis and an optional stage line
+  task_file "$T" T-1 "$1" bug full
+  if [ -n "${2:-}" ]; then awk -v s="$2" '{print} /^status: /{print "stage: " s}' "$T" > "$T.tmp" && mv "$T.tmp" "$T"; fi
+}
+staged ANALYSIS
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS
+stage: red-tests")"
+expect_allow "ANALYSIS -> IN_PROGRESS with stage: red-tests is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS
+stage: implement")"
+expect_deny "ANALYSIS -> IN_PROGRESS straight into stage: implement is denied" "$out" "red tests come before"
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+expect_allow "ANALYSIS -> IN_PROGRESS without a stage (flow before 0.12) is allowed" "$out"
+staged IN_PROGRESS red-tests
+grep -q "^stage: red-tests" "$T" && ok "fixture carries the stage line" || bad "fixture carries the stage line"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=stage: implement")"
+expect_allow "red-tests -> implement is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=stage: check")"
+expect_deny "an unknown stage value is denied" "$out" "not a stage"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=")"
+expect_deny "removing the stage of an IN_PROGRESS task is denied" "$out" "not removed"
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "IN_PROGRESS -> NEEDS_REVIEW at stage red-tests is denied" "$out" "only the implement stage"
+staged IN_PROGRESS implement
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "IN_PROGRESS -> NEEDS_REVIEW at stage implement is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: implement" "new_string=stage: red-tests")"
+expect_allow "implement -> red-tests (back from implement) is allowed" "$out"
+staged IN_PROGRESS
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "IN_PROGRESS -> NEEDS_REVIEW without a stage field (started before 0.12) is allowed" "$out"
+staged NEEDS_REVIEW implement
+out="$(run Edit s1 "file_path=$T" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_allow "review send-back to IN_PROGRESS keeps stage: implement" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: implement" "new_string=stage: red-tests")"
+expect_allow "back to red-tests from review is allowed" "$out"
+out="$(run Bash s1 "command=sed -i 's/stage: red-tests/stage: implement/' docs/tasks/T-1.md")"
+expect_deny "a shell rewrite of the stage is denied" "$out" "Edit/Write"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\n' > "$TMP/gf.yml"; mkdir -p "$P/.teamwright"; cp "$TMP/gf.yml" "$P/.teamwright/config.yml"
+staged IN_PROGRESS red-tests
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+printf '%s' "$out" | grep -q "gate-first" && ok "gate-first: the stage gate warns" || bad "gate-first: the stage gate warns" "$out"
+rm -f "$P/.teamwright/config.yml"
+
 # fail-open
 out="$(printf 'not json' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 out="$(printf '' | bash "$GATE")";         expect_allow "empty input fails open" "$out"

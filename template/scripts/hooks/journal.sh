@@ -26,7 +26,11 @@
 #       from `last_assistant_message`; when the runtime does not send it (or it
 #       has no Outcome line), from the last assistant text in the transcript
 #       (`transcript_path`, `agent_transcript_path` for a subagent).
-#       `outcome_source` says which: message | transcript | none. A Stop with no
+#       `outcome_source` says which: message | transcript | none. `stage` is the
+#       stage the session ran, from its `Stage: <analyze|red-tests|implement|review|
+#       verify|flow>` line ('' when none; SubagentStop lines leave it empty); `batch`
+#       and `batch_reason` are the tasks the session chose from the router's candidates
+#       and its one-line reason, from `Batch: T-1 T-2 - <reason>`. A Stop with no
 #       Outcome line while an agent this session launched has not finished yet is
 #       `outcome: waiting`, `outcome_source: open-agent` (the runtime ran the role in
 #       the background; the session resumes on its result); so is a Stop whose final
@@ -138,6 +142,12 @@ elif ev in ("PermissionRequest", "PermissionDenied"):
 
 elif ev in ("Stop", "SubagentStop"):
     OUT_RE = re.compile(r"(?im)^\W*outcome\W*[:=]\s*\W*(barrier|idle|escalate|interrupted)\b")
+    # the stage the session ran (`Stage: implement` in the end block of a stage command,
+    # `Stage: flow` for a flow run of several stages)
+    STAGE_RE = re.compile(r"(?im)^\W*stage\W*[:=]\s*\W*(analyze|red-tests|implement|review|verify|flow)\b")
+    # the batch the session chose from the router's candidates, and why:
+    # `Batch: T-1 T-2 - disjoint seams, same area`
+    BATCH_RE = re.compile(r"(?im)^\W*batch\W*[:=]\s*(.+)$")
     # the flow's line for a turn that ends while a role runs in the background
     WAIT_RE = re.compile(r"(?im)^\W*waiting for [\w.-]+ on [A-Za-z][\w.]*-\d+\W*$")
 
@@ -217,8 +227,16 @@ elif ev in ("Stop", "SubagentStop"):
                 finished[r["agent_type"]] = finished.get(r["agent_type"], 0) + 1
         if any(n > finished.get(t, 0) for t, n in launched.items()):
             outcome, src = "waiting", "open-agent"
+    sm = STAGE_RE.search(text) if ev == "Stop" else None
+    bm = BATCH_RE.search(text) if ev == "Stop" else None
+    batch = ID_RE.findall(bm.group(1).split(" - ")[0].split("\u2014")[0]) if bm else []
+    reason = ""
+    if bm:
+        rest = re.split(r"\s(?:-|\u2014|:)\s", bm.group(1), 1)
+        reason = clean(rest[1], 160) if len(rest) > 1 else ""
     io.append_jsonl(os.path.join(logdir, "outcomes.jsonl"), dict(
-        base, event=ev, outcome=outcome, outcome_source=src,
+        base, event=ev, outcome=outcome, outcome_source=src, stage=sm.group(1).lower() if sm else "",
+        batch=batch[:10], batch_reason=reason,
         current_task=cur, task_status=st, tool_calls=calls))
 PY
 python3 -c "$_tw_py" >/dev/null 2>&1

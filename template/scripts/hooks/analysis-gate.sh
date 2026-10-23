@@ -16,9 +16,16 @@
 #   3. A Bash command that rewrites a task record docs/tasks/<ID>.md (sed -i, >, tee…)
 #      and mentions `status`: status changes must go through Edit/Write so the gates
 #      can see them. Only the write target counts - a command that reads a record and
-#      writes elsewhere, or writes text that merely names one, passes.
+#      writes elsewhere, or writes text that merely names one, passes. The same holds
+#      for a command that mentions `stage`.
 #      Appending (>>, tee -a) is allowed: it lands after the front matter, where
 #      `status:` is never read, so a note cannot change the task's state.
+#   4. An edit of docs/tasks/<ID>.md that breaks the order of the `stage:` field (the
+#      sub-stage of IN_PROGRESS, written by the stage that finished its work): a value
+#      other than red-tests | implement; removing it from an IN_PROGRESS task; leaving
+#      ANALYSIS straight into `stage: implement`; IN_PROGRESS -> NEEDS_REVIEW while the
+#      task is at `stage: red-tests` (only the implement stage hands a task to review).
+#      Tasks without the field (started before stages) are not checked.
 #
 # ACTIVE TASK (PostToolUse): after an edit of docs/tasks/<ID>.md lands, the gate
 #   writes <ID> to .teamwright/current-task when the task is IN_PROGRESS, and clears
@@ -132,6 +139,27 @@ if m and rel.startswith("docs/tasks/"):
             io.deny("ANALYSIS GATE: %s cannot enter IN_PROGRESS - the `analysis:` block "
                     "is incomplete (missing: %s). Add it in the same edit:\n%s\n%s"
                     % (m.group(1), ", ".join(missing), template_for(ra), EXITS), "analysis-gate")
+    # ---- 4. the `stage:` field inside IN_PROGRESS -----------------------------
+    stage = getattr(task, "task_stage", None)
+    if stage:
+        sb, sa, stb, sta, tid = stage(rb), stage(ra), task.status(rb), task.status(ra), m.group(1)
+        STAGES = ("red-tests", "implement")
+        why = None
+        if sa and sa != sb and sa not in STAGES:
+            why = "`stage: %s` is not a stage of IN_PROGRESS (red-tests | implement)" % sa
+        elif stb == "IN_PROGRESS" and sta == "IN_PROGRESS" and sb in STAGES and not sa:
+            why = "the `stage:` field of an IN_PROGRESS task is not removed; set the stage the " \
+                  "task is at (red-tests | implement)"
+        elif stb == "ANALYSIS" and sta == "IN_PROGRESS" and sa == "implement":
+            why = "a task leaving ANALYSIS enters `stage: red-tests` - the red tests come before " \
+                  "the implementation"
+        elif stb == "IN_PROGRESS" and sta == "NEEDS_REVIEW" and sb == "red-tests":
+            why = "only the implement stage moves a task to NEEDS_REVIEW; this task is at " \
+                  "`stage: red-tests` (commit the red tests with `stage: implement` first)"
+        if why:
+            io.deny("STAGE GATE: %s: %s. The stage moves forward red-tests -> implement (back to " \
+                    "red-tests only from implement, or from review/verify when the task returns to " \
+                    "IN_PROGRESS); docs/process/sessions.md section 8." % (tid, why), "analysis-gate")
     sys.exit(0)
 
 # ---- 2. code edit for an active task -----------------------------------------

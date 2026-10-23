@@ -360,10 +360,10 @@ def _is_task_record(tok, in_tasks):
 
 def shell_rewrites_task_record(cmd):
     """True when a shell command overwrites a task record (docs/tasks/<ID>.md) and the
-    command mentions `status`: an in-place sed/perl edit, a `>` redirect or a `tee`
-    without -a whose target is the record. Appends (>>, tee -a), reads, and writes to
+    command mentions `status` or `stage`: an in-place sed/perl edit, a `>` redirect or a
+    `tee` without -a whose target is the record. Appends (>>, tee -a), reads, and writes to
     any other file are not - even when the command text names a task record."""
-    if "status" not in cmd:
+    if "status" not in cmd and "stage" not in cmd:
         return False
     text, _ = _split_heredocs(cmd)
     if "docs/tasks" not in text:
