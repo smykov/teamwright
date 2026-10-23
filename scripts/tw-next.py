@@ -36,10 +36,13 @@ Decision order (first match wins):
                  not), then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits (push is the owner's call), else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
-  Parallel work (tw-parallel.py): a task on a `tw/<ID>` worktree is worked in that
-  worktree's session. The main tree skips it, and offers `merge` once its record on the
-  branch is CODE_COMPLETE or later. A session on `tw/<ID>` sees only its own task and
-  never pushes: delivery happens from the main tree after the merge.
+  Parallel work: a task on a worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
+  or `task/<ID>`, any suffix after the id allowed; $TEAMWRIGHT_TASK_BRANCH_RE overrides
+  the pattern, group 1 = the id - is worked in that worktree's session. Its state comes
+  from the worktree's copy of the record (status, analysis, review and verify rounds),
+  marked `in_worktree`. The main tree skips it, and offers `merge` once that record is
+  CODE_COMPLETE or later. A session on such a branch sees only its own task and never
+  pushes: delivery happens from the main tree after the merge.
 
 JSON: {"action", "task", "reason", "role", "ask_owner", "alternatives": [...],
        "state": {...}, "tasks": [...], "warnings": [...]}; action is one of resume | continue | review |
@@ -78,22 +81,46 @@ def kit_config():
     return mod
 
 
-def parallel_state(project, task):
-    """(own task id when this tree is on tw/<ID> else None, {id: status on its branch}
-    for tasks in other tw/<ID> worktrees)."""
-    rc, out = git(project, "worktree", "list", "--porcelain")
+def branch_re(task):
+    """A branch that names a task: group 1 is the task id."""
+    return re.compile(os.environ.get("TEAMWRIGHT_TASK_BRANCH_RE")
+                      or r"^(?:tw|task)/(%s)(?:$|[-_/.])" % task.TASK_ID)
+
+
+def task_worktrees(project, task):
+    """(own task id when this tree's branch names a task else None,
+    {id: {"path", "branch"}} for the other worktrees whose branch names a task)."""
+    rx = branch_re(task)
     _, cur = git(project, "rev-parse", "--abbrev-ref", "HEAD")
-    cur = cur.strip()
-    own = cur[3:] if cur.startswith("tw/") else None
-    others = {}
+    m = rx.match(cur.strip())
+    own = m.group(1) if m else None
+    _, top = git(project, "rev-parse", "--show-toplevel")
+    here = os.path.realpath(top.strip() or project)
+    rc, out = git(project, "worktree", "list", "--porcelain")
+    found, path = {}, None
     for line in out.splitlines() if rc == 0 else []:
-        if line.startswith("branch refs/heads/tw/"):
-            tid = line[len("branch refs/heads/tw/"):].strip()
-            if tid == own:
-                continue
-            rc2, text = git(project, "show", "tw/%s:docs/tasks/%s.md" % (tid, tid))
-            others[tid] = (task.status(task.parse(text)) or "?") if rc2 == 0 else "?"
-    return own, others
+        if line.startswith("worktree "):
+            path = line[len("worktree "):].strip()
+        elif line.startswith("branch refs/heads/") and path:
+            branch = line[len("branch refs/heads/"):].strip()
+            m = rx.match(branch)
+            if m and os.path.realpath(path) != here and m.group(1) != own:
+                found[m.group(1)] = {"path": path, "branch": branch}
+    return own, found
+
+
+def with_worktrees(project, task, tasks):
+    """Tasks worked in another worktree take their state from that worktree's record.
+    Returns (own, {id: {path, branch, status}}); `tasks` is updated in place."""
+    own, wts = task_worktrees(project, task)
+    for tid, wt in wts.items():
+        one = load_tasks(wt["path"], task, only=tid) or {}
+        if tid in one:
+            tasks[tid] = dict(one[tid], in_worktree=wt["path"], branch=wt["branch"])
+        elif tid in tasks:
+            tasks[tid] = dict(tasks[tid], in_worktree=wt["path"], branch=wt["branch"])
+        wt["status"] = tasks[tid]["status"] if tid in tasks else "?"
+    return own, wts
 
 
 def budget_of(proc, tasks, taken, candidate=None):
@@ -222,13 +249,13 @@ def blockers(t, oqs):
     return [q for q in ids if not oq_resolved(oqs, q)]
 
 
-def load_tasks(project, task):
+def load_tasks(project, task, only=None):
     d = os.path.join(project, "docs", "tasks")
     out = {}
     if not os.path.isdir(d):
         return None
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_"):
+        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
             continue
         try:
             with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
@@ -504,7 +531,8 @@ def decide(project, taken=None):
         res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None)
         return res
     oqs = open_questions(project)
-    own, elsewhere = parallel_state(project, task)
+    own, wts = with_worktrees(project, task, tasks)
+    elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
     cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])
     if own:
         # a worktree session works its own task only, and never pushes
@@ -515,10 +543,11 @@ def decide(project, taken=None):
             cands = [_d("idle", own, "%s is %s on tw/%s: this worktree's work is done - merge it from the "
                         "main tree (/teamwright:parallel)" % (own, tasks[own]["status"], own))]
     else:
-        merges = [_d("merge", tid, "%s is %s on tw/%s: merge it into this branch, run the gate, remove the "
-                     "worktree (/teamwright:parallel)" % (tid, stt, tid), role="orchestrator")
-                  for tid, stt in sorted(elsewhere.items(), key=lambda kv: _num(kv[0]))
-                  if stt in ("CODE_COMPLETE", "DEPLOYED", "VERIFIED", "DONE")]
+        merges = [_d("merge", tid, "%s is %s on %s: merge it into this branch, run the gate, remove the "
+                     "worktree %s" % (tid, wt["status"], wt["branch"], "(/teamwright:parallel)"
+                                      if wt["branch"].startswith("tw/") else wt["path"]), role="orchestrator")
+                  for tid, wt in sorted(wts.items(), key=lambda kv: _num(kv[0]))
+                  if wt["status"] in ("CODE_COMPLETE", "DEPLOYED", "VERIFIED", "DONE")]
         at = next((i for i, c in enumerate(cands) if c["action"] == "start" or
                    (c["action"] == "decide" and c["task"] is None and "unpushed" in c["reason"])), len(cands))
         cands = cands[:at] + merges + cands[at:]
@@ -580,7 +609,7 @@ def decide(project, taken=None):
                       for t in _sorted(tasks.values())]
     first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
     first["settings"] = proc
-    first["parallel"] = {"own": own, "elsewhere": elsewhere}
+    first["parallel"] = {"own": own, "elsewhere": elsewhere, "worktrees": wts}
     first["budget"] = budget
     return first
 
@@ -598,6 +627,10 @@ def human(res):
              "  tasks: " + (", ".join("%s %d" % kv for kv in sorted(counts.items())) or "none")]
     if st.get("current_task"):
         lines.append("  current task: %s" % st["current_task"])
+    wts = (res.get("parallel") or {}).get("worktrees") or {}
+    if wts:
+        lines.append("  in worktrees: " + ", ".join("%s %s (%s)" % (tid, wt["status"], wt["branch"])
+                                                    for tid, wt in sorted(wts.items(), key=lambda kv: _num(kv[0]))))
     lines += ["", "next: %s%s - %s" % (res["action"], " " + res["task"] if res["task"] else "", res["reason"])]
     if res.get("role"):
         lines.append("  role: %s" % res["role"])

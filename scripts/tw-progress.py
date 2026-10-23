@@ -17,7 +17,9 @@ its text; with a single area every task belongs to it. Tasks that match no area 
 as `unassigned` - name the area's directory in the seam instead of guessing.
 
 The next action, the ready queue and the owner decisions come from tw-next.py, so this
-report and /teamwright:flow never disagree.
+report and /teamwright:flow never disagree. A task worked in another git worktree on a
+branch that names it (`tw/<ID>`, `task/<ID>`) is read from that worktree's record, as the
+router does.
 
 Per-project adaptation, written by `/teamwright:progress --adapt` (optional, committed):
 .teamwright/progress.json
@@ -90,14 +92,14 @@ def _placeholder(cell):
     return not cell or cell.startswith("<")
 
 
-def records(project, task):
+def records(project, task, only=None):
     """{id: extra fields tw-next does not keep: sprint, type, seam, text, recurrence_of}."""
     d = os.path.join(project, "docs", "tasks")
     out = {}
     if not os.path.isdir(d):
         return out
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_"):
+        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
             continue
         text = _read(os.path.join(d, f))
         rec = task.parse(text)
@@ -249,6 +251,10 @@ def report(project):
     if base is None:
         return {"installed": False, "reason": "no docs/tasks/ - run /teamwright:adopt or /teamwright:init first"}
     extra = records(project, task)
+    # a task worked in another worktree (tw/<ID>, task/<ID>): its record there is the current one
+    _own, wts = tw.with_worktrees(project, task, base)
+    for tid, wt in wts.items():
+        extra.update(records(wt["path"], task, only=tid))
     areas = areas_of(project, config)
     adapt, adapt_error = adaptation(project)
     tasks = []

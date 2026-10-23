@@ -61,9 +61,9 @@ Router order (the helper applies it; you do not re-derive it):
 | 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`, or also `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | `TODO → ANALYSIS`, §3 from step 2 |
 | 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3 step 7) |
 | — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3 step 9 |
-| — | A task worked in its own worktree (`tw/<ID>`) is approved on its branch | `merge` | `/teamwright:parallel merge <ID>` |
+| — | A task worked in its own worktree (`tw/<ID>`, or `task/<ID>` made by hand) is approved there | `merge` | `/teamwright:parallel merge <ID>` for `tw/`; otherwise merge the branch the reason names and remove that worktree |
 
-**In a parallel worktree** (this tree is on branch `tw/<ID>`, started by `/teamwright:parallel`) the router offers only that task and ends `idle` once it is `CODE_COMPLETE`: no push, no verification here — both follow the merge in the main tree.
+**In a parallel worktree** (this tree is on branch `tw/<ID>`, started by `/teamwright:parallel`, or `task/<ID>`) the router offers only that task and ends `idle` once it is `CODE_COMPLETE`: no push, no verification here — both follow the merge in the main tree.
 | — | Nothing ready | `idle` | report, outcome `idle` |
 | — | `TEAMWRIGHT_PAUSE` exists | `paused` | report, no work that leads to a push; outcome `idle` |
 

@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.10.0] - 2026-10-23
+
+### Added
+- **The router and the progress report read tasks from per-task worktrees** (#12). Before, `tw-next` knew only `/teamwright:parallel`'s `tw/<ID>` branches, and read even those from the branch; a task worked in a hand-made worktree on its own branch kept its main-tree record, so the main checkout showed it `TODO`, offered to `start` it again or `resume` a task already merged there, and `tw-progress` listed it as an unassigned area because its analysis existed only on the branch. Now a worktree whose branch names a task — `tw/<ID>` or `task/<ID>`, any suffix after a separator (`task/T-12-parser`), or `$TEAMWRIGHT_TASK_BRANCH_RE` with the id in group 1 — supplies that task's state from its own copy of the record (status, analysis, review, verify and validation rounds), marked `in_worktree` and `branch`. The main tree skips it, offers `merge` (naming the branch and path) once it is `CODE_COMPLETE` or later, the human output lists `in worktrees:`, and `parallel.worktrees` in the JSON gives path, branch and status. A session in such a worktree sees only its own task. Tests: `tests/test-tw-worktrees.sh`.
+
 ## [0.9.0] - 2026-10-23
 
 ### Changed
