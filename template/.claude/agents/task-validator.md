@@ -20,7 +20,7 @@ Process: `AGENTS.md`, `docs/process/lifecycle.md` (§3, §7), `docs/process/sess
 
 | Parameter | Value |
 |---|---|
-| Gate | `{{GATE_COMMAND}}` |
+| Gate | `scripts/tw-gate <area>` (runs `{{GATE_COMMAND}}`) |
 | API tests | `{{API_TEST_COMMAND}}` |
 | End-to-end UI tests | `{{E2E_UI_COMMAND}}` (runner, `tool:` value and evidence path: Tools › ui_verify) |
 | Version check | `{{VERSION_CHECK}}` (how to read the running commit: version endpoint, startup log) |
@@ -85,7 +85,7 @@ verifier: task-validator
 
 1. **Split the task into checkable claims**: files, behaviour, limits, what must fail and how, the invariant.
 2. **Evidence per claim**: `file:line`, the test that proves it (name), command output, or a verify record. Missing → not done. Partial → say so.
-3. **Gate**: run `{{GATE_COMMAND}}` yourself, full set for the touched area. A regression in old tests → FAIL.
+3. **Gate**: run `scripts/tw-gate <area>` yourself for the touched area — the full set, never cut (read the log it prints). On the same commit with a clean tree a cached PASS (`PASS (cached: same commit …)`) is the recorded result for exactly this content and counts; `--fresh` when you doubt it. Compare `git status` before and after. A regression in old tests → FAIL. The verdict stays yours.
 4. **Mutations, on a throwaway worktree only.** Start from the list that already exists: the test-writer's wrong implementations and its `### Failure branches` mutations under `## Tests` in the task, and every mutation recorded in this task's earlier validation rounds — re-run them all, then add your own **3–6** targeted ones (`method: sample`). **After two `FAIL` rounds in a row**, do not sample again — the verify gate refuses it: `method: sweep` — mutate every condition, guard, return and write in the task's changed code, one at a time, and record each as killed, survived or equivalent (equivalent: no input can tell the mutant apart, say why); or, when a sweep cannot settle it, `verdict: NEEDS_OWNER` with what the owner must decide. You validate committed code (`commit:` in your record): if the task's paths have uncommitted changes, stop and report it — the orchestrator commits first. Never mutate the working tree, and never copy it with `cp -a`: that drags build output, caches and dependencies along (one copy filled a disk at 2.4 GB). Run the whole mutation pass as **one** shell script, so its cleanup always runs:
    ```sh
    copy="$(mktemp -d)"

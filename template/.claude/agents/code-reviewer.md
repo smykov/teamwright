@@ -63,7 +63,7 @@ Check each item of `PRINCIPLES.md` tiered T1 or higher against the diff. Always 
 
 ## 3. Verify, don't trust
 
-- Run the gate yourself: `{{GATE_COMMAND}}` — exactly as written (area commands run through `scripts/tw-run`). Compare `git status` before and after: a gate that changes tracked files is a finding.
+- Run the gate yourself: `scripts/tw-gate <area>` for the task's area (it runs `{{GATE_COMMAND}}` through `scripts/tw-run` and prints the log path; read the log, never cut the output). On the same commit with a clean tree it answers `PASS (cached: same commit …)` from the run already recorded for exactly this content — that is evidence from the tool, not anyone's report; `--fresh` when you have a reason to doubt it. Your judgement stays independent: the gate is one input, not your verdict. Compare `git status` before and after: a gate that changes tracked files is a finding (tw-gate also warns about it).
 - Round 2+: is every previous finding closed? A fix suggested by a previous review meets the same bar.
 
 ## Findings

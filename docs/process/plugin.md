@@ -114,6 +114,23 @@ make it a chain of `scripts/tw-run <area> -- ...` calls or a Makefile target tha
 `generate_command` (codegen, e.g. localisation or ORM clients) runs separately before the
 checks; a check must not modify tracked files.
 
+## tw-gate: the full gate, once per state of the code
+
+`template/scripts/tw-gate` is installed into every project as `scripts/tw-gate`:
+
+```bash
+scripts/tw-gate <area> [--fresh]
+```
+
+It reads the area from `.teamwright/config.yml` with the same parser and the same keys the
+role files are rendered from: `generate_command` (if any), then the area's `gate_command`,
+both through `scripts/tw-run`; without an area `gate_command`, the top-level one as written
+from the root. Full output goes to `.teamwright/logs/gate/` (or `$TEAMWRIGHT_LOG_DIR/gate/`)
+with a JSON record of the run; a PASS is reused when the working tree's content (a git tree
+id of HEAD plus uncommitted and untracked changes) and the command are the same and the
+tree did not change during the run. Exit code is the gate's; 2 on a usage or config error.
+What it records and when it reruns: [gates.md](gates.md#gate-runs-tw-gate).
+
 ## tw-progress.py: the progress report
 
 `python3 scripts/tw-progress.py [--project PATH] [--json]` is read-only. It counts task records

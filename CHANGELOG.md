@@ -2,6 +2,14 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.11.0] - 2026-10-23
+
+### Added
+- **`scripts/tw-gate <area> [--fresh]`, installed into projects: the full gate once per state of the code.** In an autonomous run a small task took about 90 minutes, and its ten-minute area gate ran five times on the same code — twice by the developer (it cut the output with `tail -8` and had to run it again to see the result), then by the flow's Gate step, the code-reviewer and the task-validator. tw-gate runs what the role files name as the gate (the area's `generate_command`, then its `gate_command` through `scripts/tw-run`, or the top-level `gate_command` as written), writes the whole output to `.teamwright/logs/gate/<area>-<time>-<commit>.log` (`$TEAMWRIGHT_LOG_DIR` respected), records the run in `<area>.json` and `runs.jsonl` (area, head, clean, tree, exit, duration, times, log, command), and prints PASS/FAIL, the exit code, the duration, the last 30 lines of a failure and the log path; its exit code is the gate's. A PASS is reused when the working tree has the same content (a git tree id of HEAD plus uncommitted and untracked changes, ignored files left out), root and command, and the tree did not change during the run: `PASS (cached: same commit <sha>, <when>, log <path>)`. So the developer's PASS before the commit answers the flow, the reviewer and the validator once that content is committed. A FAIL is never reused; `--fresh` always runs. Tests: `tests/test-tw-gate.sh` (also under bash 3.2).
+
+### Changed
+- **Roles run the gate through tw-gate.** The developer runs only the task's tests and the touched modules while working (`{{TEST_COMMAND}} <files>`, now in its parameters), and the full gate once before handing over, never cutting its output; the flow's Gate step, the code-reviewer and the task-validator run `scripts/tw-gate <area>` and accept a cached PASS on the same commit, still comparing `git status` before and after; their judgement stays independent. `AGENTS.md`, the role files, the flow, parallel and init skills, `gates.md` (new section *Gate runs*), `lifecycle.md`, `sessions.md`, `tools.md`, `plugin.md`, `usage.md`, `design-decisions.md` and the README describe it. Projects pick it up after `/plugin update` and `tw-install.py apply`.
+
 ## [0.10.0] - 2026-10-23
 
 ### Added

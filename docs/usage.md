@@ -131,6 +131,8 @@ areas:
     generate_command: "flutter gen-l10n"    # codegen, run before the gate
 ```
 
+Roles run the full gate as `scripts/tw-gate <area>`: `generate_command`, then the gate, the whole output in `.teamwright/logs/gate/<area>-<time>-<commit>.log`, and on screen only PASS/FAIL, the tail of a failure and the log path. A PASS is recorded for the exact content of the working tree, so the flow, the reviewer and the validator on the same commit get `PASS (cached: same commit …)` instead of another run of several minutes; a FAIL is never reused and `--fresh` forces a run. Details: [gates.md](process/gates.md#gate-runs-tw-gate).
+
 `tw-install.py check-commands` runs every configured command once and reports pass, fail or not runnable, and whether a command changed tracked files in its area. A run that could not exercise the code (database not listening, binary or Docker missing, no device for UI tests) is `not runnable` with the reason, not a failure. Details: [tools.md](process/tools.md#toolchain-runners).
 
 ## Changing the configuration

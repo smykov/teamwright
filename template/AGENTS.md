@@ -10,7 +10,9 @@ Entry point for any AI coding agent working in this repository (Claude Code, Ope
 {{GATE_COMMAND}}
 ```
 
-A task never leaves `IN_PROGRESS` with a red gate. The gate is run again by the reviewer and the validator; nobody's report is taken on trust.
+Run it as `scripts/tw-gate <area>`: `generate_command` first, then the gate, full output to a log under `.teamwright/logs/gate/` (read that log; never cut the output with `tail` or `head`), PASS/FAIL and the log path on screen. A PASS is recorded for the exact content of the working tree; the next `scripts/tw-gate <area>` on the same content answers `PASS (cached: …)` instead of running the gate again, a FAIL is always rerun, `--fresh` forces a run.
+
+A task never leaves `IN_PROGRESS` with a red gate. The gate is checked again by the reviewer and the validator through `scripts/tw-gate` — a recorded run of the tool, never anyone's report.
 
 Commands run exactly as rendered, through `scripts/tw-run <area> -- <cmd>`: on the host, or for an area with `runner: docker` in the same image as CI — never with the bare tool instead. Code generation (`generate_command`) runs before the gate, separately; the gate itself must leave `git status` unchanged.
 

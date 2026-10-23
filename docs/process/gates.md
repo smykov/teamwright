@@ -28,6 +28,7 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 | [DRAIN / pause](#drain-and-pause) | git `pre-push` | T3 | Unapproved work leaving the machine; pushes during a pause |
 | [Secret scan](#secret-scan) | git `pre-commit` (CI only if the project adds it) | T3 | Tokens, keys, `.env`, local settings in history |
 | [CLAUDE.md budget](#claudemd-budget) | Claude Code `SessionStart` + git `pre-commit` | T2 | A context file that grows into a second docs folder |
+| [Gate runs](#gate-runs-tw-gate) | `scripts/tw-gate <area>`, called by the developer, the flow, the reviewer and the validator | T1 (tooling) | The same full gate run by four roles on the same code; gate output lost to `\| tail` |
 
 All files live in `scripts/hooks/`. Install the git hooks once per clone:
 
@@ -514,6 +515,44 @@ commands that fix it. `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
 
 ---
 
+## Gate runs (tw-gate)
+
+`scripts/tw-gate <area> [--fresh]` · T1 (tooling: nothing refuses a role that skips it)
+
+**Incident it prevents.** One small task took about 90 minutes in an autonomous run, and
+the area's full gate (about 10 minutes) ran five times on the same code: the developer
+twice (it cut the output with `tail -8` and could not see the result), the flow's Gate
+step, the code-reviewer and the task-validator.
+
+**What it runs.** Exactly the gate the role files name, from `.teamwright/config.yml`:
+the area's `generate_command` first when it has one, then the area's `gate_command`,
+both through `scripts/tw-run <area> -- ...`; an area without its own `gate_command` runs
+the top-level `gate_command` as written, from the project root.
+
+**What it keeps.** The whole output in `<logs>/gate/<area>-<time>-<commit>.log`
+(`<logs>` = `$TEAMWRIGHT_LOG_DIR` or `.teamwright/logs/`, gitignored); the last run in
+`<logs>/gate/<area>.json` (area, root, head, clean, tree, tree_after, exit, pass,
+cacheable, duration_s, started, finished, log, command); every run and every cached
+answer appended to `<logs>/gate/runs.jsonl`. On screen: `PASS` or `FAIL`, exit code,
+duration, the last 30 lines of a failure, and the log path. Exit code = the gate's
+(`generate_command`'s when that failed); 2 for a usage or config error.
+
+**When it does not rerun.** The record keys on the content of the working tree as git
+sees it: HEAD plus every tracked and untracked change, ignored files left out (a
+temporary index, `git add -A`, `git write-tree`). When the area's last record is a PASS
+for the same tree, the same root and the same command, and the tree did not change
+while it ran, tw-gate prints `PASS (cached: same commit <sha>, <when>, log <path>)` (or
+`same tree … as the run at commit …` when the changes are not committed yet) and exits 0.
+So the developer's PASS before the commit answers the flow, the reviewer and the
+validator once exactly that content is committed. Never reused: a FAIL, a run during
+which the tree changed (the gate or `generate_command` wrote files, or someone edited
+meanwhile — tw-gate warns), another command, and anything after `--fresh`.
+
+A cached PASS is the tool's own record of a run on the same content, not an agent's
+report; the reviewer and the validator still compare `git status` before and after, and
+their verdict stays theirs. Files the gate depends on but git ignores (build caches,
+downloaded dependencies) are outside the key — `--fresh` when they matter.
+
 ## Environment variables
 
 Set by the person who starts Claude Code or runs git; agents cannot change the state
@@ -530,7 +569,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_NONCODE_RE` | analysis gate | paths that are not code (`docs/`, `.claude/`, `.github/`, `.teamwright/`, top-level `*.md`) |
 | `TEAMWRIGHT_REVIEWER_AGENT` | review gate | the reviewer's `agent_type` (`code-reviewer`) |
 | `TEAMWRIGHT_ESCALATE_AFTER` | review gate | `REQUEST_CHANGES` rounds in a row before the next record must escalate (`2`) |
-| `TEAMWRIGHT_LOG_DIR` | journal, review gate | journal directory (`.teamwright/logs`) |
+| `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory |
 | `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
 | `TEAMWRIGHT_PAUSE_FILE` | `pre-push`, router | pause file (`TEAMWRIGHT_PAUSE` at the repository root) |
 | `TEAMWRIGHT_PUSH_STATUSES` | `pre-push` | statuses whose code may be pushed (`CODE_COMPLETE DEPLOYED VERIFIED DONE`) |
@@ -541,7 +580,7 @@ guard's variables. Unset means the default.
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
-| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run` | another project root or config file |
+| `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate` | another project root or config file |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 
 ## Overriding deliberately

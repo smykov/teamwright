@@ -67,3 +67,8 @@ Why teamwright is shaped the way it is. Each entry: context → decision → why
 
 **Decision.** The task-validator's acceptance verdict is a record, `docs/tasks/<ID>.validation/<n>.md`, with the commit it checked, written through the verify gate like a verify record. `DONE` needs the latest verdict `PASS` for the task's current code — also for a task with nothing to deploy.
 **Why.** In the first full task cycle on a pilot, a task with nothing to deploy reached `DONE` with no acceptance at all, because "the orchestrator reads the verdict" was a rule no hook checked. A verdict line in free text could be stale after rework, revived by deleting a later `FAIL`, or missed for its formatting; a record with a commit and a ledger cannot.
+
+## The gate runs once per state of the code
+
+**Decision.** Roles run the full gate through `scripts/tw-gate <area>`, which keeps the whole output in a log and records the result for the content of the working tree (a git tree id, ignored files left out). The next run on the same content answers from a PASS record instead of running again; a FAIL, a run during which the tree changed, and `--fresh` always run. While working, the developer runs only the task's tests and the touched modules.
+**Why.** In an autonomous run a small task took about 90 minutes, and its ten-minute gate ran five times on the same code: twice by the developer (who cut the output with `tail` and could not see the result), then by the flow, the reviewer and the validator. "Nobody's report is taken on trust" still holds: a cached PASS is the tool's record of a run on identical content, not an agent's sentence, and the reviewer and the validator still check `git status` and judge for themselves.

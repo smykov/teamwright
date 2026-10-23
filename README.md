@@ -91,6 +91,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Once the implementation is green and before review, the test-writer breaks each Acceptance failure branch once on a throwaway copy and runs the test that guards it — for an API task, the end-to-end test verification will run; a surviving mutation means the test is rewritten, so a gap is not first found after deploy. [reviewer checks the table] — [test-writer](template/.claude/agents/test-writer.md#failure-branch-bite-second-spawn-before-review)
 - Tests the host cannot run (another platform) run in CI on a `wip/<ID>` branch before review; that push is not a delivery. [hook allows only `wip/*`] — [DRAIN and pause](docs/process/gates.md#drain-and-pause)
 - The gate is green before review; the reviewer and the validator run it again instead of trusting the author's report. [reviewer checks] — [AGENTS.md](template/AGENTS.md#gate)
+- The full gate runs once per state of the code: `scripts/tw-gate <area>` keeps its whole output in a log and records a PASS for that exact content, so the next role on the same commit gets `PASS (cached: …)` instead of another run; a FAIL is always rerun. While working, the developer runs only the task's tests and the touched modules. [tool] — [gate runs](docs/process/gates.md#gate-runs-tw-gate)
 - Tests must bite: the reviewer names the line whose removal turns each test red, the validator re-runs the test-writer's wrong implementations and failure-branch mutations and applies 3–6 mutations in a throwaway worktree that its script removes — after two failed rounds in a row, a sweep of every condition and guard instead of another sample — and a weakened test is a finding of its own. [reviewer and validator check] — [P-005](template/PRINCIPLES.md#p-005--tests-must-bite)
 - Every task's acceptance names a failure branch, and an end-to-end test exercises it. [reviewer checks; the verify gate requires a `Failure branch:` line] — [task template](template/docs/tasks/_task-template.md)
 
@@ -239,6 +240,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`docs/`](template/docs/) | templates for the requirements document, tasks, review, verify and validation records, sprints, decisions, open questions; `docs/failures.md` starts empty for your own incidents | T0 |
 | [`docs/process/`](docs/process/) | the process reference (all of it except `plugin.md`) | T0 |
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
+| [`scripts/tw-gate`](template/scripts/tw-gate) | runs an area's full gate once per state of the code, full output in a log, PASS reused on the same content | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
 | [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |
 | [`scripts/tw-ci-changes`](template/scripts/tw-ci-changes) | tells CI whether a push carried code or only task records since the previous run | tool |
