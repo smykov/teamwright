@@ -28,7 +28,7 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 | [DRAIN / pause](#drain-and-pause) | git `pre-push` | T3 | Unapproved work leaving the machine; pushes during a pause |
 | [Secret scan](#secret-scan) | git `pre-commit` (CI only if the project adds it) | T3 | Tokens, keys, `.env`, local settings in history |
 | [CLAUDE.md budget](#claudemd-budget) | Claude Code `SessionStart` + git `pre-commit` | T2 | A context file that grows into a second docs folder |
-| [Gate runs](#gate-runs-tw-gate) | `scripts/tw-gate <area>`, called by the developer, the flow, the reviewer and the validator | T1 (tooling) | The same full gate run by four roles on the same code; gate output lost to `\| tail` |
+| [Gate runs](#gate-runs-tw-gate) | `scripts/tw-gate <area>`, called by the developer, the flow, the reviewer and the validator | T1 (tooling) | The same full gate run by four roles on the same code; gate output lost to `\| tail`; a docs commit invalidating the cache; a gate cut by the 10-minute Bash limit; the server suite run for a CI-only change |
 | [Mutation checks](#mutation-checks-tw-mutants) | `scripts/tw-mutants <area> <ID>`, called by the test-writer and the validator; the stop rules in the verify gate | T1 (tooling) + T3 (stop rules) | Mutation rounds without an end: every sweep a new, larger list, any survivor a FAIL, the runner started once per mutant |
 
 All files live in `scripts/hooks/`. Install the git hooks once per clone:
@@ -521,12 +521,17 @@ commands that fix it. `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
 
 ## Gate runs (tw-gate)
 
-`scripts/tw-gate <area> [--fresh]` · T1 (tooling: nothing refuses a role that skips it)
+`scripts/tw-gate <area>|--top [--fresh]`, `--for-task <ID>`, `--for-diff <base>`,
+`--stop <area>|--top` · T1 (tooling: nothing refuses a role that skips it)
 
-**Incident it prevents.** One small task took about 90 minutes in an autonomous run, and
+**Incidents it prevents.** One small task took about 90 minutes in an autonomous run, and
 the area's full gate (about 10 minutes) ran five times on the same code: the developer
 twice (it cut the output with `tail -8` and could not see the result), the flow's Gate
-step, the code-reviewer and the task-validator.
+step, the code-reviewer and the task-validator. In another project the gate ran five
+times for one task, three of them on docs-only changes that invalidated a whole-tree
+cache (10–14 minutes each); a validator ran the server suite for a CI-only change; and a
+gate over Claude Code's 10-minute Bash limit was cut, its test container killed and the
+run started over, or polled in `until grep …; sleep` loops.
 
 **What it runs.** Exactly the gate the role files name, from `.teamwright/config.yml`:
 the area's `generate_command` first when it has one, then the area's `gate_command`,
@@ -535,22 +540,60 @@ the top-level `gate_command` as written, from the project root.
 
 **What it keeps.** The whole output in `<logs>/gate/<area>-<time>-<commit>.log`
 (`<logs>` = `$TEAMWRIGHT_LOG_DIR` or `.teamwright/logs/`, gitignored); the last run in
-`<logs>/gate/<area>.json` (area, root, head, clean, tree, tree_after, exit, pass,
-cacheable, duration_s, started, finished, log, command); every run and every cached
-answer appended to `<logs>/gate/runs.jsonl`. On screen: `PASS` or `FAIL`, exit code,
-duration, the last 30 lines of a failure, and the log path. Exit code = the gate's
-(`generate_command`'s when that failed); 2 for a usage or config error.
+`<logs>/gate/<area>.json` (`_top.json` for `--top`: area, root, head, clean, tree,
+tree_after, key, key_after, scope, exit, pass, cacheable, duration_s, started, finished,
+log, command); every run and every cached answer appended to `<logs>/gate/runs.jsonl`.
+On screen: `PASS` or `FAIL`, exit code, duration, the last 30 lines of a failure, and the
+log path. Exit code = the gate's (`generate_command`'s when that failed); 75 while it is
+still running (below); 2 for a usage or config error.
 
-**When it does not rerun.** The record keys on the content of the working tree as git
-sees it: HEAD plus every tracked and untracked change, ignored files left out (a
-temporary index, `git add -A`, `git write-tree`). When the area's last record is a PASS
-for the same tree, the same root and the same command, and the tree did not change
-while it ran, tw-gate prints `PASS (cached: same commit <sha>, <when>, log <path>)` (or
-`same tree … as the run at commit …` when the changes are not committed yet) and exits 0.
+**Detached run, bounded wait.** Claude Code stops a Bash call after 10 minutes, so the
+run itself lives in its own session and process group (`scripts/hooks/_job.sh`; Python's
+`start_new_session`, which works on macOS too) and writes to its log; the call waits up
+to `TW_WAIT_SECONDS` (default 540). Finished in time: the normal result and exit code.
+Not yet: `RUNNING: gate <area> (pid N), started <when>, log <path> - run the same command
+again to keep waiting`, exit **75**. The same command again attaches to that run — same
+area, same content key, same command — instead of starting another, and waits again; a
+result that finished while nobody waited is printed by the next same call (once: a FAIL
+is then never reused). A run of the same area on other content is waited for first (the
+toolchain, containers and build directories are shared). `--fresh` never starts a second
+run next to a running one: it attaches to it. A run whose process is gone without a
+result (killed) is reported, cleaned up and started again; a killed or interrupted
+caller leaves the run going; `--stop` sends TERM to its process group. Jobs live in
+`<logs>/gate/jobs/`. Roles never wrap tw-gate in sleep loops or background calls.
+
+**When it does not rerun.** The cache key is the content of the area's files: the
+working tree as git sees it (HEAD plus every tracked and untracked change, ignored files
+left out — a temporary index, `git add -A`, `git write-tree`), restricted to the area's
+scope — its `source_dirs`, `test_dirs` and `workdir`; the dependency manifests and
+lockfiles at the project root and the workdir (Makefile, justfile, package.json and the
+lockfiles, pyproject.toml, Cargo.toml/.lock, go.mod/.sum, pubspec.yaml/.lock, Gradle and
+Maven files, Gemfile, composer.json, Dockerfile, compose files, ...);
+`.teamwright/config.yml`; the gate scripts (`tw-gate`, `tw-run`, `hooks/_config.py`,
+`hooks/_job.sh`); and every repository file the area's `generate_command` or
+`gate_command` names (`sh ../tools/check.sh` adds `tools/check.sh`). An area without
+`source_dirs` and `test_dirs`, an area that runs the top-level gate, and `--top` key on
+the whole tree, as before. When the area's last record is a PASS for the same key, root
+and command, and the key did not change while it ran, tw-gate prints
+`PASS (cached: same commit <sha>, <when>, log <path>)`, `same tree … as the run at
+commit …` (changes not committed yet) or `<area> files unchanged since the run at commit
+…` (only files outside the scope changed — docs, task records, another area) and exits 0.
 So the developer's PASS before the commit answers the flow, the reviewer and the
-validator once exactly that content is committed. Never reused: a FAIL, a run during
-which the tree changed (the gate or `generate_command` wrote files, or someone edited
-meanwhile — tw-gate warns), another command, and anything after `--fresh`.
+validator, and a docs commit after it does not cost another run. Never reused: a FAIL, a
+run during which the area's files changed (the gate or `generate_command` wrote files, or
+someone edited meanwhile — tw-gate warns when the tree changed), another command, and
+anything after `--fresh`.
+
+**Which gates a task needs.** `scripts/tw-gate --for-task <ID>` (the files of the
+commits whose message names the task, plus uncommitted and untracked ones) or
+`--for-diff <base>` prints one line per gate: each area whose `source_dirs`, `test_dirs`
+or `workdir` holds a changed file, and `--top` when a file lies outside every area (every
+area's name instead when there is no top-level `gate_command`). Process records, `docs/`,
+Markdown, CI configuration (`.github/`, `.gitlab-ci.yml`, `.circleci/`, ...) and tool
+settings (`.claude/`, `.teamwright/`, `.serena/`, `.mcp.json`, licence and git
+metadata files) outside the areas need no local gate — CI checks its own configuration;
+`$TEAMWRIGHT_NO_GATE_RE` replaces that pattern. Nothing printed: no suite runs. The
+reviewer, the validator and the flow's Gate step run exactly the listed gates.
 
 A cached PASS is the tool's own record of a run on the same content, not an agent's
 report; the reviewer and the validator still compare `git status` before and after, and
@@ -610,8 +653,25 @@ must be on a path the Docker host can see: create it with `mktemp -d` (it honour
 mutant (`killed`, `SURVIVED … breaks: <guarantee>`, `survived, follow-up`, `equivalent`)
 and a summary, also kept in `<logs>/mutants/<ID>-<time>.txt`. Exit 0 when no survivor
 breaks a guarantee, 1 when one does, 2 for a usage error or a catalog entry that no
-longer matches the code, 3 for a red baseline, the runner's code (e.g. 127) when it
-cannot start. `--check` validates the catalog without running anything.
+longer matches the code, 3 for a red baseline, 4 when `generate_command` failed in the
+copy, 75 while it is still running, the runner's code (e.g. 127) when it cannot start.
+`--check` validates the catalog without running anything.
+
+**A copy that does not start from cold.** A fresh worktree has no generated code
+(ignored files) and an empty build directory. When the area has a `generate_command`:
+with `generated: [paths]` (its outputs, relative to the project root) declared and the
+copy's inputs equal to the working tree's — `generate_inputs: [paths]` when declared,
+else the whole tree without ignored files, the outputs and `.tw-mutants/` — tw-mutants
+copies the outputs from the working tree into the copy; otherwise `generate_command`
+runs in the copy inside the same runner start, before the baseline (one project spent
+~5 minutes of `build_runner` on every clean copy). Runs in the copy get `TW_RUN_COPY=1`,
+which applies the area's `copy_env` (e.g. `CARGO_TARGET_DIR: "{cache}/target"`; `{cache}`
+is `.teamwright/cache/<area>/copy` of the main checkout, mounted at `/tw-copy-cache` for
+`runner: docker`), and `TW_CACHE_ROOT=<project root>`, so docker areas reuse the main
+checkout's package caches. `scripts/tw-mutants <area> --tree <copy> --prepare` does only
+this step, for a copy whose tests are run by hand. The catalog run is detached and waited
+for like tw-gate (exit 75, the same command again attaches; another run of the same task
+is waited for first); a copy with a running catalog is kept until it returns.
 
 ## Environment variables
 
@@ -641,6 +701,9 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
 | `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate`, `scripts/tw-mutants` | another project root or config file |
+| `TW_WAIT_SECONDS`, `TW_POLL_SECONDS` | `scripts/tw-gate`, `scripts/tw-mutants` | how long a call waits for the detached run (default 540; `0` = start or attach and return 75 at once) and how often it looks (default 0.2 s, then 1 s) |
+| `TEAMWRIGHT_NO_GATE_RE` | `scripts/tw-gate --for-task`, `--for-diff` | files outside every area that need no local gate (records, docs, Markdown, CI and tool configuration by default) |
+| `TW_RUN_COPY`, `TW_CACHE_ROOT` | `scripts/tw-run` (set by `scripts/tw-mutants`) | apply the area's `copy_env`; whose `.teamwright/cache` holds the runner's caches |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 
 ## Overriding deliberately

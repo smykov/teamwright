@@ -10,7 +10,9 @@ Entry point for any AI coding agent working in this repository (Claude Code, Ope
 {{GATE_COMMAND}}
 ```
 
-Run it as `scripts/tw-gate <area>`: `generate_command` first, then the gate, full output to a log under `.teamwright/logs/gate/` (read that log; never cut the output with `tail` or `head`), PASS/FAIL and the log path on screen. A PASS is recorded for the exact content of the working tree; the next `scripts/tw-gate <area>` on the same content answers `PASS (cached: …)` instead of running the gate again, a FAIL is always rerun, `--fresh` forces a run.
+Run it as `scripts/tw-gate <area>`: `generate_command` first, then the gate, full output to a log under `.teamwright/logs/gate/` (read that log; never cut the output with `tail` or `head`), PASS/FAIL and the log path on screen. A PASS is recorded for the content of the area's files (its source and test dirs, manifests, config, the gate scripts); the next `scripts/tw-gate <area>` on the same content answers `PASS (cached: …)` instead of running the gate again — a commit of docs or task records keeps it — a FAIL is always rerun, `--fresh` forces a run. Which gates a task needs: `scripts/tw-gate --for-task <ID>` prints its areas (and `--top` for files outside every area); a change of only records, docs or CI configuration needs none.
+
+**Long commands and the 10-minute limit.** A Bash call is stopped after 10 minutes. tw-gate (and `scripts/tw-mutants`) run detached and wait up to ~9 minutes; when the run is not finished they print `RUNNING: … run the same command again to keep waiting` and exit 75. Then call **the same command again**: it attaches to the same run and waits again, and prints the normal result when it ends. Never wrap them in `sleep`/`until` loops, never start them as a background tool call, never kill their containers to start over. Any other long test command: run it once through `scripts/tw-run <area>` with its output to a file and read the file; a long suite goes through `scripts/tw-gate`.
 
 A task never leaves `IN_PROGRESS` with a red gate. The gate is checked again by the reviewer and the validator through `scripts/tw-gate` — a recorded run of the tool, never anyone's report.
 
@@ -64,7 +66,7 @@ One file per task in `docs/tasks/<id>.md` (template: `docs/tasks/_task-template.
 
 Verification: every task declares `surface: api | ui | both | none`. `VERIFIED` and `DONE` require a `PASS` verify record for the current code — `api` → API tests against the running service; `ui` → an end-to-end UI test run with the configured UI runner (Tools › ui_verify); `both` → both; `none` → a deploy smoke, or nothing when `deploys: false`. The record (`task`, `round`, `kind`, `tool`, `command`, `environment`, `commit`, `result`, `evidence`, `verifier`, plus a `Failure branch:` line) is append-only, written with Edit/Write, and cites a test run, not an interactive session. `kind: manual` only with an explicit `verify_exception`, checked by someone other than the implementer. Details: `docs/process/lifecycle.md` §7.
 
-Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-written commits carry a `Co-Authored-By:` trailer.
+Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-written commits carry a `Co-Authored-By:` trailer. Never put `[skip ci]` (or `[ci skip]`, `[no ci]`) in a commit message: CI decides by the pushed tip's message, and the tip of a delivery or of a pull request is usually a status commit — with the marker, the code under it goes unchecked (pre-push warns). Record-only pushes are skipped by the CI configuration (`paths-ignore`, `scripts/tw-ci-changes`), not by the message.
 
 ## Rules
 

@@ -23,6 +23,10 @@ areas:                         # one or more code areas; developer/test-writer r
     test_command: "flutter test"            # bare command: placeholders render scripts/tw-run app -- ...
     lint_command: "flutter analyze"
     generate_command: "flutter gen-l10n"    # optional codegen, run before checks; checks must not modify tracked files
+    generated: [app/lib/l10n/generated]     # optional: its outputs; tw-mutants copies them into a throwaway copy when its inputs are unchanged
+    # generate_inputs: [app/lib/l10n]       # optional: what generate_command reads (default: the whole tree)
+    # copy_env:                             # optional: environment in throwaway copies; {cache} = .teamwright/cache/<area>/copy
+    #   CARGO_TARGET_DIR: "{cache}/target"
     e2e_ui_command: "patrol test"
     # ci_workflow: "windows.yml"            # optional: tests of this area that run only in CI; confirmed via a wip/<ID> push
     stack: "Dart, Flutter"

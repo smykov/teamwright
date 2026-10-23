@@ -119,16 +119,24 @@ checks; a check must not modify tracked files.
 `template/scripts/tw-gate` is installed into every project as `scripts/tw-gate`:
 
 ```bash
-scripts/tw-gate <area> [--fresh]
+scripts/tw-gate <area>|--top [--fresh]       # run (or reuse) a gate
+scripts/tw-gate --for-task <ID>              # which gates the task's changes need
+scripts/tw-gate --for-diff <base>            # the same since a commit
+scripts/tw-gate --stop <area>|--top          # stop a running gate
 ```
 
 It reads the area from `.teamwright/config.yml` with the same parser and the same keys the
 role files are rendered from: `generate_command` (if any), then the area's `gate_command`,
 both through `scripts/tw-run`; without an area `gate_command`, the top-level one as written
 from the root. Full output goes to `.teamwright/logs/gate/` (or `$TEAMWRIGHT_LOG_DIR/gate/`)
-with a JSON record of the run; a PASS is reused when the working tree's content (a git tree
-id of HEAD plus uncommitted and untracked changes) and the command are the same and the
-tree did not change during the run. Exit code is the gate's; 2 on a usage or config error.
+with a JSON record of the run; a PASS is reused when the content of the area's files (a git
+tree id of HEAD plus uncommitted and untracked changes, restricted to the area's
+`source_dirs`, `test_dirs`, `workdir`, dependency manifests, the config, the gate scripts
+and files the commands name; the whole tree for an area without dirs) and the command are
+the same and did not change during the run. The run is detached (own process group) and
+waited for up to `TW_WAIT_SECONDS` (540): past that it prints `RUNNING: …` and exits **75**,
+and the same command again attaches to it. Exit code is the gate's; 75 still running; 2 on a
+usage or config error.
 What it records and when it reruns: [gates.md](gates.md#gate-runs-tw-gate).
 
 ## tw-mutants: a task's mutant catalog, in one runner start
@@ -137,13 +145,17 @@ What it records and when it reruns: [gates.md](gates.md#gate-runs-tw-gate).
 
 ```bash
 scripts/tw-mutants <area> <ID> --tree <throwaway copy> [--check] [--only <name>]
+scripts/tw-mutants <area> --tree <throwaway copy> --prepare   # generated code only
 ```
 
 It reads `docs/tasks/<ID>.mutants/` from the working tree (one `.mutant` file per exact
 replacement, with the guarantee it breaks, and `test-command`), checks every entry against
 the copy, and runs the baseline and every mutant in one `scripts/tw-run <area>` start with
 the copy as the project root. Exit 0 when no survivor breaks a guarantee, 1 when one does,
-2 on a usage error or a stale entry, 3 on a red baseline. Format, rules and stop rules:
+2 on a usage error or a stale entry, 3 on a red baseline, 4 when `generate_command` failed in
+the copy, 75 while it still runs detached (the same command again attaches). The copy gets
+the area's `generated` outputs (or runs `generate_command` when its inputs changed) and its
+`copy_env`. Format, rules and stop rules:
 [gates.md](gates.md#mutation-checks-tw-mutants).
 
 ## tw-progress.py: the progress report
@@ -218,9 +230,12 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process_version` | string | no | teamwright process/principles version the project follows |
 | `mode` | `gate-first` \| `enforce` | no (default `enforce`) | `gate-first`: analysis, review and verify gates warn (message to the user and the model) instead of blocking; `enforce`: they block. Git hooks are the same in both modes. Only an explicit `gate-first` warns: a missing, unknown or unreadable mode is `enforce`, in the installer and in the gates alike (both read the file with `scripts/hooks/_config.py`, YAML subset or JSON). Agents cannot change this file (see the state guard in `gates.md`) |
 | `areas` | list of maps | yes, ≥1 | code areas; each needs `name` (lower-case, digits, `-`, `_`) |
-| `areas[].source_dirs` | list | no | `{{SOURCE_DIRS}}` |
+| `areas[].source_dirs` | list | no | `{{SOURCE_DIRS}}`; with `test_dirs` and `workdir`, also the area's scope for `scripts/tw-gate`: its cache key and which tasks need its gate (`--for-task`) |
 | `areas[].test_command`, `lint_command`, `api_test_command`, `e2e_ui_command` | string | no | `{{TEST_COMMAND}}` etc., written bare and rendered as `scripts/tw-run <area> -- <cmd>`; `""` renders as `n/a` |
 | `areas[].generate_command` | string | no | codegen run before the checks (by `check-commands`, and by the developer before the gate) |
+| `areas[].generated` | list | no | the outputs of `generate_command`, relative to the project root: `scripts/tw-mutants` copies them from the working tree into a throwaway copy when the copy's inputs are unchanged, instead of generating there |
+| `areas[].generate_inputs` | list | no | the paths `generate_command` reads (default: the whole tree); compared between the copy and the working tree |
+| `areas[].copy_env` | map | no | environment for runs in a throwaway copy (`TW_RUN_COPY=1`, set by `scripts/tw-mutants`), e.g. `CARGO_TARGET_DIR: "{cache}/target"`; `{cache}` = `.teamwright/cache/<area>/copy` of the main checkout (`/tw-copy-cache` inside docker) |
 | `areas[].ci_workflow` | string | no | the CI workflow that runs tests of this area the host cannot (another platform): the flow confirms red and green with a run on a `wip/<ID>` branch, which pre-push does not treat as a delivery; CI must trigger on `wip/**` |
 | `areas[].runner` | `host` \| `docker` | no (default `host`) | where `scripts/tw-run` runs the area's commands |
 | `areas[].image` | string | yes with `docker` | container image, preferably the one CI uses |

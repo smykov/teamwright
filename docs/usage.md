@@ -114,7 +114,7 @@ jobs:
 
 `scripts/tw-ci-changes` answers `code=false` only when every file changed since the previous tip of the ref is a record (task, review and verify records, sprints, decisions, open questions); a new branch, a first PR event or a force-push is always `code=true`. A skipped job counts as passed for required checks. Keep `concurrency` on the gate **job**, not the workflow: a record-only push must not cancel the run that is checking the code under it.
 
-Do not put `[skip ci]` on status commits. DRAIN pushes code together with its `→CODE_COMPLETE` commit on top, so the tip of every delivery is a status commit, and `[skip ci]` there skips CI on the code being delivered.
+Do not put `[skip ci]` on any commit — least of all the last one before a push. DRAIN pushes code together with its `→CODE_COMPLETE` commit on top, so the tip of every delivery (and the head a pull request is opened from) is a status commit, and `[skip ci]` there skips CI on the code being delivered. `pre-push` warns when the pushed tip carries a CI-skip marker.
 
 ## Toolchain runners: host or Docker
 
@@ -131,7 +131,7 @@ areas:
     generate_command: "flutter gen-l10n"    # codegen, run before the gate
 ```
 
-Roles run the full gate as `scripts/tw-gate <area>`: `generate_command`, then the gate, the whole output in `.teamwright/logs/gate/<area>-<time>-<commit>.log`, and on screen only PASS/FAIL, the tail of a failure and the log path. A PASS is recorded for the exact content of the working tree, so the flow, the reviewer and the validator on the same commit get `PASS (cached: same commit …)` instead of another run of several minutes; a FAIL is never reused and `--fresh` forces a run. Details: [gates.md](process/gates.md#gate-runs-tw-gate).
+Roles run the full gate as `scripts/tw-gate <area>`: `generate_command`, then the gate, the whole output in `.teamwright/logs/gate/<area>-<time>-<commit>.log`, and on screen only PASS/FAIL, the tail of a failure and the log path. A PASS is recorded for the content of the area's files (its `source_dirs`, `test_dirs`, `workdir`, manifests, config and the gate scripts), so the flow, the reviewer and the validator get `PASS (cached: …)` instead of another run of several minutes — also after a docs-only commit; a FAIL is never reused and `--fresh` forces a run. `scripts/tw-gate --for-task <ID>` lists which gates a task's changes need (none for records, docs or CI configuration). A gate longer than ~9 minutes keeps running detached: the call prints `RUNNING: …` and exits 75, and the same command again attaches to it — this keeps it under Claude Code's 10-minute Bash limit. For mutant runs in throwaway copies, declare an area's codegen outputs (`generated: [...]`) and per-copy build cache variables (`copy_env: {CARGO_TARGET_DIR: "{cache}/target"}`) so a copy does not rebuild from cold. Details: [gates.md](process/gates.md#gate-runs-tw-gate).
 
 `tw-install.py check-commands` runs every configured command once and reports pass, fail or not runnable, and whether a command changed tracked files in its area. A run that could not exercise the code (database not listening, binary or Docker missing, no device for UI tests) is `not runnable` with the reason, not a failure. Details: [tools.md](process/tools.md#toolchain-runners).
 
