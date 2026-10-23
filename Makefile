@@ -2,7 +2,7 @@
 SHELL := /usr/bin/env bash
 HOOKS := template/scripts/hooks
 SH_FILES := $(wildcard $(HOOKS)/*.sh) $(HOOKS)/pre-commit $(HOOKS)/commit-msg $(HOOKS)/pre-push \
-            template/scripts/install-hooks.sh template/scripts/tw-run scripts/release-check.sh $(wildcard tests/*.sh) \
+            template/scripts/install-hooks.sh template/scripts/tw-run template/scripts/tw-gate scripts/release-check.sh $(wildcard tests/*.sh) \
             examples/demo.sh
 GITLEAKS_CONFIG := .gitleaks.toml
 METRICS := template/scripts/metrics/teamwright-metrics

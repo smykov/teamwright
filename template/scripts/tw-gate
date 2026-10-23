@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# tw-gate — run an area's full gate once, keep its whole output, reuse a PASS on the same
+# code. Tier T1 (tooling, not a gate).
+#
+#   scripts/tw-gate <area> [--fresh]
+#
+# WHY. The developer, the flow's Gate step, the code-reviewer and the task-validator each
+# ran the full gate (minutes per run) on the same code, and an agent that cut the output
+# with `| tail` had to run it again to see why it failed. tw-gate runs it once per state of
+# the code, writes the full output to a log file, and answers the next caller from the
+# record when nothing changed.
+#
+# WHAT IT RUNS (the same source of truth as {{GATE_COMMAND}} in the role files,
+# .teamwright/config.yml): the area's `generate_command` first when it has one, then the
+# area's `gate_command`, both through `scripts/tw-run <area> -- ...`; an area without its
+# own gate_command runs the top-level `gate_command` as written, from the project root.
+#
+# RECORD. Full output: <logs>/gate/<area>-<UTC time>-<commit>.log, where <logs> is
+# $TEAMWRIGHT_LOG_DIR or .teamwright/logs (gitignored). <logs>/gate/<area>.json holds the
+# last run: area, root, head, clean, tree, tree_after, exit, pass, cacheable, duration_s,
+# started, finished, log, command; every run (and every cached answer) is also appended
+# to <logs>/gate/runs.jsonl.
+#
+# CACHE. `tree` is the content of the working tree as git sees it — HEAD plus every
+# tracked and untracked change, ignored files left out (a temporary index, `git add -A`,
+# `git write-tree`). When the last record of the area was a PASS on the same tree, from the
+# same root, with the same command, and the tree did not change while it ran, the gate
+# is not rerun:
+#   PASS (cached: same commit <sha>, <when>, log <path>)          clean tree at that commit
+#   PASS (cached: same tree <tree> as the run at commit <sha>, ...) uncommitted changes
+# So a developer's PASS before the commit answers the flow, the reviewer and the validator
+# once that exact content is committed. A FAIL is never reused; `--fresh` always reruns.
+#
+# OUTPUT: PASS or FAIL, exit code, duration, the last 30 lines on a failure, the log path.
+# Exit code = the gate's (generate_command's when that failed); 2 on a usage or config
+# error. Environment: TEAMWRIGHT_ROOT, TEAMWRIGHT_CONFIG, TEAMWRIGHT_LOG_DIR.
+set -uo pipefail
+
+die() { echo "tw-gate: $*" >&2; exit 2; }
+usage="usage: scripts/tw-gate <area> [--fresh]"
+AREA=""; FRESH=0
+for a in "$@"; do
+  case "$a" in
+    --fresh) FRESH=1 ;;
+    -h|--help) echo "$usage"; exit 0 ;;
+    -*) die "unknown option $a; $usage" ;;
+    *) [ -z "$AREA" ] || die "$usage"; AREA="$a" ;;
+  esac
+done
+[ -n "$AREA" ] || die "$usage"
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "${TEAMWRIGHT_ROOT:-}" ]; then ROOT="$TEAMWRIGHT_ROOT"
+elif [ -d "$here/../.teamwright" ]; then ROOT="$(cd "$here/.." && pwd)"
+else ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; fi
+cd "$ROOT" || die "project root not found: $ROOT"
+CFG="${TEAMWRIGHT_CONFIG:-$ROOT/.teamwright/config.yml}"
+CONFIG_PY="$ROOT/scripts/hooks/_config.py"
+[ -f "$CONFIG_PY" ] || CONFIG_PY="$here/hooks/_config.py"
+TW_RUN="$ROOT/scripts/tw-run"
+[ -f "$TW_RUN" ] || TW_RUN="$here/tw-run"
+command -v python3 >/dev/null 2>&1 || die "python3 is required to read $CFG"
+[ -f "$CONFIG_PY" ] || die "scripts/hooks/_config.py not found"
+[ -f "$TW_RUN" ] || die "scripts/tw-run not found"
+
+# generate_command, gate kind (area | top), gate command, display command — NUL-separated
+IFS= read -r -d '' _tw_py <<'PY' || true
+import os, shlex, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
+import _config
+try:
+    cfg = _config.parse_yaml(open(sys.argv[2], encoding="utf-8").read())
+except (OSError, ValueError) as e:
+    sys.stderr.write("tw-gate: cannot read %s: %s\n" % (sys.argv[2], e)); sys.exit(2)
+name = sys.argv[3]
+area = next((a for a in cfg.get("areas") or [] if isinstance(a, dict) and a.get("name") == name), None)
+if area is None:
+    sys.stderr.write("tw-gate: no area %r in %s\n" % (name, sys.argv[2])); sys.exit(2)
+gen = str(area.get("generate_command") or "").strip()
+gate, kind = str(area.get("gate_command") or "").strip(), "area"
+if not gate:
+    gate, kind = str(cfg.get("gate_command") or "").strip(), "top"
+if not gate:
+    sys.stderr.write("tw-gate: no gate_command for area %r or at the top level of %s\n"
+                     % (name, sys.argv[2])); sys.exit(2)
+wrap = lambda c: "scripts/tw-run %s -- %s" % (name, shlex.quote(c))
+shown = ([wrap(gen)] if gen else []) + [wrap(gate) if kind == "area" else gate]
+sys.stdout.write("".join(x + "\0" for x in (gen, kind, gate, " && ".join(shown))))
+PY
+fields=()
+while IFS= read -r -d '' f; do fields+=("$f"); done < <(
+  python3 -c "$_tw_py" "$CONFIG_PY" "$CFG" "$AREA"
+) || exit 2
+[ "${#fields[@]}" -eq 4 ] || exit 2
+GEN="${fields[0]}"; KIND="${fields[1]}"; GATE="${fields[2]}"; SHOWN="${fields[3]}"
+
+LOGROOT="${TEAMWRIGHT_LOG_DIR:-$ROOT/.teamwright/logs}"
+LOGDIR="$LOGROOT/gate"
+mkdir -p "$LOGDIR" || die "cannot create $LOGDIR"
+RECORD="$LOGDIR/$AREA.json"
+EXCL=":(exclude).teamwright/logs"
+
+HEAD="$(git rev-parse HEAD 2>/dev/null || echo none)"
+short() { printf '%s' "$1" | cut -c1-10; }
+
+# tree_id: the working tree's content as a git tree (ignored files left out), "" outside git
+tree_id() {
+  local idx tmp t
+  idx="$(git rev-parse --git-path index 2>/dev/null)" || { echo ""; return; }
+  tmp="$(mktemp "${TMPDIR:-/tmp}/tw-gate-index.XXXXXX")" || { echo ""; return; }
+  rm -f "$tmp"
+  [ -f "$idx" ] && cp "$idx" "$tmp"
+  if GIT_INDEX_FILE="$tmp" git add -A >/dev/null 2>&1 &&
+     GIT_INDEX_FILE="$tmp" git rm -r -q --cached --ignore-unmatch -- .teamwright/logs >/dev/null 2>&1; then
+    t="$(GIT_INDEX_FILE="$tmp" git write-tree 2>/dev/null)"
+  else
+    t=""
+  fi
+  rm -f "$tmp"
+  echo "$t"
+}
+is_clean() { [ -z "$(git status --porcelain --untracked-files=all -- . "$EXCL" 2>/dev/null)" ]; }
+
+TREE="$(tree_id)"
+CLEAN=false; is_clean && CLEAN=true
+
+# record JSON helpers (python: escaping, atomic replace)
+IFS= read -r -d '' _rec_py <<'PY' || true
+import json, os, sys
+op, path = sys.argv[1], (sys.argv[2:3] or [""])[0]
+if op == "write":
+    rec = json.loads(sys.stdin.read())
+    if sys.argv[3] == "last":
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rec, f, indent=2); f.write("\n")
+        os.replace(tmp, path)
+    with open(os.path.join(os.path.dirname(path), "runs.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, sort_keys=True) + "\n")
+elif op == "make":
+    k = sys.argv[2:]
+    b = lambda s: s == "true"
+    rec = {"area": k[0], "root": k[1], "head": k[2], "clean": b(k[3]), "tree": k[4],
+           "tree_after": k[5], "exit": int(k[6]), "pass": k[6] == "0", "cacheable": b(k[7]),
+           "duration_s": int(k[8]), "started": k[9], "finished": k[10], "log": k[11],
+           "command": k[12], "cached": b(k[13])}
+    if len(k) > 14 and k[14]:
+        rec["cached_from"] = k[14]
+    print(json.dumps(rec))
+elif op == "lookup":
+    area, root, tree, command = sys.argv[3:7]
+    try:
+        r = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        sys.exit(1)
+    if not (tree and r.get("area") == area and r.get("root") == root and r.get("tree") == tree
+            and r.get("command") == command and r.get("exit") == 0 and r.get("cacheable") is True and r.get("tree_after") == tree):
+        sys.exit(1)
+    sys.stdout.write("".join(str(r.get(k, "")) + "\0" for k in ("head", "finished", "log", "clean")))
+PY
+rec() { python3 -c "$_rec_py" "$@"; }
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# ---- cache ---------------------------------------------------------------------------
+if [ "$FRESH" = 0 ] && [ -n "$TREE" ] && [ -f "$RECORD" ]; then
+  hit=()
+  while IFS= read -r -d '' f; do hit+=("$f"); done < <(rec lookup "$RECORD" "$AREA" "$ROOT" "$TREE" "$SHOWN")
+  if [ "${#hit[@]}" -eq 4 ] && [ -f "${hit[2]}" ]; then
+    if [ "$CLEAN" = true ] && [ "${hit[0]}" = "$HEAD" ]; then
+      echo "PASS (cached: same commit $(short "$HEAD"), ${hit[1]}, log ${hit[2]})"
+    else
+      echo "PASS (cached: same tree $(short "$TREE") as the run at commit $(short "${hit[0]}"), ${hit[1]}, log ${hit[2]})"
+    fi
+    t="$(now)"
+    rec make "$AREA" "$ROOT" "$HEAD" "$CLEAN" "$TREE" "$TREE" 0 false 0 "$t" "$t" "${hit[2]}" "$SHOWN" true "${hit[1]}" \
+      | rec write "$RECORD" history
+    exit 0
+  fi
+fi
+
+# ---- run -----------------------------------------------------------------------------
+STARTED="$(now)"; t0="$(date +%s)"
+LOG="$LOGDIR/$AREA-$(date -u +%Y%m%dT%H%M%SZ)-$(short "$HEAD" | cut -c1-7).log"
+state=dirty; [ "$CLEAN" = true ] && state=clean
+echo "tw-gate: $AREA at $(short "$HEAD") ($state tree), full output -> $LOG"
+{
+  echo "# tw-gate $AREA  head $HEAD  tree ${TREE:-?}  $state  started $STARTED"
+  echo "# $SHOWN"
+} > "$LOG"
+
+trap 'echo "tw-gate: interrupted; partial output in $LOG" >&2; exit 130' INT TERM
+rc=0
+if [ -n "$GEN" ]; then
+  echo "# --- generate_command" >> "$LOG"
+  bash "$TW_RUN" "$AREA" -- "$GEN" >> "$LOG" 2>&1 < /dev/null; rc=$?
+fi
+if [ "$rc" -eq 0 ]; then
+  echo "# --- gate_command" >> "$LOG"
+  if [ "$KIND" = area ]; then
+    bash "$TW_RUN" "$AREA" -- "$GATE" >> "$LOG" 2>&1 < /dev/null; rc=$?
+  else
+    sh -c "$GATE" >> "$LOG" 2>&1 < /dev/null; rc=$?
+  fi
+else
+  echo "# generate_command failed (exit $rc); gate not run" >> "$LOG"
+fi
+trap - INT TERM
+dur=$(( $(date +%s) - t0 ))
+FINISHED="$(now)"
+echo "# finished $FINISHED  exit $rc  ${dur}s" >> "$LOG"
+
+TREE_AFTER="$(tree_id)"
+cacheable=false
+[ "$rc" -eq 0 ] && [ -n "$TREE" ] && [ "$TREE_AFTER" = "$TREE" ] && cacheable=true
+rec make "$AREA" "$ROOT" "$HEAD" "$CLEAN" "$TREE" "$TREE_AFTER" "$rc" "$cacheable" "$dur" \
+  "$STARTED" "$FINISHED" "$LOG" "$SHOWN" false "" | rec write "$RECORD" last
+
+human="${dur}s"; [ "$dur" -ge 60 ] && human="$((dur / 60))m$((dur % 60))s"
+if [ "$rc" -eq 0 ]; then
+  echo "PASS $AREA: exit 0, $human"
+else
+  echo "FAIL $AREA: exit $rc, $human; last 30 lines:"
+  echo "-----"
+  tail -n 30 "$LOG"
+  echo "-----"
+fi
+if [ "$TREE_AFTER" != "$TREE" ]; then
+  echo "tw-gate: WARNING the working tree changed while the gate ran (generate_command or the gate wrote files, or someone edited meanwhile); compare git status. Not reusable."
+fi
+echo "log: $LOG"
+exit "$rc"
