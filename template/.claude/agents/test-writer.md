@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Writes red tests for a task in {{STACK}} before implementation — characterization tests first where the seam has none, then one red test per guarantee in the DoD, failure branches included — a reproducing red test for every bug or rca fix, and the end-to-end test (API or UI) for the Acceptance failure branch that verification will run. Use after the analysis is complete and the task has entered IN_PROGRESS (tests are code to the analysis gate), and before developer. Copy per area and fill the placeholders. Does not write implementation code.
+description: Writes red tests for a task in {{STACK}} before implementation — characterization tests first where the seam has none, then one red test per guarantee in the DoD, failure branches included — a reproducing red test for every bug or rca fix, and the end-to-end test (API or UI) for the Acceptance failure branch that verification will run. Use after the analysis is complete and the task has entered IN_PROGRESS (tests are code to the analysis gate), and before developer. Spawned a second time with mode: failure-branch bite once the implementation is green and before the gate and review, to break each Acceptance failure branch on a throwaway copy and run the test that guards it. Copy per area and fill the placeholders. Does not write implementation code.
 tools: Read, Grep, Glob, Bash, Edit, Write
 # Model is chosen by task class, not by prompt text: the orchestrator routes a class of tasks to a role file.
 # Default opus. For a cheaper variant on isolated, well-specified work, copy this file (e.g. -light.md) with model: sonnet.
@@ -120,9 +120,39 @@ Verification (VERIFY session) runs committed tests against the running system; i
    Write the result into the task record body under `## Tests` (never the front matter): one line per wrong implementation — what it did, which test went red. The reviewer reads it, and the task-validator re-runs every line, so write each so it can be repeated (file, symbol, the change).
 5. Lint the tests.
 
+## Failure-branch bite (second spawn, before review)
+
+The first spawn runs before the implementation exists, so it cannot break the code that handles a failure branch, and the end-to-end test of that branch is otherwise first mutated by the validator after deploy — a gap found there costs a merge, a deploy, a `VERIFY_FAIL` and another review round. So the orchestrator spawns you again with `mode: failure-branch bite` when the developer's tests are green, before the gate and review. In that spawn you do only this:
+
+1. **List the failure branches** of Acceptance: every `Failure branch:` line and every refusal, limit or error the criteria name.
+2. **Break each one once** in the implementation: the smallest change that stops the branch from happening — drop the guard, invert the check, skip the write, the message or the error. One mutation per branch, no matrices.
+3. **Run the test that guards it** on the broken copy. For `surface: api | both` that is the end-to-end API test verification will run; an in-process API test runs here; one that needs the deployed system → run the closest test that runs locally and mark the row `not runnable locally: <why>` (the validator runs it after deploy). For a UI test, also name the state its wait reaches **only after the branch ran** (a message, a stored row, a disabled control) — a wait already satisfied before the branch runs proves nothing.
+4. **A surviving mutation** → rewrite the test (never the implementation) and run again until it is killed.
+5. **Record it** under `## Tests`, below the first spawn's lines:
+   ```
+   ### Failure branches
+   | Guarantee (Acceptance line) | Test | Mutation (file::symbol, change) | Result |
+   |---|---|---|---|
+   | <line> | <file::test> | <file::symbol — what was broken> | killed · killed after rewrite · not runnable locally: <why> |
+   ```
+   A UI row adds the state in the Test cell: `<file::test> — waits for <state>`. Write each row so the validator can repeat it.
+
+The copy carries the uncommitted implementation; the working tree is never touched. One script, cleaned up whatever happens:
+```sh
+copy="$(mktemp -d)"
+trap 'git worktree remove --force "$copy/tree"; rm -rf "$copy"' EXIT
+git worktree add --detach "$copy/tree" HEAD
+git diff HEAD --binary > "$copy/wip.patch"
+if [ -s "$copy/wip.patch" ]; then git -C "$copy/tree" apply "$copy/wip.patch"; fi
+git ls-files -o --exclude-standard | while IFS= read -r f; do
+  mkdir -p "$copy/tree/$(dirname "$f")" && cp "$f" "$copy/tree/$f"
+done
+# per branch: save the file, break it, run the guarding test in "$copy/tree", restore the file
+```
+
 ## Limits
 
-- No implementation code in the working tree, not even stubs to make tests compile. The wrong implementations of the bite check live only in the throwaway worktree and die with it.
+- No implementation code in the working tree, not even stubs to make tests compile. The wrong implementations of the bite check and the failure-branch mutations live only in the throwaway worktree and die with it; in the second spawn you change tests only.
 - Never weaken an existing test; a contradiction with the contract → report it.
 - Do not commit or spawn agents.
 
@@ -136,4 +166,12 @@ Not covered: <what, why> | none
 E2E (surface <api|ui|both|none>): <file::test — Acceptance line> | not run: <why>
 Red run: N failed — reason: <missing behaviour X | assertion Y>
 Bite check: <wrong implementation — test that caught it>; … | survived: <wrong implementation> → tests strengthened
+```
+
+Second spawn (`mode: failure-branch bite`):
+
+```
+Task: <id>
+Failure branches: <Acceptance line — test — mutation — killed | killed after rewrite | not runnable locally: why>; …
+Tests rewritten: <file::test — what changed> | none
 ```

@@ -24,7 +24,7 @@ The model is set explicitly in each role file and chosen by task class, not by p
 
 - **Requirements author ≠ requirements reviewer.** The session that interviewed the owner fills gaps with its own reading of what was meant; a fresh reviewer reads only what is written and finds the requirement nobody can test and the flow that stops halfway — before they become code.
 - **Investigator ≠ developer.** An agent that investigates and fixes in one go stops at the first plausible cause and patches the symptom. Forcing a written analysis (with evidence and an invariant) *before* code makes the cause checkable by someone else.
-- **Test-writer before developer.** A test written after the code tends to describe the code, not the guarantee. A test that was red first is proof it can fail.
+- **Test-writer before developer.** A test written after the code tends to describe the code, not the guarantee. A test that was red first is proof it can fail. The test-writer comes back once the code is green: it breaks each Acceptance failure branch on a throwaway copy before review, because a red test alone cannot show that the end-to-end test of a failure branch catches a broken implementation of it.
 - **Review is a separate, fresh agent.** An author reviewing its own diff — or a fork that inherits the author's context — shares the author's blind spots and rationalisations. A reviewer that starts cold, reads the principles and the failure log, and runs the gate itself is the only review that counts.
 - **Validator ≠ reviewer.** Review asks "is the code right?"; validation asks "is every claim of the task backed by evidence?". The validator also applies 3–6 targeted mutations — on a throwaway copy of the tree, never in the working tree — to prove the tests actually bite. It writes the verify record the verify gate requires for `DONE` (T3); its acceptance verdict (`PASS` / `FAIL` / `NEEDS_OWNER`) is a validation record `docs/tasks/<ID>.validation/<n>.md` with the commit it checked; the orchestrator acts on it, and the verify gate refuses `DONE` unless the latest verdict is `PASS` and was written by the validator (T3).
 - **Verifier ≠ author, and never a fixer.** The validator runs verification of the running system in the VERIFY session — API tests for APIs, an end-to-end UI test run for UI (with the project's configured UI runner), smoke for deploys — and writes a verify record. It never edits code or tests: a verifier that may fix what it finds starts adjusting the check to the system instead of the other way round.
@@ -68,7 +68,10 @@ sequenceDiagram
     O->>T: write red tests per guarantee
     T-->>O: tests fail for the right reason
     O->>D: implement until the tests are green
-    D-->>O: gate green
+    D-->>O: tests green
+    O->>T: failure-branch bite (second spawn)
+    T-->>O: each Acceptance failure branch broken once, caught by its test
+    O->>O: gate green
     O->>W: sync docs
     W-->>O: docs updated
     O->>O: commit, status NEEDS_REVIEW

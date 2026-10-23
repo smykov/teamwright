@@ -81,7 +81,8 @@ tail_code: ""
 
 ## Tests
 
-<test-writer: guarantee → test; bite check — each deliberately wrong implementation and the test that caught it.>
+<test-writer: guarantee → test; bite check — each deliberately wrong implementation and the test that caught it.
+Second spawn, before review: ### Failure branches — guarantee → test → mutation (file::symbol, change) → killed.>
 
 ## Investigation
 

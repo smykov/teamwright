@@ -304,7 +304,7 @@ may be empty).
    `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`). After two `FAIL`
    rounds in a row the next round must be `method: sweep` (every condition, guard,
    return and write of the changed code mutated, earlier rounds' mutations and the
-   test-writer's wrong implementations re-run) or `verdict: NEEDS_OWNER`: sampled
+   test-writer's wrong implementations and failure-branch mutations re-run) or `verdict: NEEDS_OWNER`: sampled
    mutations find one survivor per round, so a third sample does not end the loop — the
    same stop rule as two `REQUEST_CHANGES` in review.
 

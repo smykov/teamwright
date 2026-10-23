@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.9.0] - 2026-10-23
+
+### Changed
+- **The test-writer breaks each Acceptance failure branch before review** (#11). Its first spawn runs before the implementation exists, so the end-to-end test of a failure branch was first mutated by the validator after deploy; in one project `toothless-test` was the most frequent blocking finding (14 of 59) and 4 of 5 `VERIFY_FAIL`s were test gaps, each costing a merge, a deploy, a re-analysis and another review. Now `/teamwright:flow` spawns the test-writer a second time with `mode: failure-branch bite` once the developer's tests are green, before the gate: one mutation per failure branch on a throwaway copy that carries the uncommitted implementation, the test that guards it run there (for `surface: api | both` the end-to-end test verification will run; for a UI test, the state its wait reaches only after the branch ran), a surviving mutation means the test is rewritten. The result is a `### Failure branches` table under `## Tests`; the code-reviewer reads it (a missing row or a survivor is `toothless-test`) and does not re-run it, the task-validator re-runs it with its own mutations. Role files (test-writer, code-reviewer, task-validator), the task template, the flow skill (step 4 and resume), `lifecycle.md`, `roles.md`, `gates.md` and the README describe it. Projects pick it up after `/plugin update`: `/teamwright:status` reports the changed files, and `tw-install.py apply` (or `/teamwright:adopt` again) updates the ones the project did not edit.
+
 ## [0.8.6] - 2026-10-22
 
 ### Fixed
