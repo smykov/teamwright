@@ -16,7 +16,7 @@ Arguments: `$ARGUMENTS`. The pipeline is fixed; what can change here is a **sett
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-process.py" --json      # findings, verdicts, settings history, ratified, bookkeeping, records, follow-ups
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-context.py" --json      # context tool: languages indexed, share of code reading through it
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" --json     # tasks, sprints, risks
-python3 scripts/metrics/teamwright-metrics --json [--since …]      # lead time, rework, review rounds, recurrence, journal facts
+python3 scripts/metrics/teamwright-metrics --json [--since …]      # lead time, rework, review rounds, recurrence, journal facts, per stage (journal.stages)
 ```
 
 The settings changed (`settings_history` has more than one entry) → also `tw-process.py --json --split-date <date of the last change>` (verdicts, findings by severity and category, send-backs without a finding at the threshold in force — before and after) and `teamwright-metrics --json --split-date <date>` (lead time, rework, rounds). `--since <date>` narrows both to a period. Read the previous report in `docs/process-reviews/` if there is one: what was proposed, what was accepted.
@@ -35,6 +35,7 @@ Look at least at these, and say "fine" when they are:
 | Context tool | `tw-context` | A language not indexed, a role reading around the tool |
 | Lead time, rework, recurrence, escalations, interrupted sessions | `teamwright-metrics` | Where time goes; whether recurrences get their rca task |
 | Open follow-ups | `tw-process` follow_ups | Growing without being worked → the threshold is too high for the team's pace |
+| Cost per stage: sessions, duration, tool calls, outcomes, tasks, tokens (per task, per model), cost | `teamwright-metrics --json` → `journal.stages` (cost with `--prices <json>` when the owner gives prices) | One stage taking most of the tokens or time per task → its model (`models.<stage>`), its batch (`stages.<stage>.batch`: context rebuilt per task) or its role instructions; many `escalate`/`none` outcomes at one stage → where sessions break. `no data` for tokens = journal older than 0.12 or no transcript path — say so, do not estimate |
 
 Also what works: name it, so a proposal does not break it.
 
@@ -42,7 +43,7 @@ Also what works: name it, so a proposal does not break it.
 
 | Kind | Route | Who applies |
 |---|---|---|
-| **Setting** — threshold, pass size, autonomy | the exact `/teamwright:settings <key> <value>` and the number behind it | owner, through `/teamwright:settings` |
+| **Setting** — threshold, pass size, autonomy, model or batch per stage | the exact `/teamwright:settings <key> <value>` and the number behind it | owner, through `/teamwright:settings` |
 | **Project rule** — a check, a convention, a doc practice that belongs to this project | process amendment, exit (c) of `docs/process/lifecycle.md` §6: `PRINCIPLES.md` change in its own commit + a row in `docs/decisions.md` | owner decides, orchestrator writes |
 | **Environment** — CI trigger, a missing language server, a cache | a task in the active sprint (`type: chore`) | flow |
 | **teamwright itself** — a gate's false positive, a missing capability, a role instruction that misleads | a draft for `/teamwright:feedback` (problem, numbers, proposed change — no project names, paths or code) | owner sends it |
