@@ -28,7 +28,9 @@
 #      says APPROVE and was written by a reviewer agent (ledger entry below), that
 #      agent did not implement the task, and the journal (.teamwright/logs/
 #      tools.jsonl, written by journal.sh) shows the reviewer was spawned for this
-#      task in that session. Who moves the status does not matter (normally the
+#      task in that session, and the approval is newer than the task's latest FAIL
+#      verify/acceptance record (an APPROVE from before a VERIFY_FAIL does not carry
+#      over). Who moves the status does not matter (normally the
 #      orchestrator); who wrote the approval does.
 #   3. A review record with verdict REJECT_RECURRENCE that does not link an
 #      existing `type: rca` task via `rca_task:`.
@@ -409,6 +411,37 @@ if sa != "CODE_COMPLETE":
     sys.exit(0)
 if (ra.get("review") or "").replace(" ", "").startswith("skipped:trivial"):
     sys.exit(0)
+def record_time(rel):
+    """When a record appeared: the commit that added it, else (not committed yet) the file's
+    mtime. Records are append-only, so this orders reviews against verify failures."""
+    import subprocess
+    try:
+        p = subprocess.run(("git", "log", "--diff-filter=A", "--format=%ct", "-1", "--", rel),
+                           cwd=root, capture_output=True, text=True, timeout=20)
+        if p.returncode == 0 and p.stdout.strip():
+            return float(p.stdout.split()[0])
+    except Exception:
+        pass
+    try:
+        return os.path.getmtime(os.path.join(root, rel))
+    except OSError:
+        return 0.0
+
+
+def latest_failed_check(tid):
+    """(time, record) of the newest FAIL among the task's verify and acceptance records, or None."""
+    out = None
+    for suffix, rounds, key in ((".verify", task.verify_rounds(root, tid), "result"),
+                                (".validation", task.validation_rounds(root, tid), "verdict")):
+        for n_, r in rounds:
+            if task.first_word(r.get(key)) == "FAIL":
+                rel = "docs/tasks/%s%s/%d.md" % (tid, suffix, n_)
+                t = record_time(rel)
+                if out is None or t > out[0]:
+                    out = (t, rel)
+    return out
+
+
 rounds = task.review_rounds(root, tid)
 if not rounds:
     io.deny("REVIEW GATE: %s cannot become CODE_COMPLETE - no review record in "
@@ -434,6 +467,12 @@ if verdict != "APPROVE":
             "so far: %d, REQUEST_CHANGES in a row: %d (counted from docs/tasks/%s.reviews/, "
             "not from the task's review_rounds field); %s."
             % (n, tid, verdict, computed, changes, tid, nxt), "review-gate")
+failed = latest_failed_check(tid)
+if failed is not None and record_time("docs/tasks/%s.reviews/%d.md" % (tid, n)) < failed[0]:
+    io.deny("REVIEW GATE: the latest review (round %d) of %s is older than its failed check %s - "
+            "an approval from before a VERIFY_FAIL does not carry over, even when the code did "
+            "not change. Spawn a fresh %s subagent for %s (round %d)."
+            % (n, tid, failed[1], REVIEWER, tid, n + 1), "review-gate")
 if (rv.get("task") or "").strip() != tid:
     io.deny("REVIEW GATE: review round %d in docs/tasks/%s.reviews/ names task %r, not %s - a "
             "review copied from another task does not count. Spawn a fresh %s subagent for %s."

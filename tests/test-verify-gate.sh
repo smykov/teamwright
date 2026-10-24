@@ -110,6 +110,13 @@ out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_s
 expect_deny "editing an existing round is denied" "$out" "append-only"
 out="$(run Write "$S" "file_path=$(vd T-2)/2.md" "content=$(vtext T-2 2 api PASS "$C2")" "${VAL[@]}")"
 expect_deny "overwriting an existing round is denied" "$out" "append-only"
+# gate-first too: an edited record keeps no stamp, nothing proves who wrote it (prove-it run 27)
+printf 'version: 1\nmode: gate-first\n' > "$P/.teamwright/config.yml"
+out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_string=result: PASS" "${VAL[@]}")"
+expect_deny "gate-first: editing an existing verify round is still denied" "$out" "append-only"
+out="$(run Write "$S" "file_path=$(xd T-1)/1.md" "content=x" "${VAL[@]}")"
+expect_deny "gate-first: rewriting an acceptance verdict is still denied" "$out" "append-only"
+rm -f "$P/.teamwright/config.yml"
 out="$(run Write "$S" "file_path=$(vd T-2)/5.md" "content=$(vtext T-2 5 api PASS "$C2")" "${VAL[@]}")"
 expect_deny "skipping rounds is denied" "$out" "next verify round"
 out="$(run Bash "$S" "command=printf 'result: PASS' > docs/tasks/T-2.verify/3.md")"

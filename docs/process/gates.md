@@ -236,7 +236,10 @@ rca_task: T-050             # required with REJECT_RECURRENCE
      recognised, whatever the stamp says;
    - the record's `task:` names this task (a review copied from another task's
      directory does not count), and the stamp names this task, record and round;
-   - `reviewer` differs from the task's `implemented_by` (when set).
+   - `reviewer` differs from the task's `implemented_by` (when set);
+   - the approval is newer than the task's latest failed check (a `FAIL` verify or
+     acceptance record): an `APPROVE` from before a `VERIFY_FAIL` does not carry over,
+     even when the code did not change — the task needs a fresh review round.
    Who moves the status (normally the orchestrator) does not matter; who wrote the
    approval does.
 3. A review with `REJECT_RECURRENCE` whose `rca_task` does not point to an existing
@@ -375,7 +378,9 @@ may be empty).
 6. Acceptance verdicts are validation records, `docs/tasks/<ID>.validation/<n>.md`
    (`verdict: PASS | FAIL | NEEDS_OWNER`, `commit:`, `validator: task-validator`,
    template `docs/tasks/_validation-template.md`): written only by `task-validator`,
-   only with Edit/Write, append-only, next round only, commit must resolve; ledger
+   only with Edit/Write, append-only (an edit or overwrite of an existing verify or
+   acceptance round is denied in every mode, `gate-first` too: an edited record keeps
+   no stamp), next round only, commit must resolve; ledger
    `.teamwright/sessions/<ID>.validation.jsonl`. Entering `DONE` needs the latest round
    `PASS`, matching its ledger entry (or, with no validation ledger for the task, its committed stamp), for the task's current code (same freshness rule as
    verify records) — for every `surface`, including `deploys: false` + `surface: none`,

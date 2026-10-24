@@ -114,8 +114,8 @@ ti = data.get("tool_input") or {}
 who = io.actor(data)
 key = io.actor_key(who)
 
-def deny(msg):
-    io.deny("VERIFY GATE: " + msg, "verify-gate")
+def deny(msg, hard=False):
+    io.deny("VERIFY GATE: " + msg, "verify-gate", hard=hard)
 
 # ---- 4. shell writes into verify records -----------------------------------------
 if tool == "Bash":
@@ -265,9 +265,11 @@ if m and rel.startswith("docs/tasks/"):
     tid, n = m.group(1), int(m.group(2))
     path = os.path.join(root, rel)
     if os.path.exists(path):
+        # hard in every mode: an edited record keeps no stamp and no ledger line, so on a fresh
+        # checkout nothing proves who wrote it (prove-it run 27, 24.10.2026)
         deny("docs/tasks/%s.verify/%d.md already exists. Verify records are append-only: "
              "a new run (or a correction) is a new round, %s.verify/%d.md."
-             % (tid, n, tid, max([r for r, _ in task.verify_rounds(root, tid)] + [n]) + 1))
+             % (tid, n, tid, max([r for r, _ in task.verify_rounds(root, tid)] + [n]) + 1), hard=True)
     existing = [r for r, _ in task.verify_rounds(root, tid)]
     nxt = (max(existing) + 1) if existing else 1
     if n != nxt:
@@ -322,7 +324,7 @@ if m and rel.startswith("docs/tasks/"):
     if os.path.exists(os.path.join(root, rel)):
         deny("docs/tasks/%s.validation/%d.md already exists. Acceptance verdicts are "
              "append-only: a new check is a new round, %s.validation/%d.md."
-             % (tid, n, tid, max(existing + [n]) + 1))
+             % (tid, n, tid, max(existing + [n]) + 1), hard=True)
     nxt = (max(existing) + 1) if existing else 1
     if n != nxt:
         deny("the next validation round of %s is %d, not %d (rounds are consecutive files)."

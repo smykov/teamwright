@@ -89,6 +89,18 @@ expect_allow "who moves the status does not matter once the approval is genuine"
 sedi 's/^title: sample/implemented_by: code-reviewer/' "$(tf T-1)"
 out="$(to_cc T-1)"; expect_deny "reviewer equal to implemented_by is denied" "$out" "self-review"
 
+# an approval from before a VERIFY_FAIL does not carry over (prove-it run 26, 24.10.2026)
+task_file "$(tf T-70)" T-70 NEEDS_REVIEW bug full
+spawn code-reviewer "Review T-70"
+write_review T-70 1 APPROVE "${REV[@]}" >/dev/null
+touch -d '2 days ago' "$(rd T-70)/1.md"
+mkdir -p "$P/docs/tasks/T-70.validation"
+printf -- '---\ntask: T-70\nround: 1\nverdict: FAIL\n---\nfailed\n' > "$P/docs/tasks/T-70.validation/1.md"
+out="$(to_cc T-70)"; expect_deny "an APPROVE older than the task's failed check is denied" "$out" "older than its failed check"
+spawn code-reviewer "Review T-70 after the failed check"
+write_review T-70 2 APPROVE "${REV[@]}" >/dev/null
+out="$(to_cc T-70)"; expect_allow "a fresh review round after the failed check passes" "$out"
+
 # a record edited to APPROVE outside the reviewer
 task_file "$(tf T-5)" T-5 NEEDS_REVIEW bug full
 write_review T-5 1 REQUEST_CHANGES "${REV[@]}" >/dev/null
