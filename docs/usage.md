@@ -226,6 +226,8 @@ python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml  
 
 ## Updating the plugin
 
+`/teamwright:update` does it in one step: the plugin (marketplace, then plugin, for the project's channel) and the project's kit files from the updated copy — a plan first, apply and a commit on your yes, then restart Claude Code (`tw-install.py update [--apply] [--no-fetch]` underneath). By hand:
+
 ```text
 /plugin update teamwright@teamwright
 ```
