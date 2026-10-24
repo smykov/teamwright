@@ -238,6 +238,14 @@ def delivered(project, tid, ref):
     return not code or git(project, "merge-base", "--is-ancestor", code, ref)[0] == 0
 
 
+def mark_delivered(project, tasks, st):
+    """Sets `delivered` on every CODE_COMPLETE task that deploys (step 4 waits for it)."""
+    ref = default_ref(project) if st.get("git") else None
+    for t in tasks.values():
+        if t["status"] == "CODE_COMPLETE" and t["deploys"]:
+            t["delivered"] = delivered(project, t["id"], ref)
+
+
 def acceptance(project, tid, rec):
     """The latest acceptance verdict if it covers the task's current code, else ''.
 
@@ -974,10 +982,7 @@ def decide(project, taken=None, stage=None, ids=None):
         res["candidates"], res["batch_cap"] = [], 0
         return res
     oqs = open_questions(project)
-    ref = default_ref(project) if st["git"] else None
-    for t in tasks.values():
-        if t["status"] == "CODE_COMPLETE" and t["deploys"]:
-            t["delivered"] = delivered(project, t["id"], ref)
+    mark_delivered(project, tasks, st)
     own, wts = with_worktrees(project, task, tasks)
     elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
     cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])

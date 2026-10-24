@@ -322,6 +322,8 @@ def report(project):
         extra_out, extra_error = run_extra(project, str(adapt["extra_command"]))
 
     oqs = tw.open_questions(project)
+    if hasattr(tw, "mark_delivered"):
+        tw.mark_delivered(project, base, st)  # the router's rule: deploying tasks wait for DRAIN
     cands = tw.candidates(base, st, oqs)
     nxt = cands[0] if cands else tw._d("idle", None, "nothing actionable - plan the next sprint")
     owner = [{"action": c["action"], "task": c["task"], "reason": c["reason"]}
