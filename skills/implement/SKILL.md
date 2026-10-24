@@ -7,15 +7,15 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 # /teamwright:implement — green, checked, documented, to review
 
-You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/sessions.md` §8. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
+You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md`. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
 ## Entry
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage implement [--task <ids, comma-separated>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage implement [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint`, end (`Stage: implement`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). One task at a time, to its end, before the next.
+`request.ok` false → show `request.hint`, end (`Stage: implement`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (stage protocol §2). One task at a time, to its end, before the next.
 
 ## Work — per task, one after another
 

@@ -444,4 +444,27 @@ expect_rc "on a wip branch pushed to its own upstream: unpushed counts against o
 j | grep -q "1 unpushed commit(s) (not on origin/main): push?" && ok "the push reason names the delivery branch" || bad "the push reason names the delivery branch" "$(j | grep unpushed)"
 git checkout -q main
 
+# ---- M4: --brief, closed tasks never listed, request first --------------------------------
+fresh big
+i=1; while [ $i -le 100 ]; do mk "T-$i" TODO "title: a fairly long title for task number $i of the backlog"; i=$((i + 1)); done
+while [ $i -le 112 ]; do mk "T-$i" DONE; i=$((i + 1)); done
+while [ $i -le 116 ]; do mk "T-$i" NEEDS_REVIEW; i=$((i + 1)); done
+while [ $i -le 120 ]; do mk "T-$i" IN_PROGRESS "stage: red-tests"; i=$((i + 1)); done
+commit_all
+full="$(python3 "$NEXT" --project . --json --stage analyze | wc -c | tr -d ' ')"
+br="$(python3 "$NEXT" --project . --brief --stage analyze | wc -c | tr -d ' ')"
+[ "$br" -lt 6000 ] && ok "--brief for 120 tasks stays under 6 KB ($br bytes; full JSON $full)" || bad "--brief for 120 tasks stays under 6 KB" "$br bytes"
+python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; d=json.load(sys.stdin); assert list(d)[0]=="request" and "tasks" not in d, list(d); r=d["request"]; assert r["ok"] and r["candidates_total"]==100 and len(r["candidates"])==8, r; assert d["stages"]["review"]["waiting"]==4 and d["counts"]["DONE"]==12, d["stages"]' \
+  && ok "--brief: request first, compact candidates with the total, stage and status counts, no task list" || bad "--brief: request first, compact candidates with the total, stage and status counts, no task list"
+python3 "$NEXT" --project . --json --stage analyze | python3 -c 'import json,sys; d=json.load(sys.stdin); assert list(d)[0]=="request", list(d)[:3]; assert all(t["status"] not in ("DONE","DEFERRED") for t in d["tasks"]) and len(d["tasks"])==108, len(d["tasks"]); assert d["counts"]["DONE"]==12' \
+  && ok "full JSON: request first; DONE tasks counted, not listed" || bad "full JSON: request first; DONE tasks counted, not listed"
+python3 "$NEXT" --project . | grep -q "DONE 12" && ok "human summary still counts closed tasks" || bad "human summary still counts closed tasks"
+wc -c < "$KIT/docs/process/stage-protocol.md" | python3 -c 'import sys; n=int(sys.stdin.read()); sys.exit(0 if n < 4096 else 1)' \
+  && ok "the stage protocol stage sessions read is under 4 KB" || bad "the stage protocol stage sessions read is under 4 KB"
+for s in analyze red-tests implement review verify router flow; do
+  grep -q -- "--brief" "$KIT/skills/$s/SKILL.md" || bad "skill $s asks the router with --brief"
+  grep -q "stage-protocol.md" "$KIT/skills/$s/SKILL.md" || bad "skill $s points at the short stage protocol"
+done
+ok "stage skills and flow use --brief and the short stage protocol"
+
 finish

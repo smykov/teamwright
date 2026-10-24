@@ -7,15 +7,15 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 # /teamwright:review — a fresh reviewer per task
 
-You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/sessions.md` §8. You never review: the reviewer is a fresh subagent, never a fork of you or of the author. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
+You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md`. You never review: the reviewer is a fresh subagent, never a fork of you or of the author. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
 ## Entry
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage review [--task <ids, comma-separated>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage review [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint`, end (`Stage: review`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). Reviewers run **one at a time**: parallel reviewers hit rate limits and lose verdicts.
+`request.ok` false → show `request.hint`, end (`Stage: review`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (stage protocol §2). Reviewers run **one at a time**: parallel reviewers hit rate limits and lose verdicts.
 
 ## Work — per task, one after another
 

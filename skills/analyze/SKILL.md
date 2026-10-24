@@ -7,15 +7,15 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 # /teamwright:analyze — the analysis, then IN_PROGRESS at red-tests
 
-You are the **orchestrator** of one stage session (`AGENTS.md`). The protocol every stage command follows — the router question, choosing the batch, role agents in the foreground, commits, the end block — is `docs/process/sessions.md` §8; read it once, then do the steps below. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
+You are the **orchestrator** of one stage session (`AGENTS.md`). The protocol every stage command follows — the router question, choosing the batch, role agents in the foreground, commits, the end block — is `docs/process/stage-protocol.md` (short; read it once), then do the steps below. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
 ## Entry
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage analyze [--task <ids, comma-separated>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage analyze [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint` (it names the command to run instead), do nothing else, end with the end block (`Stage: analyze`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8 *Choosing the batch*; `settings.router.select: agent` → §8 *Selection by the agent*).
+`request.ok` false → show `request.hint` (it names the command to run instead), do nothing else, end with the end block (`Stage: analyze`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (stage protocol §2).
 
 ## Work — per task, one after another
 

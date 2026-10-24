@@ -9,7 +9,7 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 You are the **orchestrator** (the main session in `AGENTS.md`): you pick the task, call the roles, change statuses and commit. You never review your own work and never write review or verify records yourself.
 
-The flow is a loop of router steps in one session: ask the router, run the stage it names (each stage is described once, in its own command), ask again. `/teamwright:router` runs exactly one step per session; the stage commands (`/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify`) run one named stage. All three follow the same stages (`docs/process/sessions.md` §8).
+The flow is a loop of router steps in one session: ask the router, run the stage it names (each stage is described once, in its own command), ask again. `/teamwright:router` runs exactly one step per session; the stage commands (`/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify`) run one named stage. All three follow the same stages and the same short protocol (`docs/process/stage-protocol.md`; the long explanation is `docs/process/sessions.md` §8).
 
 Arguments: `$ARGUMENTS`
 - `T-NNN` — work on this task instead of the router's pick (still subject to readiness and the gates; say so if the router disagrees and why).
@@ -30,7 +30,7 @@ Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it nam
 ## 1. Ask the router
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --pass "<ids this run has started, comma-separated; empty at first>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --pass "<ids this run has started, comma-separated; empty at first>"
 ```
 
 `--pass` makes the router apply the project's process settings (`settings` in its output): the pass cap from `process.batch` (`budget`: taken, limit, left — lowered further by `--tasks`), and `autonomy.start` (`ask_owner: false` on `start` when it is `auto`). Count only tasks this run moved `TODO → ANALYSIS`.
@@ -45,7 +45,7 @@ It reads `docs/tasks/*.md` (with their `.reviews/` and `.verify/` records), the 
 | `alternatives` | other candidates in router order, each `{action, task, reason}` — shown to the owner when they want to pick something else |
 | `role` | who acts: `orchestrator` (status moves, records), a role agent (e.g. `code-reviewer`, `task-validator`), or `owner` |
 | `ask_owner` | `true` when this step is a decision point — ask before acting |
-| `state` / `tasks` | snapshot used for the status screen (gate mode, pause, git state, task list with statuses, `ready`, `blockers`, `effective_priority`) |
+| `state` / `counts` | snapshot used for the status screen (gate mode, pause, git state; tasks by status). `--brief` leaves out the task list; `--json` (full) has it, open tasks only, with `ready`, `blockers`, `effective_priority` |
 | `warnings` | record problems the router sees but does not decide on — e.g. a task that mentions an unresolved `OQ-NN` with an empty `blocked_on`, or a `stage:` field the evidence contradicts |
 | `stage` | the stage that does this action: `analyze`, `red-tests`, `implement`, `review`, `verify`, or `null` (decide, merge, idle) |
 | `candidates`, `batch`, `batch_cap` | the tasks waiting at that stage with the facts for choosing a batch (priority, unblocks, depends_on, seam paths, areas, overlaps, size); the router's default batch; the stage's cap |
@@ -107,7 +107,7 @@ Spawn each role as a **fresh subagent by its role file name** (`problem-investig
 | `review` | `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md` — fresh reviewer, verdict → status, follow-ups |
 | `verify` | `${CLAUDE_PLUGIN_ROOT}/skills/verify/SKILL.md` — fresh validator, records → `DONE` / back / owner |
 
-Take the stage's batch from the router (`batch`, or your own choice from `candidates` within `batch_cap` — `docs/process/sessions.md` §8), one task after another. Then:
+Take the stage's batch from the router (`batch`, or your own choice from `candidates` within `batch_cap` — `docs/process/stage-protocol.md` §2), one task after another. Then:
 
 - **Push (DRAIN)** — the router's `decide` "unpushed commits": no commit message carries `[skip ci]` (`[ci skip]`, `[no ci]`): CI decides by the pushed tip, and the tip is a status commit, so the marker would leave the code under it — and the pull request opened from it — unchecked (pre-push warns). Every task in the unpushed tail is `CODE_COMPLETE` or later (or `tail_code: ratified`) → decision point "push now?". On "yes": `git push`; the pre-push hook re-checks; tasks that deploy → `DEPLOYED`. `TEAMWRIGHT_PAUSE` present → no push, say so. `deploys: false` → no push needed for verification. When the task reaches `CODE_COMPLETE`, delete a `wip/<ID>` branch it used: `git push origin --delete wip/<ID>`.
 - **Next** — the stage reached a barrier (its batch is done, or a decision point). Then:

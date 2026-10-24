@@ -6,7 +6,14 @@ the journal (.teamwright/logs/outcomes.jsonl), the gate mode, TEAMWRIGHT_PAUSE a
 state, and prints the next action. The skill talks to the owner; this script only
 decides, so the same project state always gives the same answer.
 
-  python3 tw-next.py [--project PATH] [--json] [--pass T-1,T-2] [--stage STAGE [--task IDS]]
+  python3 tw-next.py [--project PATH] [--json [--brief]] [--pass T-1,T-2] [--stage STAGE [--task IDS]]
+
+--brief (implies --json) prints what a stage session needs and nothing else: `request`
+first, the action, stage, batch, model, command, candidates (at most max(8, 2 x the batch
+cap), compact, overlaps among the shown ones; `candidates_total` says how many wait; printed
+once, under `request`, when the request is for the router's stage), per-stage counts, task
+counts by status, decisions, warnings, headless, alternatives, settings, a compact state. The full JSON has `request` first too, and
+never lists closed tasks (DONE, DEFERRED) in `tasks` - `counts` counts every status.
 
 --pass names the tasks this flow run (a pass) has already taken. The router then applies
 `process.batch` from .teamwright/config.yml: when the pass is at its cap, `start` becomes
@@ -979,7 +986,7 @@ def decide(project, taken=None, stage=None, ids=None):
         if stage:
             res["request"] = {"stage": stage, "tasks": ids or [], "ok": False, "batch": [], "model": None,
                               "hint": res["reason"], "candidates": []}
-        res["candidates"], res["batch_cap"] = [], 0
+        res["candidates"], res["batch_cap"], res["counts"] = [], 0, {}
         return res
     oqs = open_questions(project)
     mark_delivered(project, tasks, st)
@@ -1056,11 +1063,16 @@ def decide(project, taken=None, stage=None, ids=None):
         alts.append({"action": c["action"], "task": c["task"], "reason": c["reason"], "stage": c.get("stage")})
     first["alternatives"] = alts[:5]
     first["state"] = st
+    # closed tasks (DONE, DEFERRED) are counted, never listed: on a long-lived project they
+    # are most of the records and none of the work
     first["tasks"] = [dict(t, stage=stage_of(t)[0], ready=deps_done(t, tasks, proc["ready"]["after"])
                            and not blockers(t, oqs),
                            blockers=blockers(t, oqs),
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
-                      for t in _sorted(tasks.values())]
+                      for t in _sorted(tasks.values()) if t["status"] not in CLOSED]
+    first["counts"] = {}
+    for t in tasks.values():
+        first["counts"][t["status"]] = first["counts"].get(t["status"], 0) + 1
     first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
     first["settings"] = proc
     first["recommended"] = getattr(kc, "PROCESS_RECOMMENDED", {})
@@ -1076,11 +1088,79 @@ def decide(project, taken=None, stage=None, ids=None):
     return first
 
 
+BRIEF_CANDIDATES = 8   # --brief lists at most max(this, 2 x the stage's batch cap) candidates
+
+
+def _brief_candidate(c):
+    return {k: c[k] for k in ("id", "action", "title", "priority", "effective_priority", "unblocks",
+                              "depends_on_candidates", "overlaps", "areas", "size", "held") if k in c}
+
+
+def _brief_candidates(cands, cap):
+    """The first max(8, 2 x cap) candidates, compact; overlaps and dependencies name only the
+    candidates shown (a seam without a path overlaps every other one)."""
+    keep = cands[:max(BRIEF_CANDIDATES, 2 * (cap or 1))]
+    shown = {c["id"] for c in keep}
+    out = []
+    for c in keep:
+        b = dict(_brief_candidate(c), title=(c.get("title") or "")[:70])
+        b["overlaps"] = [x for x in c.get("overlaps") or [] if x in shown]
+        b["depends_on_candidates"] = [x for x in c.get("depends_on_candidates") or [] if x in shown]
+        out.append(b)
+    return out
+
+
+def ordered(res):
+    """The answer with `request` (a stage command's question) first: a reader that sees only
+    the head of the output - a truncated preview - still gets it."""
+    out = {}
+    if "request" in res:
+        out["request"] = res["request"]
+    for k, v in res.items():
+        if k != "request":
+            out[k] = v
+    return out
+
+
+def brief(res):
+    """The fields a stage session needs, without the task list: --brief."""
+    st = res.get("state") or {}
+    out = {}
+    req = res.get("request")
+    if req is not None:
+        out["request"] = dict({k: v for k, v in req.items() if k != "candidates"},
+                              candidates=_brief_candidates(req.get("candidates") or [], req.get("batch_cap")),
+                              candidates_total=len(req.get("candidates") or []))
+    for k in ("action", "task", "reason", "role", "ask_owner", "stage", "batch", "batch_cap", "model",
+              "command", "work_available", "select"):
+        out[k] = res.get(k)
+    if req is not None:
+        # a stage command picks from request.candidates; the router's own stage's list (the
+        # same one, or another stage's) is not repeated
+        out["candidates"], out["candidates_in"] = [], "request"
+    else:
+        out["candidates"] = _brief_candidates(res.get("candidates") or [], res.get("batch_cap"))
+    out["candidates_total"] = len(res.get("candidates") or [])
+    out["stages"] = {s: {"waiting": len(i["waiting"]), "due": i["due"], "why": i["why"], "batch": i["batch"],
+                         "model": i["model"]} for s, i in (res.get("stages") or {}).items()}
+    out["counts"] = res.get("counts") or {}
+    out["decisions"] = res.get("decisions") or []
+    out["warnings"] = res.get("warnings") or []
+    out["headless"] = res.get("headless")
+    out["budget"] = res.get("budget")
+    out["state"] = {k: st.get(k) for k in ("mode", "branch", "dirty", "unpushed", "delivery_ref", "pause",
+                                           "current_task", "interrupted_task")}
+    out["alternatives"] = [dict(a, reason=(a.get("reason") or "")[:90]) for a in (res.get("alternatives") or [])[:3]]
+    out["settings"] = {k: v for k, v in (res.get("settings") or {}).items() if k != "explicit"}
+    return out
+
+
 def human(res):
     st = res["state"]
-    counts = {}
-    for t in res["tasks"]:
-        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    counts = res.get("counts") or {}
+    if not counts:
+        for t in res["tasks"]:
+            counts[t["status"]] = counts.get(t["status"], 0) + 1
     lines = ["teamwright flow",
              "  mode: %s | branch: %s | %s | unpushed: %d%s" % (
                  st.get("mode") or "not adopted", st.get("branch") or "-",
@@ -1129,11 +1209,15 @@ def main(argv=None):
                     help="answer a stage command: may this stage run now, on which tasks (`request`)")
     ap.add_argument("--task", dest="ids", default=None,
                     help="with --stage: the tasks the command names, comma-separated")
+    ap.add_argument("--brief", action="store_true",
+                    help="with --json: what a stage session needs (request first, candidates, stage "
+                         "counts, decisions, warnings, model, headless), no task list")
     args = ap.parse_args(argv)
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):
         print("tw-next: no such project: %s" % project, file=sys.stderr)
         return 2
+    args.json = args.json or args.brief
     taken = None if args.taken is None else [x.strip() for x in args.taken.split(",") if x.strip()]
     ids = [x.strip() for x in (args.ids or "").replace(" ", ",").split(",") if x.strip()]
     if ids and not args.stage:
@@ -1141,7 +1225,11 @@ def main(argv=None):
         return 2
     res = decide(project, taken, args.stage, ids)
     try:
-        print(json.dumps(res, indent=2, ensure_ascii=False) if args.json else human(res))
+        if args.json:
+            print(json.dumps(brief(res) if args.brief else ordered(res), indent=None if args.brief else 2,
+                             ensure_ascii=False, separators=(",", ":") if args.brief else None))
+        else:
+            print(human(res))
         sys.stdout.flush()
     except BrokenPipeError:  # a reader that stops early (grep -q) is not an error
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())

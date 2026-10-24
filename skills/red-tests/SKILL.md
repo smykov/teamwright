@@ -7,15 +7,15 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 # /teamwright:red-tests — failing tests first
 
-You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/sessions.md` §8. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
+You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md`. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
 ## Entry
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage red-tests [--task <ids, comma-separated>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage red-tests [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint`, end (`Stage: red-tests`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). One task at a time: the gates keep one active task per working tree.
+`request.ok` false → show `request.hint`, end (`Stage: red-tests`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (stage protocol §2). One task at a time: the gates keep one active task per working tree.
 
 ## Work — per task, one after another
 

@@ -7,15 +7,15 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 # /teamwright:verify — the running system, recorded
 
-You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/sessions.md` §8 and the VERIFY session is §7 there. You never write a verdict yourself. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
+You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md` and the VERIFY session is `docs/process/sessions.md` §7. You never write a verdict yourself. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
 ## Entry
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage verify [--task <ids, comma-separated>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage verify [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint`, end (`Stage: verify`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). A task that deploys is verified after DRAIN (the push is the owner's decision — the router asks it as `decide`, and offers verify for such a task only once its code is on the delivery branch); a task with `deploys: false` is verified against a locally started system.
+`request.ok` false → show `request.hint`, end (`Stage: verify`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (stage protocol §2). A task that deploys is verified after DRAIN (the push is the owner's decision — the router asks it as `decide`, and offers verify for such a task only once its code is on the delivery branch); a task with `deploys: false` is verified against a locally started system.
 
 ## Work — per task, one after another
 
