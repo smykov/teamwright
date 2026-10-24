@@ -9,7 +9,7 @@
     {
       "name": "teamwright",
       "source": ".",
-      "version": "0.13.0",
+      "version": "0.13.1",
       "description": "Adopt the teamwright process in a new or existing project: gates as hooks, role files, docs templates, metrics; tools chosen per capability.",
       "category": "development",
       "tags": ["process", "agents", "review", "tdd"]

@@ -17,6 +17,8 @@ this script does the parts that must be repeatable and reviewable:
               modifies tracked files inside its area's workdir; changes elsewhere
               are notes). Run it in the foreground and edit nothing meanwhile.
   next        the flow router's decision (same as scripts/tw-next.py)
+  update      update the plugin (claude plugin marketplace update, claude plugin update), then plan -
+              or --apply - the kit files from the updated install; --no-fetch skips the update
 
 Common options: --project PATH (default: cwd), --dry-run (write nothing), --json.
 plan/apply/check-commands read --config FILE (default: <project>/.teamwright/config.yml).
@@ -1389,6 +1391,81 @@ def check_commands(project, kit, cfg, cfg_src, timeout, only_area=None, dry=Fals
 
 
 # ---------------------------------------------------------------- CLI
+def plugin_id(project):
+    """The teamwright plugin this project runs: `teamwright@<marketplace>` enabled in the project's
+    local or shared settings, else the user's; `teamwright@teamwright` when none says."""
+    for path in (os.path.join(project, ".claude", "settings.local.json"),
+                 os.path.join(project, ".claude", "settings.json"),
+                 os.path.join(os.path.expanduser("~"), ".claude", "settings.json")):
+        try:
+            enabled = json.load(open(path, encoding="utf-8")).get("enabledPlugins") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        ids = [k for k, v in enabled.items() if k.split("@")[0] == "teamwright" and v]
+        if ids:
+            return ids[0]
+    return "teamwright@teamwright"
+
+
+def installed_kit(project, pid):
+    """(installPath, version) of the plugin as Claude Code installed it for this project: a
+    project-scoped install of this project, else a local one, else the user's."""
+    path = os.environ.get("TW_PLUGINS_FILE") or os.path.join(os.path.expanduser("~"), ".claude", "plugins",
+                                                              "installed_plugins.json")
+    try:
+        entries = (json.load(open(path, encoding="utf-8")).get("plugins") or {}).get(pid) or []
+    except (OSError, ValueError, AttributeError):
+        return None, None
+    def rank(e):
+        if e.get("projectPath") and os.path.abspath(e["projectPath"]) == project:
+            return 0
+        return {"local": 1, "user": 2}.get(e.get("scope"), 9) if not e.get("projectPath") else 9
+    best = sorted(entries, key=rank)
+    best = [e for e in best if rank(e) < 9]
+    return (best[0].get("installPath"), best[0].get("version")) if best else (None, None)
+
+
+def update(project, apply_it, fetch, as_json):
+    """Update the plugin (marketplace, then plugin, as `claude plugin` does for this project), then
+    run plan - or apply - of the project's kit files from the updated install, not from the copy
+    this session loaded. Claude Code loads the new commands only after a restart; the project's
+    hooks and role files are on disk at once."""
+    pid = plugin_id(project)
+    market = pid.split("@", 1)[1] if "@" in pid else "teamwright"
+    steps = []
+    if fetch:
+        claude = shutil.which(os.environ.get("TW_CLAUDE_BIN", "claude"))
+        if not claude:
+            steps.append({"step": "plugin update", "error": "claude CLI not found - update with /plugin, then run this again with --no-fetch"})
+        else:
+            for cmd in ([claude, "plugin", "marketplace", "update", market], [claude, "plugin", "update", pid]):
+                r = subprocess.run(cmd, cwd=project, capture_output=True, text=True, timeout=600)
+                steps.append({"step": " ".join(cmd[1:]), "rc": r.returncode,
+                              "output": (r.stdout + r.stderr).strip()[-600:]})
+    try:
+        before = (json.load(open(os.path.join(project, ".teamwright", "installed.json"))).get("@kit") or {}).get("version")
+    except (OSError, ValueError, AttributeError):
+        before = None
+    kit_path, version = installed_kit(project, pid)
+    if not kit_path or not os.path.isfile(os.path.join(kit_path, "scripts", "tw-install.py")):
+        print(json.dumps({"plugin": pid, "steps": steps, "error": "no installed copy of %s found for this project" % pid},
+                         indent=2, ensure_ascii=False))
+        return 1
+    head = {"plugin": pid, "kit_in_project": before, "plugin_installed": version, "kit_path": kit_path, "steps": steps}
+    if as_json:
+        print(json.dumps(head, ensure_ascii=False))
+    else:
+        for st in steps:
+            print("%s: %s" % (st["step"], st.get("error") or ("ok" if st.get("rc") == 0 else "rc %s" % st.get("rc"))))
+        print("plugin %s %s (installed at %s); kit in this project: %s" % (pid, version, kit_path, before or "none"))
+    cmd = [sys.executable, os.path.join(kit_path, "scripts", "tw-install.py"), "--project", project, "--kit", kit_path,
+           "apply" if apply_it else "plan"] + (["--json"] if as_json else [])
+    rc = subprocess.run(cmd, cwd=project).returncode
+    if apply_it and rc == 0 and not as_json:
+        print("restart Claude Code to load the new commands and skills of %s %s" % (pid, version))
+    return rc
+
+
 def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--project", default=argparse.SUPPRESS, help="target project root (default: cwd)")
@@ -1410,6 +1487,10 @@ def main(argv=None):
             sp.add_argument("--timeout", type=int, default=900, help="seconds per command (default 900)")
             sp.add_argument("--area", help="only this area")
     sub.add_parser("next", parents=[common], help="flow router decision (see scripts/tw-next.py)")
+    up = sub.add_parser("update", parents=[common],
+                        help="update the plugin (claude plugin update), then plan - or --apply - the kit from it")
+    up.add_argument("--apply", action="store_true", help="apply the kit files (default: plan only)")
+    up.add_argument("--no-fetch", action="store_true", help="skip `claude plugin update`; use the installed copy")
     args = ap.parse_args(argv)
     project = os.path.abspath(getattr(args, "project", None) or os.getcwd())
     dry = getattr(args, "dry_run", False)
@@ -1418,6 +1499,9 @@ def main(argv=None):
     providers_dir = os.path.abspath(getattr(args, "providers", None) or os.path.join(kit, "providers"))
     if not os.path.isdir(project):
         raise SystemExit("tw-install: no such project: %s" % project)
+
+    if args.cmd == "update":
+        return update(project, args.apply, not args.no_fetch, as_json)
 
     if args.cmd == "inventory":
         sys.stdout.write(dump_json(inventory(project, providers_dir, kit)))

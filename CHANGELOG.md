@@ -2,6 +2,11 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.13.1] - 2026-10-24
+
+### Added
+- **`/teamwright:update` — the plugin and the project's kit in one step.** A plugin update alone changed nothing in the project: the hooks, roles, process docs and scripts there are the kit `apply` wrote, and the owner had to find the new copy and run the installer from it. `tw-install.py update` updates the marketplace and the plugin for the project's channel (`teamwright@teamwright`, or `teamwright@teamwright-next` when the project enables it) through `claude plugin`, finds the copy Claude Code installed for this project (`installed_plugins.json`: this project's install, else local, else the user's), and runs `plan` — or, with `--apply`, `apply` — from that copy, not from the one the session loaded; `--no-fetch` skips the plugin update. The command shows the plan, applies on the owner's yes, commits the kit files and says to restart Claude Code. Tests in `tests/test-tw-update.sh`.
+
 ## [0.13.0] - 2026-10-24
 
 ### Added
