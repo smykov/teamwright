@@ -16,7 +16,7 @@ scripts/tw-progress.py            read-only progress report for /teamwright:prog
 scripts/tw-blockers.py            read-only: what waits for a person, by class and by what it unblocks (blockers)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, send-backs, settings history and render drift, DRAIN exceptions, record sizes; --since / --split-date (improve)
-scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, status, journal merge
+scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, context index per worktree, headless stage runs, status, journal merge
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -262,7 +262,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.review.blocking` | `low` \| `medium` \| `high` | no (default `low`) | from which severity a review finding returns the task; Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` always block. Set → the review gate checks the verdict against the record's findings table. `{{REVIEW_BLOCKING}}` |
 | `process.batch.max_tasks` | 1–5 | no (default 1) | tasks per `/teamwright:flow` pass, one after another. `{{BATCH_MAX_TASKS}}` |
 | `process.batch.by_priority.P0`…`P3` | 1–5 | no (default P0 1, P1 1, P2 3, P3 3) | cap for a pass holding a task of that priority; the lowest wins; `tw-next.py --pass` applies it. `{{BATCH_BY_PRIORITY}}` |
-| `process.batch.parallel` | 1–10 | no (default 1 = off) | tasks worked at the same time, each in its own worktree on `tw/<ID>` and its own session, when their seams do not overlap (`/teamwright:parallel`, `tw-parallel.py`). `{{BATCH_PARALLEL}}` |
+| `process.batch.parallel` | 1–10 | no (default 1 = off) | tasks worked at the same time, each in its own worktree on `tw/<ID>` and its own session, when their seams do not overlap (`/teamwright:parallel`, `tw-parallel.py`). `{{BATCH_PARALLEL}}` `/teamwright:parallel auto` (or a stage session holding analysed tasks) fills them itself: `tw-parallel.py prepare` copies and refreshes the context tool's index in each worktree, `launch` runs each worktree's stages headless — one `claude -p` session per stage — until `CODE_COMPLETE`, an owner decision or `TEAMWRIGHT_PAUSE`; state and log in `.teamwright/parallel/`. |
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
 | `process.ready.after` | `verified` \| `code_complete` | no (default `verified`) | when a `depends_on` counts as finished for readiness: `VERIFIED`/`DONE`, or already `CODE_COMPLETE`/`DEPLOYED` (`tw-next.py`) |

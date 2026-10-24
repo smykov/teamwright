@@ -54,4 +54,43 @@ printf '{"event":"Stop","outcome":"barrier"}\n' > "$WT1/.teamwright/logs/outcome
 printf '{"event":"Stop","outcome":"idle"}\n' > .teamwright/logs/outcomes.jsonl
 python3 "$PAR" logs T-1 --project . >/dev/null
 expect_rc "worktree journal appended to the main one" 2 "$(wc -l < .teamwright/logs/outcomes.jsonl | tr -d ' ')"
+
+# ---- prepare / launch / run: each worktree's stages run headless, one stage per session ----
+WT2="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[1]["path"])' "$TMP/start.json")"
+FAKE="$TMP/fake-claude"
+cat > "$FAKE" <<'SH'
+#!/usr/bin/env bash
+# a stage session: moves the worktree's task one status forward and commits
+b=$(git rev-parse --abbrev-ref HEAD); f="docs/tasks/${b#tw/}.md"; echo "$*" >> "$TW_FAKE_LOG"
+case "$(sed -n 's/^status: *//p' "$f")" in
+  ANALYSIS) n=IN_PROGRESS ;; IN_PROGRESS) n=NEEDS_REVIEW ;; NEEDS_REVIEW) n=CODE_COMPLETE ;; *) exit 0 ;;
+esac
+sed -i.bak "s/^status: .*/status: $n/" "$f" && rm -f "$f.bak"
+git commit -qam "chore(task): $n" && exit 0
+SH
+chmod +x "$FAKE"
+Q='" ".join("%s:%s" % (x["task"], x.get("index", x.get("error", ""))) for x in d)'
+expect_rc "prepare without a context provider: nothing to prepare" "T-2:nothing to prepare" "$(pq prepare T-2)"
+expect_rc "prepare needs the worktree" "T-9:no worktree for T-9 (start it first)" "$(pq prepare T-9)"
+export TW_FAKE_LOG="$TMP/fake.log"; : > "$TW_FAKE_LOG"
+TW_CLAUDE="$FAKE" TEAMWRIGHT_CLAUDE_ARGS="--x" python3 "$PAR" run T-2 --project . > "$TMP/run.json"
+Q='d["outcome"] + " " + d["status"]'; expect_rc "run drives the worktree's task to CODE_COMPLETE" "done CODE_COMPLETE" "$(python3 -c "import json; d=json.load(open('$TMP/run.json')); print($Q)")"
+grep -q -- "-p /teamwright:" "$TW_FAKE_LOG" && ok "each stage is a claude -p session with the router's prompt" || bad "claude -p with the router's prompt" "$(cat "$TW_FAKE_LOG")"
+expect_rc "one session per stage" 3 "$(wc -l < "$TW_FAKE_LOG" | tr -d ' ')"
+Q='" ".join("%s:%s" % (w["task"], (w["run"] or {}).get("outcome")) for w in d["worktrees"])'
+expect_rc "status shows the run's outcome" "T-1:None T-2:done" "$(pq status)"
+# a stage that moves nothing twice stops the run
+NOOP="$TMP/noop-claude"; printf '#!/bin/sh\nexit 0\n' > "$NOOP"; chmod +x "$NOOP"
+sedi 's/^status: .*/status: ANALYSIS/' "$WT2/docs/tasks/T-2.md"; git -C "$WT2" commit -qam "back"
+TW_CLAUDE="$NOOP" python3 "$PAR" run T-2 --project . > "$TMP/run2.json"
+expect_rc "two stages that move nothing: stuck" "stuck" "$(python3 -c "import json; print(json.load(open('$TMP/run2.json'))['outcome'])")"
+touch TEAMWRIGHT_PAUSE
+TW_CLAUDE="$FAKE" python3 "$PAR" run T-2 --project . > "$TMP/run3.json"
+expect_rc "TEAMWRIGHT_PAUSE stops the run" "paused" "$(python3 -c "import json; print(json.load(open('$TMP/run3.json'))['outcome'])")"
+rm -f TEAMWRIGHT_PAUSE
+# launch: background, capped by process.batch.parallel (2 here)
+TW_CLAUDE="$FAKE" python3 "$PAR" launch T-2 --project . > "$TMP/launch.json"
+grep -q '"launched": true' "$TMP/launch.json" && ok "launch starts the run in the background" || bad "launch" "$(cat "$TMP/launch.json")"
+for _ in $(seq 1 50); do o=$(python3 -c "import json; print(json.load(open('.teamwright/parallel/T-2.json')).get('outcome',''))"); [ -n "$o" ] && break; sleep 0.2; done
+expect_rc "the background run finishes" "done" "$o"
 finish
