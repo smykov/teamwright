@@ -110,7 +110,7 @@ out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_s
 expect_deny "editing an existing round is denied" "$out" "append-only"
 out="$(run Write "$S" "file_path=$(vd T-2)/2.md" "content=$(vtext T-2 2 api PASS "$C2")" "${VAL[@]}")"
 expect_deny "overwriting an existing round is denied" "$out" "append-only"
-# gate-first too: an edited record keeps no stamp, nothing proves who wrote it (prove-it run 27)
+# gate-first too: an edited record keeps no stamp, nothing proves who wrote it
 printf 'version: 1\nmode: gate-first\n' > "$P/.teamwright/config.yml"
 out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_string=result: PASS" "${VAL[@]}")"
 expect_deny "gate-first: editing an existing verify round is still denied" "$out" "append-only"

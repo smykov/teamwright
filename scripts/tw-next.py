@@ -146,7 +146,7 @@ def task_worktrees(project, task):
     _, cur = git(project, "rev-parse", "--abbrev-ref", "HEAD")
     m = rx.match(cur.strip())
     # Only a linked worktree is a per-task tree. The main checkout on a task branch (an
-    # autonomous run's `task/T-051-run18`) is the whole project: it verifies and reviews
+    # autonomous run's `task/T-12-run3`) is the whole project: it verifies and reviews
     # any task, and a branch name alone must not shrink it to one task.
     _, gd = git(project, "rev-parse", "--absolute-git-dir")
     _, cd = git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")

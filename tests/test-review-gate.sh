@@ -89,7 +89,7 @@ expect_allow "who moves the status does not matter once the approval is genuine"
 sedi 's/^title: sample/implemented_by: code-reviewer/' "$(tf T-1)"
 out="$(to_cc T-1)"; expect_deny "reviewer equal to implemented_by is denied" "$out" "self-review"
 
-# an approval from before a VERIFY_FAIL does not carry over (prove-it run 26, 24.10.2026)
+# an approval from before a VERIFY_FAIL does not carry over
 task_file "$(tf T-70)" T-70 NEEDS_REVIEW bug full
 spawn code-reviewer "Review T-70"
 write_review T-70 1 APPROVE "${REV[@]}" >/dev/null
