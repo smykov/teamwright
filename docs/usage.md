@@ -67,7 +67,7 @@ Every decision of the router names a **stage** — analyze, red-tests, implement
 
 ### Autonomous runs: one stage per job
 
-A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs: `work_available`, `stage`, `model`, and `headless.prompt` (`/teamwright:<stage> <ids>`). Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — the router answers `decide` and the job stops. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project (adapt the names; the real workflow lives in your repository):
+A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs: `work_available`, `stage`, `model`, and `headless.prompt` (`/teamwright:<stage> <ids>`). Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — the router answers `decide` and the job stops. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project and its path in `TEAMWRIGHT_KIT`, saved as `.github/workflows/teamwright-stage.yml` (adapt the names; the real workflow lives in your repository; `tests/test-usage-example.sh` checks that it parses and that the router fields and step outputs it reads exist):
 
 ```yaml
 name: teamwright stage
@@ -108,7 +108,9 @@ jobs:
           gh workflow run teamwright-stage.yml
       - name: Nothing to run
         if: steps.route.outputs.run != 'true'
-        run: echo "router: ${{ steps.route.outputs.reason }}"
+        env: { REASON: "${{ steps.route.outputs.reason }}" }
+        run: |
+          echo "router: $REASON"
 ```
 
 `concurrency` keeps one stage running per repository (reviewers one at a time); a `decide` (push, an escalation, `NEEDS_OWNER`) stops the chain until a person acts.
