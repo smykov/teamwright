@@ -80,8 +80,8 @@ def tasks_in(project):
     d = os.path.join(project, "docs", "tasks")
     out = {}
     for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
-        if not f.endswith(".md") or f.startswith("_"):
-            continue
+        if not re.fullmatch(r"(?:%s)\.md" % getattr(_task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"), f):
+            continue  # a task record is <ID>.md: not a template, not T-089.history.md
         with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
             rec = _task.parse(fh.read())
         tid = rec.get("id") if isinstance(rec.get("id"), str) and rec.get("id") else f[:-3]

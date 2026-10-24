@@ -364,13 +364,19 @@ def blockers(t, oqs):
     return [q for q in ids if not oq_resolved(oqs, q)]
 
 
+def is_task_file(task, name):
+    """Only <ID>.md is a task record: not a template, not T-089.history.md."""
+    tid = getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+")
+    return bool(re.fullmatch(r"(?:%s)\.md" % tid, name))
+
+
 def load_tasks(project, task, only=None):
     d = os.path.join(project, "docs", "tasks")
     out = {}
     if not os.path.isdir(d):
         return None
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
+        if not is_task_file(task, f) or (only and f[:-3] != only):
             continue
         try:
             with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:

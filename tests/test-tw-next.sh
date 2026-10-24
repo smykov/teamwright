@@ -523,4 +523,15 @@ j | grep -q "T-2 waiting .* h (max_wait_hours 2)" && ok "the age reason, from th
 touch docs/tasks/T-2.md
 expect "a fresh uncommitted record: review held, analysis first" start T-1
 
+# ---- m5: only <ID>.md is a task record ----------------------------------------------------
+fresh sidefiles
+mk T-89 TODO; printf -- '---\nid: T-89.history\nstatus: IN_PROGRESS\n---\nold notes\n' > docs/tasks/T-89.history.md
+printf -- '---\nstatus: NEEDS_REVIEW\n---\n' > docs/tasks/T-89.notes.md; commit_all
+expect_rc "side files next to a record are not tasks" "start T-89 1" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"], sum(d["counts"].values()))')"
+python3 "$KIT/scripts/tw-progress.py" --project . --json | python3 -c 'import json,sys; d=json.dumps(json.load(sys.stdin)); assert "T-89.history" not in d and "T-89.notes" not in d' \
+  && ok "tw-progress ignores side files too" || bad "tw-progress ignores side files too"
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io; assert not io.TASK_FILE_RE.search("docs/tasks/T-89.history.md") and io.TASK_FILE_RE.search("docs/tasks/T-89.md") and not io.TASK_FILE_RE.search("docs/tasks/_task-template.md")' "$HOOKS" \
+  && ok "the gates' task-record pattern matches <ID>.md only" || bad "the gates' task-record pattern matches <ID>.md only"
+
 finish

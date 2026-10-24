@@ -12,10 +12,13 @@ import os
 import re
 import sys
 
-TASK_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.md$")
-REVIEW_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.reviews/(\d+)\.md$")
-VERIFY_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.verify/(\d+)\.md$")
-VALIDATION_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.validation/(\d+)\.md$")
+# Only docs/tasks/<ID>.md is a task record (<ID> = $TEAMWRIGHT_TASK_ID_RE, as in _task.py):
+# a template (_task-template.md) or a side file (T-089.history.md) is not.
+TASK_ID = os.environ.get("TEAMWRIGHT_TASK_ID_RE", r"[A-Z][A-Z0-9]*-\d+")
+TASK_FILE_RE = re.compile(r"(?:^|/)docs/tasks/(%s)\.md$" % TASK_ID)
+REVIEW_FILE_RE = re.compile(r"(?:^|/)docs/tasks/(%s)\.reviews/(\d+)\.md$" % TASK_ID)
+VERIFY_FILE_RE = re.compile(r"(?:^|/)docs/tasks/(%s)\.verify/(\d+)\.md$" % TASK_ID)
+VALIDATION_FILE_RE = re.compile(r"(?:^|/)docs/tasks/(%s)\.validation/(\d+)\.md$" % TASK_ID)
 
 
 REVIEWER_AGENT = os.environ.get("TEAMWRIGHT_REVIEWER_AGENT", "code-reviewer")
@@ -410,7 +413,7 @@ def _is_task_record(tok, in_tasks):
     t = tok.replace("\\", "/")
     if TASK_FILE_RE.search(t):
         return True
-    return in_tasks and "/" not in t and t.endswith(".md")
+    return in_tasks and "/" not in t and bool(re.fullmatch(r"(?:%s)\.md" % TASK_ID, t))
 
 
 def shell_rewrites_task_record(cmd):

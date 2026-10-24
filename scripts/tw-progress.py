@@ -99,7 +99,8 @@ def records(project, task, only=None):
     if not os.path.isdir(d):
         return out
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
+        if not re.fullmatch(r"(?:%s)\.md" % getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"), f) \
+                or (only and f[:-3] != only):  # <ID>.md only: not T-089.history.md
             continue
         text = _read(os.path.join(d, f))
         rec = task.parse(text)

@@ -28,6 +28,12 @@ PLACEHOLDER = re.compile(r"^(\.\.\.|…|todo|tbd|n/?a|none|-|<[^>]*>|\?+)$", re.
 TASK_ID = os.environ.get("TEAMWRIGHT_TASK_ID_RE", r"[A-Z][A-Z0-9]*-\d+")
 
 
+def is_task_file(name):
+    """True for a task record's file name, `<ID>.md` (T-12.md) - not a template (_*.md) and
+    not a side file such as T-089.history.md or T-12.notes.md."""
+    return bool(re.fullmatch(r"(?:%s)\.md" % TASK_ID, name or ""))
+
+
 def front_matter(text):
     """Return the front-matter lines (without the --- fences)."""
     lines = text.splitlines()
