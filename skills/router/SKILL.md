@@ -17,4 +17,4 @@ Arguments: `$ARGUMENTS` (`--status` → show the decision and stop).
    - `idle`, `paused`, `stop` → report, stop.
 3. **Stop** after that one stage: do not ask the router again in this session. End with the stage's end block (`docs/process/sessions.md` §8): `Stage:`, `Batch:` with the chosen tasks and the one-line reason, and `Outcome:` as the last line (`idle` for idle, paused or a refused stage).
 
-`/teamwright:flow` does the same in a loop, in one session. In an autonomous run (CI, a scheduler) run this command once per job: `tw-next.py --json` → `headless.prompt` and `headless.model` name the stage command and the model (`docs/usage.md`, *Autonomous runs*).
+`/teamwright:flow` does the same in a loop, in one session. In an autonomous run (CI, a scheduler) run this command once per job: `tw-next.py --json` → `headless.prompt` and `headless.model` name the stage command and the model; `headless` takes the first piece of work past an owner decision and lists the decisions (`docs/usage.md`, *Autonomous runs*).

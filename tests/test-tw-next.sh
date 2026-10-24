@@ -385,9 +385,9 @@ expect_rc "idle: no headless job" False "$(field '["headless"]["run"]')"
 mk T-2 NEEDS_REVIEW; commit_all
 printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  models:\n    review: sonnet\n  router:\n    select: agent\n' > .teamwright/config.yml
 expect_rc "the stage's model is reported" sonnet "$(field '["model"]')"
-expect_rc "headless prompt for one stage per job" "True /teamwright:review T-2 sonnet" \
+expect_rc "headless prompt for one stage per job, without ids (the session picks)" "True /teamwright:review sonnet" \
   "$(j | python3 -c 'import json,sys; h=json.load(sys.stdin)["headless"]; print(h["run"], h["prompt"], h["model"])')"
-j | grep -q 'claude -p \\"/teamwright:review T-2\\" --model sonnet' && ok "headless note has the command line" || bad "headless note has the command line"
+j | grep -q 'claude -p \\"/teamwright:review\\" --model sonnet' && ok "headless note has the command line" || bad "headless note has the command line"
 expect_rc "selection mode agent is reported" agent "$(field '["select"]')"
 out="$(python3 "$NEXT" --project .)"
 printf '%s' "$out" | grep -q "stage: review | batch: T-2 | model: sonnet | run: /teamwright:review T-2" && ok "human summary: stage line" \
@@ -397,6 +397,26 @@ mk T-2 DONE; echo y > g.txt; git add -A; git commit -qm "chore: g"
 expect_rc "only a push decision: no work available, no job" "decide False False" \
   "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["work_available"], d["headless"]["run"])')"
 
+# ---- headless: an owner decision does not stop the chain while work is available (B1) ----
+fresh headless
+mk T-1 BLOCKED 'blocked_on: "owner decision: which provider"'
+mk T-2 TODO; mk T-3 ANALYSIS; commit_all
+hl() { j | python3 -c 'import json,sys; d=json.load(sys.stdin); h=d["headless"]; print(d["action"], d["task"], h["run"], h["stage"], h["task"], ",".join(x["task"] or "-" for x in h["decisions"]), ",".join(x["task"] or "-" for x in d["decisions"]))'; }
+expect_rc "ANALYSIS before the decision: both agree" "continue T-3 True analyze T-3 T-1 T-1" "$(hl)"
+mk T-3 DONE; mk T-4 NEEDS_REVIEW; mk T-5 BLOCKED 'blocked_on: "owner decision: scope"'; commit_all
+expect_rc "decide first interactively; headless takes the first work and lists the decisions" "review T-4 True review T-4 T-1,T-5 T-1,T-5" "$(hl)"
+mk T-4 DONE; commit_all
+expect_rc "only a start left, autonomy.start ask: interactive decide, no job (no one to ask)" "decide T-1 False None None T-1,T-5 T-1,T-5" "$(hl)"
+j | python3 -c 'import json,sys; h=json.load(sys.stdin)["headless"]; assert "autonomy.start" in h["note"], h' \
+  && ok "the headless note names autonomy.start" || bad "the headless note names autonomy.start"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  autonomy:\n    start: auto\n' > .teamwright/config.yml
+expect_rc "autonomy.start auto: the job starts the ready task past the decisions" "decide T-1 True analyze T-2 T-1,T-5 T-1,T-5" "$(hl)"
+touch TEAMWRIGHT_PAUSE
+expect_rc "paused: no job" "paused None False" "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"], d["headless"]["run"])')"
+rm TEAMWRIGHT_PAUSE
+mk T-2 DONE; commit_all
+expect_rc "decisions only: no work available, no job" "decide False False" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["work_available"], d["headless"]["run"])')"
 
 # ---- the main checkout on a task branch is not a per-task worktree (autonomous run) ----
 mk T-2 CODE_COMPLETE; mk T-3 CODE_COMPLETE; git add -A; git commit -qm "chore: two tasks to verify"

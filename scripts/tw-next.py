@@ -69,7 +69,10 @@ verify | reanalyze | decide | start | stop | merge | idle | paused, task is an i
 status and settings offer (_config.PROCESS_RECOMMENDED), and "budget" the pass budget;
 "stage", "batch", "model", "command", "work_available", "stages" (per stage: waiting
 tasks, due, why, settings) and "headless" (prompt and model for one stage per job) describe
-the stage to run.
+the stage to run. "decisions" lists every owner decision. "headless" is the autonomous answer:
+the first piece of work in router order (past owner decisions, skipping a start that asks the
+owner), a prompt without ids, and run=false only when no such work is left or a pause, a
+dirty tree of no task or a used pass stops everything.
 """
 import argparse
 import json
@@ -794,18 +797,61 @@ def describe_stage(first, cands, info, proc, budget):
     first["work_available"] = work_available(cands)
     first["stages"] = info
     first["select"] = (proc.get("router") or {}).get("select", "script")
+    first["decisions"] = decisions_of(cands)
+    first["headless"] = headless_for(first, cands, info)
+
+
+def decisions_of(cands):
+    """Every owner decision the router sees ({task, reason}), in router order: in an
+    autonomous run they are reported to a person while the other work goes on."""
+    out, seen = [], set()
+    for c in cands:
+        k = (c["task"], c["reason"])
+        if c["action"] == "decide" and k not in seen:
+            seen.add(k)
+            out.append({"task": c["task"], "reason": c["reason"]})
+    return out
+
+
+def headless_for(first, cands, info):
+    """One stage per job (an autonomous run). Unlike the interactive answer, an owner
+    decision does not stop the chain while other work is available: the job takes the
+    first piece of work in router order and lists the decisions. No job runs when the team
+    is paused, the tree holds uncommitted changes of no task, a pass ended (`stop`), or
+    there is no work a job can do without a person."""
+    def off(note, reason=None):
+        return {"run": False, "prompt": None, "model": None, "stage": None, "task": None,
+                "note": note, "reason": reason or note, "decisions": decisions_of(cands)}
     if first["action"] == "paused":
-        note = "paused: no job runs until TEAMWRIGHT_PAUSE is removed"
-    elif first["command"]:
-        note = "one stage per job: claude -p \"%s\"%s; the job pushes its commits to a wip/ branch " \
-               "(not a delivery), then asks the router again" % (
-                   first["command"], " --model %s" % first["model"] if first["model"] else "")
-    elif first["action"] in ("decide", "stop"):
-        note = "owner decision: no job runs; tell the owner the reason"
+        return off("paused: no job runs until TEAMWRIGHT_PAUSE is removed")
+    if first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
+        return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+    if first["action"] == "stop":
+        return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+    work = [c for c in cands if is_work(c)]
+    if not work:
+        if any(c["action"] == "decide" for c in cands):
+            return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+        return off("nothing to do: no job runs", first["reason"])
+    # a start that asks the owner which task to take cannot run without one (autonomy.start:
+    # ask): the job skips it; when nothing else is left, no job runs
+    runnable = [c for c in work if not (c["action"] == "start" and c.get("ask_owner"))]
+    if not runnable:
+        return off("owner decision: no job runs; process.autonomy.start is ask - the owner picks the "
+                   "task to start (set autonomy.start: auto for autonomous runs)", work[0]["reason"])
+    pick = runnable[0]
+    if pick["action"] == "merge":
+        prompt, model, stage = "/teamwright:parallel merge %s" % pick["task"], None, None
     else:
-        note = "nothing to do: no job runs"
-    first["headless"] = {"run": bool(first["command"]) and first["action"] != "paused",
-                         "prompt": first["command"], "model": first["model"], "note": note}
+        stage = pick.get("stage")
+        prompt, model = "/teamwright:%s" % stage, info[stage]["model"]
+    note = "one stage per job: claude -p \"%s\"%s; the job pushes its commits to a wip/ branch " \
+           "(not a delivery), then asks the router again" % (prompt, " --model %s" % model if model else "")
+    if (pick["task"], pick["action"]) != (first["task"], first["action"]):
+        note += "; %s comes first interactively (%s) - reported, not waited on" % (
+            first["action"], first["reason"])
+    return {"run": True, "prompt": prompt, "model": model, "stage": stage, "task": pick["task"],
+            "note": note, "reason": pick["reason"], "decisions": decisions_of(cands)}
 
 
 def request_for(res, cands, tasks, stage, ids):
@@ -870,7 +916,8 @@ def decide(project, taken=None, stage=None, ids=None):
                    recommended=getattr(kc, "PROCESS_RECOMMENDED", {}),
                    batch=[], model=None, command=None, work_available=False, stages={},
                    select=(proc.get("router") or {}).get("select", "script"),
-                   headless={"run": False, "prompt": None, "model": None, "note": "not adopted"})
+                   decisions=[], headless={"run": False, "prompt": None, "model": None, "stage": None, "task": None,
+                                           "note": "not adopted", "reason": "not adopted", "decisions": []})
         if stage:
             res["request"] = {"stage": stage, "tasks": ids or [], "ok": False, "batch": [], "model": None,
                               "hint": res["reason"], "candidates": []}

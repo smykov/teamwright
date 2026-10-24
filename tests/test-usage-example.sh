@@ -19,7 +19,7 @@ expect_rc "the steps read run, prompt, model and reason from the route step" "mo
 P="$TMP/proj"; mkdir -p "$P/docs/tasks" "$P/.teamwright" && cd "$P" || exit 1
 git init -q -b main .
 printf 'version: 1\nmode: enforce\nareas:\n  - name: core\nprocess:\n  models:\n    analyze: sonnet\n' > .teamwright/config.yml
-printf -- '---\nid: T-1\ntitle: one\ntype: feature\nstatus: TODO\npriority: P2\ndepends_on: []\n---\nbody\n' > docs/tasks/T-1.md
+printf -- '---\nid: T-1\ntitle: one\ntype: feature\nstatus: ANALYSIS\npriority: P2\ndepends_on: []\n---\nbody\n' > docs/tasks/T-1.md
 git add -A && git commit -qm init
 route() {  # route -> the step's GITHUB_OUTPUT, run as the job runs it (bash -e)
   local o="$TMP/gh-output"; : > "$o"
@@ -30,7 +30,7 @@ got="$(route)"; rc=$?
 expect_rc "the route step runs (tw-next.py --json with the documented flags)" 0 "$rc"
 out_of() { printf '%s\n' "$got" | sed -n "s/^$1=//p"; }
 expect_rc "run=true when there is work" true "$(out_of run)"
-expect_rc "prompt is the stage command from headless.prompt" "/teamwright:analyze T-1" "$(out_of prompt)"
+expect_rc "prompt is the stage command from headless.prompt (no ids)" "/teamwright:analyze" "$(out_of prompt)"
 expect_rc "model comes from headless.model (process.models)" sonnet "$(out_of model)"
 case "$(out_of reason)" in "") bad "reason is printed";; *) ok "reason is printed";; esac
 rm -f docs/tasks/T-1.md && git add -A && git commit -qm empty
