@@ -313,7 +313,7 @@ expect_rc "upper bound: any subagent in all 3 joined claims" "[3, 3]" "$(q "[${G
 expect_rc "sessions: the fixed label is not a session" 3 "$(q "${G3}['sessions']['value']")"
 expect_rc "journal without task ids: approvals match is no data" null "$(q "${G3}['approvals_with_reviewer_spawn']['value']")"
 
-# echo-me-shaped session: background roles end turns with `waiting`, runtime helper
+# a session shaped like a pilot project's: background roles end turns with `waiting`, runtime helper
 # SubagentStops (no type, 0 calls) every half minute, the last Stop carries the outcome
 A4="$TMP/waitlogs"; mkdir -p "$A4"
 cat > "$A4/tools.jsonl" <<'EOF'

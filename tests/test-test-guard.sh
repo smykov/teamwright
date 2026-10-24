@@ -71,7 +71,7 @@ expect_allow "tw-run with the area's api_test_command" "$(run "scripts/tw-run se
 expect_allow "grep on a log" "$(run 'grep -n FAILED .teamwright/logs/test/server-1.log | head')"
 expect_allow "a commit message naming pytest" "$(run 'git commit -m "fix: pytest flake"')"
 expect_allow "echo" "$(run 'echo pytest')"
-# a gate script that only wraps another command is not itself a signature (ai-resume tool/gate.sh)
+# a gate script that only wraps another command is not itself a signature (a project's tool/gate.sh)
 expect_allow "a wrapper gate script running a formatter" "$(run "tool/wrap.sh sh -c 'cd tool && ruff format x.py'")"
 expect_allow "a wrapper gate script running a migration" "$(run "scripts/tw-run infra -- \"tool/wrap.sh sh -c 'alembic upgrade head'\"")"
 expect_deny "a wrapper gate script running pytest" "$(run "tool/wrap.sh sh -c 'cd tool && pytest -q tests'")" "TEST GUARD"
