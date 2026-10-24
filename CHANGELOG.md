@@ -2,6 +2,13 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.12.2] - 2026-10-24
+
+### Fixed
+- **Stage sessions check the context tool before any role.** The check that the configured context tool (Serena, a code graph, docs) is connected was step 0 of `/teamwright:flow`; when the lifecycle moved into the stage commands it was not carried over, so `/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify` and `/teamwright:router` spawned roles without it, and the roles read code with grep. Now `stage-protocol.md` §0 (and every stage command and the router) checks that the provider from `tools.context` is in the session and answers one cheap call, re-indexes a stale index, and spawns no role until it does: interactive — the owner restarts the server or answers `continue` to use the built-in search; headless — the session ends with `Outcome: escalate`. `/teamwright:flow` does the same instead of falling back silently.
+- **Every role is told which code search to use.** Each role's spawn prompt starts with a code-search line taken from `tools.context` (Serena: `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `search_for_pattern`; grep and reads only for non-code text or where the tool misses) — role files edited by hand keep their own tools section, and the prompt still carries it.
+- **`stages.<stage>.batch` says what it is.** `/teamwright:settings` now states that a stage's batch is taken one after another in one session, not at the same time (`batch.parallel`), and that red-tests and implement keep one task `IN_PROGRESS` per working tree.
+
 ## [0.12.1] - 2026-10-24
 
 ### Fixed

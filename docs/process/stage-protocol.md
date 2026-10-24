@@ -2,6 +2,12 @@
 
 What every stage session (`/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify`, and each step of `/teamwright:router` and `/teamwright:flow`) does. Kept short on purpose: a stage session reads this, not the long explanation in [sessions.md §8](sessions.md#8-stages-one-stage-per-session).
 
+## 0. Context tools are connected — before any role
+
+Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. For an MCP-based provider (`serena`, `codegraph`, `context7`, …) check that its tools are in this session's tool list (`mcp__<provider>__*`) and answer: one cheap call (Serena: `get_symbols_overview` on a file of the batch's area). A stale index (results miss code you can see) → run the provider's index command (Serena: `serena project index`) first.
+
+Not connected or not answering → **do not spawn a role yet**. Interactive: tell the owner once — "<provider> is configured but not connected in this session: restart Claude Code and approve the server, or answer `continue` to work with the built-in search" — and wait. Headless (nobody to ask): end the session with `Outcome: escalate` and that sentence. `tools.context: builtin` (no provider) → nothing to check.
+
 ## 1. Ask
 
 ```
@@ -24,6 +30,7 @@ Take at most `request.batch_cap` tasks from `request.candidates` (router order; 
 
 - Make it the active task first (an edit of its record), so the gates and the journal see it.
 - Role agents run in the foreground; commit each result before the next step.
+- Every role's spawn prompt starts with the code-search line from the config, not from memory: "Code search: <tools.context provider> first (Serena: `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `search_for_pattern`); grep and file reads only for text that is not code, or where the tool misses — say so in your report." With `continue` from §0, say instead that the provider is not connected and the built-in search is the fallback.
 - Every status change is its own commit; the `stage:` field changes with the commit that finishes the stage's work. The analysis gate holds the order (`gates.md`, analysis gate check 4).
 - One task `IN_PROGRESS` per working tree: an analyze batch analyses several, but moves one into `IN_PROGRESS`; the rest wait in `ANALYSIS` with the analysis committed.
 - Decision points are asked when reached; a blocked task does not stop the batch. In a headless run (no one to ask) leave them for the owner and say so.
