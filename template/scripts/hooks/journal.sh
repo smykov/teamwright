@@ -28,7 +28,10 @@
 #       (`transcript_path`, `agent_transcript_path` for a subagent).
 #       `outcome_source` says which: message | transcript | none. `stage` is the
 #       stage the session ran, from its `Stage: <analyze|red-tests|implement|review|
-#       verify|flow>` line ('' when none; SubagentStop lines leave it empty); `batch`
+#       verify|flow>` line - the last one in the message, the end block ('' when none;
+#       SubagentStop lines leave it empty; a flow session runs several stages and records
+#       `flow`: its tokens are the whole session's, per-stage numbers come from stage
+#       sessions); `batch`
 #       and `batch_reason` are the tasks the session chose from the router's candidates
 #       and its one-line reason, from `Batch: T-1 T-2 - <reason>`. A Stop with no
 #       Outcome line while an agent this session launched has not finished yet is
@@ -233,8 +236,10 @@ elif ev in ("Stop", "SubagentStop"):
                 finished[r["agent_type"]] = finished.get(r["agent_type"], 0) + 1
         if any(n > finished.get(t, 0) for t, n in launched.items()):
             outcome, src = "waiting", "open-agent"
-    sm = STAGE_RE.search(text) if ev == "Stop" else None
-    bm = BATCH_RE.search(text) if ev == "Stop" else None
+    # the LAST match: a message quotes an earlier `Stage:` / `Batch:` (the router's answer, a
+    # previous step) above its own end block, which is always the bottom of the message
+    sm = (list(STAGE_RE.finditer(text)) or [None])[-1] if ev == "Stop" else None
+    bm = (list(BATCH_RE.finditer(text)) or [None])[-1] if ev == "Stop" else None
     batch = ID_RE.findall(bm.group(1).split(" - ")[0].split("\u2014")[0]) if bm else []
     reason = ""
     if bm:

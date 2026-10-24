@@ -149,6 +149,15 @@ Batch: T-3 T-7 - disjoint seams, both in the server area
 Outcome: barrier" | bash "$J"
 expect_rc "the chosen batch and its reason are recorded" "T-3,T-7|disjoint seams, both in the server area" \
   "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=The router said:
+Stage: analyze
+Batch: T-1 - quoted from the previous step
+Done.
+Stage: implement
+Batch: T-9 - the end block
+Outcome: barrier" | bash "$J"
+expect_rc "several Stage/Batch lines: the last (the end block) is recorded" "implement T-9|the end block" \
+  "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["stage"], ",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
 
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"
