@@ -254,6 +254,9 @@ MODEL_ALIASES = ("opus", "sonnet", "haiku", "fable")
 MODEL_ID_RE = re.compile(r"^claude-[a-z0-9][a-z0-9.\-]*$")
 PROCESS_DEFAULTS["stages"] = {st: dict(STAGE_DEFAULTS) for st in STAGES}
 PROCESS_DEFAULTS["models"] = {st: None for st in STAGES}
+# Stage thresholds: one task per stage session, run as soon as one waits - the defaults.
+# Raise review's batch/min when reviews pile up (fewer, fuller sessions; tasks wait longer).
+PROCESS_RECOMMENDED["stages"] = {st: dict(STAGE_DEFAULTS) for st in STAGES}
 
 
 def model_ok(v):

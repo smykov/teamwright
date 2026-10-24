@@ -33,7 +33,7 @@ Defaults are the behaviour before settings existed, so a plugin update changes n
 
 ## 1. Show
 
-Read `.teamwright/config.yml` (missing → suggest `/teamwright:adopt` or `/teamwright:init`; stop). Effective values: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json` → `settings` (`explicit` lists the keys set in the config; the rest are defaults). One table: key · value · set or default · recommended.
+Read `.teamwright/config.yml` (missing → suggest `/teamwright:adopt` or `/teamwright:init`; stop). Effective values: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json` → `settings` (`explicit` lists the keys set in the config; the rest are defaults). One table: key · value · set or default · recommended — the recommended column from `recommended` in the same JSON (`_config.PROCESS_RECOMMENDED`: review, batch, autonomy, ready, `models` per stage, `stages` thresholds), never from memory. Then offer, in one question block, the keys still at a default that differs from the recommendation (the models per stage first: unset means the role files' own `model:`), each with its consequence; "keep" changes nothing.
 
 Add what the data says, one line each, from `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-process.py" --json`: share of review send-backs, findings by severity, the categories that returned tasks, open follow-ups, when the settings last changed. Example: "46 % of review rounds were send-backs; 127 of 192 findings were Low — `review.blocking: medium` would have kept them as follow-ups". Facts only; the owner decides.
 

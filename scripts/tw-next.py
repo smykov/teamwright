@@ -65,7 +65,8 @@ instead (hint). An explicit stage ignores `min`.
 JSON: {"action", "task", "reason", "role", "ask_owner", "alternatives": [...],
        "state": {...}, "tasks": [...], "warnings": [...]}; action is one of resume | continue | review |
 verify | reanalyze | decide | start | stop | merge | idle | paused, task is an id or null;
-"settings" carries the effective process settings and "budget" the pass budget;
+"settings" carries the effective process settings, "recommended" the values adopt, init,
+status and settings offer (_config.PROCESS_RECOMMENDED), and "budget" the pass budget;
 "stage", "batch", "model", "command", "work_available", "stages" (per stage: waiting
 tasks, due, why, settings) and "headless" (prompt and model for one stage per job) describe
 the stage to run.
@@ -860,6 +861,7 @@ def decide(project, taken=None, stage=None, ids=None):
     if tasks is None:
         res = _d("idle", None, "no docs/tasks/ - run /teamwright:adopt or /teamwright:init first")
         res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None,
+                   recommended=getattr(kc, "PROCESS_RECOMMENDED", {}),
                    batch=[], model=None, command=None, work_available=False, stages={},
                    select=(proc.get("router") or {}).get("select", "script"),
                    headless={"run": False, "prompt": None, "model": None, "note": "not adopted"})
@@ -949,6 +951,7 @@ def decide(project, taken=None, stage=None, ids=None):
                       for t in _sorted(tasks.values())]
     first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
     first["settings"] = proc
+    first["recommended"] = getattr(kc, "PROCESS_RECOMMENDED", {})
     first["parallel"] = {"own": own, "elsewhere": elsewhere, "worktrees": wts}
     first["budget"] = budget
     describe_stage(first, cands, info, proc, budget)

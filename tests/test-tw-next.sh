@@ -254,6 +254,10 @@ expect_rc "P2-only pass goes to max_tasks 3" "start" \
 expect_rc "settings are reported" "medium?low 3" \
   "$(field '["settings"]' | python3 -c 'import ast,sys; d=ast.literal_eval(sys.stdin.read()); print("medium?"+d["review"]["blocking"], d["batch"]["max_tasks"])')"
 
+expect_rc "recommended settings carry a model per stage" "opus sonnet opus opus opus" \
+  "$(j | python3 -c 'import json,sys; m=json.load(sys.stdin)["recommended"]["models"]; print(*[m[s] for s in ("analyze","red-tests","implement","review","verify")])')"
+expect_rc "recommended settings carry the stage thresholds" "1 1 0" \
+  "$(j | python3 -c 'import json,sys; s=json.load(sys.stdin)["recommended"]["stages"]["review"]; print(s["batch"], s["min"], s["max_wait_hours"])')"
 
 # ---- process.ready.after: a CODE_COMPLETE dependency -----------------------------------
 fresh ready-after
