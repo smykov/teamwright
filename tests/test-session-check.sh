@@ -57,5 +57,10 @@ expect_allow "registry in an unknown shape: skipped" "$(run)"
 rm -f "$REG"
 printf '{".claude/agents/x.md": "abc"}\n' > .teamwright/installed.json
 case "$(msg "$(run)")" in *"teamwright@teamwright plugin is not installed"*) ok "manifest without @kit (older install): presence still checked" ;; *) bad "no @kit" ;; esac
+# a plugin loaded from a directory (--plugin-dir, the Agent SDK in an autonomous run)
+mkdir -p "$TMP/plugdir/.claude-plugin"; echo '{"name": "teamwright"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
+expect_allow "TEAMWRIGHT_PLUGIN_DIR with the plugin: not reported missing" "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")"
+echo '{"name": "other"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
+case "$(msg "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")")" in *"not installed"*) ok "TEAMWRIGHT_PLUGIN_DIR with another plugin: still reported" ;; *) bad "other plugin dir" ;; esac
 expect_allow "TEAMWRIGHT_SESSION_CHECK=0 turns it off" "$(echo '{}' | TEAMWRIGHT_SESSION_CHECK=0 bash "$S")"
 finish

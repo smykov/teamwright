@@ -222,7 +222,7 @@ The process lives in two places. The repository carries the gates, roles, docume
 3. **The toolchain** the areas run on: the same host tools, or Docker for `runner: docker`. MCP servers from `.mcp.json` are approved once per machine.
 4. `/teamwright:status`, then `/teamwright:flow`.
 
-You do not have to remember this: a `SessionStart` hook (`scripts/hooks/session-check.sh`) compares the machine with the project and tells you what is missing — the plugin, a plugin older than the version recorded in `.teamwright/installed.json` (`@kit`), or git hooks that are off — with the commands to fix it. It never blocks; `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
+You do not have to remember this: a `SessionStart` hook (`scripts/hooks/session-check.sh`) compares the machine with the project and tells you what is missing — the plugin, a plugin older than the version recorded in `.teamwright/installed.json` (`@kit`), or git hooks that are off — with the commands to fix it. It never blocks; `TEAMWRIGHT_SESSION_CHECK=0` turns it off. A plugin loaded from a directory instead of the registry (`claude --plugin-dir`, the Agent SDK in an autonomous run) is not in the registry: set `TEAMWRIGHT_PLUGIN_DIR` to that directory.
 
 Local state does not travel: journals and session ledgers (`.teamwright/logs/`, `.teamwright/sessions/`) belong to the machine. Finish a task through review on the machine where it was started — the review and verify ledgers that the gates check are there.
 

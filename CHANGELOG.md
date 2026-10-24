@@ -22,6 +22,10 @@ All notable changes to teamwright. Versions follow [semantic versioning](https:/
 - `docs/process/sessions.md` §8 (stages, the stage field, selection, batches, thresholds, models, the stage-command protocol, autonomous runs), §5 (model per stage); `lifecycle.md`, `gates.md`, `plugin.md`, `AGENTS.md`, the flow, parallel, settings and status skills, `design-decisions.md`, `docs/usage.md` (an example workflow, one stage per job) and the README describe it.
 - `tw-next.py` no longer prints a `BrokenPipeError` when its reader stops early (`| grep -q`).
 
+### Fixed
+- **Router: only a linked worktree is a per-task tree.** An autonomous run checks out the whole project on a task branch (`task/T-051-run18`); the router took the branch name for a parallel worktree of T-051, refused verify for it ("merge it from the main tree") and did not see the other task of the batch. The per-task view now needs a linked worktree (its git dir differs from the common dir).
+- **Session check: a plugin loaded from a directory.** `claude --plugin-dir` and the Agent SDK load the plugin without the registry, so the SessionStart check told an autonomous session the plugin was not installed. `TEAMWRIGHT_PLUGIN_DIR` names that directory; the check takes the plugin from there.
+
 ## [0.11.0] - 2026-10-24
 
 ### Added

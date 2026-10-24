@@ -11,6 +11,9 @@
 #     project, at that version — read from Claude Code's plugin registry
 #     ($CLAUDE_CONFIG_DIR or ~/.claude, plugins/installed_plugins.json). A registry in a
 #     format it does not know is skipped, not reported.
+#   A plugin loaded from a directory rather than the registry (`claude --plugin-dir`, the
+#   Agent SDK's local plugin in an autonomous run) is not in the registry: set
+#   TEAMWRIGHT_PLUGIN_DIR to that directory and the check takes the plugin from there.
 # Prints JSON (systemMessage for the owner, additionalContext for the agent), or nothing
 # when all is well. TEAMWRIGHT_SESSION_CHECK=0 turns it off.
 set -uo pipefail
@@ -68,10 +71,14 @@ elif src.get("url"):
 else:
     add = "/plugin marketplace add <teamwright repository or local checkout>"
 
+local_dir = os.environ.get("TEAMWRIGHT_PLUGIN_DIR") or ""
+local_manifest = load(os.path.join(local_dir, ".claude-plugin", "plugin.json")) if local_dir else None
 cdir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
 reg_path = os.path.join(cdir, "plugins", "installed_plugins.json")
 reg = load(reg_path) if os.path.exists(reg_path) else {"plugins": {}}
 plugins = reg.get("plugins") if reg else None
+if local_manifest is not None and local_manifest.get("name") == pid.split("@", 1)[0]:
+    plugins = None  # loaded from a directory for this session: nothing to install
 if isinstance(plugins, dict):
     real = os.path.realpath(root)
     have = None
