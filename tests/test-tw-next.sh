@@ -498,4 +498,19 @@ expect_rc "three named, cap 2: the dependency first, the rest dropped" "True T-3
 case "$got" in *"T-2 depends on T-3: T-3 goes first"*"3 tasks named, the stage takes at most 2"*"T-1 left for the next session"*) ok "warnings: the dependency and the cap" ;; *) bad "warnings: the dependency and the cap" "$got" ;; esac
 case "$(rq T-1,T-2)" in *"T-1 and T-2 touch the same code"*) ok "overlapping seams among named tasks are named" ;; *) bad "overlapping seams among named tasks are named" "$(rq T-1,T-2)" ;; esac
 
+# ---- m1: one task IN_PROGRESS per tree; analyze batches analyses, not WIP ----------------
+fresh wip
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  stages:\n    analyze:\n      batch: 3\n' > .teamwright/config.yml
+mk T-1 IN_PROGRESS "stage: implement"; tests_md >> docs/tasks/T-1.md
+mk T-2 ANALYSIS "analysis:" "  root_cause: a" "  evidence: b" "  invariant: c" "  seam: d" "  approach: e"
+mk T-3 ANALYSIS; commit_all
+expect_rc "an analysed task waits while another is IN_PROGRESS; an unfinished analysis is still analyze work" "T-3" \
+  "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(sys.stdin)["request"]["candidates"]))')"
+expect_rc "the state says what it waits for" "{'T-2': 'T-1'}" "$(field '["state"]["wip_waiting"]')"
+python3 "$NEXT" --project . --brief --stage analyze --task T-2 | grep -q "enters IN_PROGRESS when T-1 leaves it" \
+  && ok "naming it explicitly: refused with the reason" || bad "naming it explicitly: refused with the reason"
+mk T-1 NEEDS_REVIEW "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
+expect_rc "once T-1 left IN_PROGRESS the analysed task moves on" "T-2 T-3" \
+  "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(sys.stdin)["request"]["candidates"]))')"
+
 finish

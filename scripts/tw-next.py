@@ -479,6 +479,7 @@ def state_of(project, config):
     st["git"] = rc == 0 and out.strip() == "true"
     st["dirty_files"], st["untracked"], st["unpushed"], st["branch"] = [], 0, 0, None
     st["delivery_ref"] = None
+    st["wip_waiting"] = {}   # {ANALYSIS task with its analysis done: the IN_PROGRESS task it waits for}
     if st["git"]:
         _, out = git(project, "status", "--porcelain")
         rows = [(l[:2], l[3:]) for l in out.splitlines()
@@ -582,8 +583,16 @@ def candidates(tasks, st, oqs=None, after="verified"):
                           "single active task: commit, assign to a task or leave them"
                           % len(st["dirty_files"]), ask=True))
 
-    # 2. active work
+    # 2. active work. One task IN_PROGRESS per working tree (one .teamwright/current-task):
+    # an ANALYSIS task whose analysis is complete has only the move into IN_PROGRESS left,
+    # and waits while another task of this tree is there - analyze may batch analyses, not WIP.
+    wip = [t["id"] for t in by("IN_PROGRESS")]
+    st["wip_waiting"] = {}
     for t in by(*ACTIVE):
+        if t["status"] == "ANALYSIS" and wip and (t.get("evidence") or {}).get("analysis") \
+                and not (hint == t["id"] and st["dirty"]):
+            st["wip_waiting"][t["id"]] = wip[0]
+            continue
         sub = ", stage %s%s" % (stage_of(t)[0], "" if t.get("stage_field") else " (no stage field: from the evidence)") \
             if t["status"] == "IN_PROGRESS" else ""
         out.append(_d("continue", t["id"], "%s is %s%s" % (t["id"], t["status"], sub), role=_role(t)))
@@ -1023,7 +1032,10 @@ def request_for(res, cands, tasks, stage, ids):
                     "/teamwright:%s %s" % (ts, tid) if ts else "no stage runs on it")
                 return out
             if not any(c["task"] == tid for c in here):
-                why = next((c["reason"] for c in cands if c["task"] == tid), "not ready")
+                held = (res.get("state") or {}).get("wip_waiting") or {}
+                why = next((c["reason"] for c in cands if c["task"] == tid),
+                           "analysis done, it enters IN_PROGRESS when %s leaves it (one task IN_PROGRESS "
+                           "per working tree)" % held[tid] if tid in held else "not ready")
                 out["hint"] = "%s cannot run %s now: %s" % (tid, stage, why)
                 return out
         out["batch"], out["warnings"] = explicit_batch(list(dict.fromkeys(ids)), tasks, cap)

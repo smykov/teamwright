@@ -25,6 +25,7 @@ Take at most `request.batch_cap` tasks from `request.candidates` (router order; 
 - Make it the active task first (an edit of its record), so the gates and the journal see it.
 - Role agents run in the foreground; commit each result before the next step.
 - Every status change is its own commit; the `stage:` field changes with the commit that finishes the stage's work. The analysis gate holds the order (`gates.md`, analysis gate check 4).
+- One task `IN_PROGRESS` per working tree: an analyze batch analyses several, but moves one into `IN_PROGRESS`; the rest wait in `ANALYSIS` with the analysis committed.
 - Decision points are asked when reached; a blocked task does not stop the batch. In a headless run (no one to ask) leave them for the owner and say so.
 - Records the gates stamp (`<n>.gate.json` next to a review, verify or validation record) are committed with the record.
 
