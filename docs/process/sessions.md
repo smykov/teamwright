@@ -115,7 +115,7 @@ A cheap model is **not** used for DEV or REVIEW of risky seams. If you find your
 
 ## 7. The VERIFY session
 
-Run after DRAIN for every task that reached `DEPLOYED` (and for `deploys: false` tasks with `surface` `api` / `ui` / `both`, against a locally started system). The router holds to it: a `CODE_COMPLETE` task that deploys is offered for verify only once its code is on the delivery branch (`origin/HEAD`, `origin/main` or `origin/master`); before that, the push decision names it.
+Run after DRAIN for every task that reached `DEPLOYED` (and for `deploys: false` tasks with `surface` `api` / `ui` / `both`, against a locally started system). The router holds to it: a `CODE_COMPLETE` task that deploys is offered for verify only once its code is on the delivery branch (`<remote>/HEAD`, `/main` or `/master` of the delivery remote — the current branch's upstream remote, else the only remote, else `origin`), merged or squashed, rebased or cherry-picked there; before that, the push decision names it.
 
 1. **Start cold** from the task record: `surface`, Acceptance (especially the failure branch), `verify_exception`, the latest review record.
 2. **Smoke the deploy:** the service answers and runs the pushed commit (version endpoint or startup log). A green pipeline is not proof.

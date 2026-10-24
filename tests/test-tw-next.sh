@@ -444,6 +444,46 @@ expect_rc "on a wip branch pushed to its own upstream: unpushed counts against o
 j | grep -q "1 unpushed commit(s) (not on origin/main): push?" && ok "the push reason names the delivery branch" || bad "the push reason names the delivery branch" "$(j | grep unpushed)"
 git checkout -q main
 
+# ---- N4: a squash or rebase of the wip branch is a delivery; a remote not named origin ----
+fresh squash
+git init -q --bare "$TMP/squash.git"; git remote add origin "$TMP/squash.git"; git push -q -u origin main 2>/dev/null
+git -C "$TMP/squash.git" symbolic-ref HEAD refs/heads/main; git remote set-head origin -a >/dev/null 2>&1
+mk T-1 CODE_COMPLETE; mk T-2 CODE_COMPLETE; git add -A; git commit -qm "chore(task): tasks"; git push -q origin main 2>/dev/null
+git checkout -q -b wip/teamwright
+echo one > a.txt; git add a.txt; git commit -qm "feat(core): T-1 the change"
+echo two > b.txt; git add b.txt; git commit -qm "feat(core): T-2 the change"
+echo three >> a.txt; git add a.txt; git commit -qm "fix(core): T-2 touches a.txt again"
+git push -q -u origin wip/teamwright 2>/dev/null
+expect_rc "on the wip branch: three commits not on origin/main" "origin/main 3" \
+  "$(field '["state"]["delivery_ref"], d["state"]["unpushed"]' | tr -d "(),'")"
+expect_rc "before delivery: no verify for the tasks that deploy" "decide None" "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"])')"
+# squash-merge the wip branch into main on the remote (as a pull request would)
+SQ="$TMP/squash-clone"; git clone -q "$TMP/squash.git" "$SQ" 2>/dev/null
+( cd "$SQ" && git merge -q --squash origin/wip/teamwright >/dev/null 2>&1 && git commit -qm "feat: wip (#1)" && git push -q origin main 2>/dev/null )
+git fetch -q origin 2>/dev/null
+expect_rc "after a squash merge: nothing counts as unpushed" "0" "$(field '["state"]["unpushed"]')"
+expect_rc "after a squash merge: T-1 and T-2 are delivered and verified" "verify T-1 verify:T-2" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"], " ".join("%s:%s" % (a["action"], a["task"]) for a in d["alternatives"]))')"
+echo four > c.txt; git add c.txt; git commit -qm "feat(core): T-3 after the squash"
+expect_rc "a new commit after the squash is unpushed again" "1" "$(field '["state"]["unpushed"]')"
+# rebase / cherry-pick delivery: the commit's patch is on main under another sha
+git push -q origin wip/teamwright 2>/dev/null
+( cd "$SQ" && git fetch -q origin 2>/dev/null && git pull -q --no-rebase origin main 2>/dev/null; echo base > z.txt && git add z.txt && git commit -qm "chore: other work" \
+  && git cherry-pick origin/wip/teamwright >/dev/null 2>&1 && git push -q origin main 2>/dev/null )
+git fetch -q origin 2>/dev/null
+[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ] && ok "fixture: the cherry-picked commit has another sha" || bad "fixture: the cherry-picked commit has another sha"
+expect_rc "after a cherry-pick (rebase) of the commit: nothing unpushed" "0" "$(field '["state"]["unpushed"]')"
+git checkout -q main
+
+fresh othername
+git init -q --bare "$TMP/other.git"; git remote add upstream "$TMP/other.git"; git push -q -u upstream main 2>/dev/null
+mk T-1 CODE_COMPLETE; git add -A; git commit -qm "chore(task): tasks"; echo x > a.txt; git add a.txt; git commit -qm "feat(core): T-1 change"
+expect_rc "the only remote is named upstream: it is the delivery remote" "upstream/main 2" \
+  "$(field '["state"]["delivery_ref"], d["state"]["unpushed"]' | tr -d "(),'")"
+git remote add mirror "$TMP/other.git"; git fetch -q mirror 2>/dev/null
+expect_rc "two remotes: the one main's upstream names" "upstream/main" "$(field '["state"]["delivery_ref"]')"
+git checkout -q main
+
 # ---- M4: --brief, closed tasks never listed, request first --------------------------------
 fresh big
 i=1; while [ $i -le 100 ]; do mk "T-$i" TODO "title: a fairly long title for task number $i of the backlog"; i=$((i + 1)); done

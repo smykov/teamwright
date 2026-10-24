@@ -31,8 +31,10 @@ Decision order (first match wins):
   3. review      NEEDS_REVIEW -> spawn the reviewer (APPROVE recorded -> continue to
                  CODE_COMPLETE; ESCALATE -> decide; REJECT_RECURRENCE -> continue: defer)
   4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record (a task that deploys:
-                 only once its code is on the delivery branch - origin/HEAD, origin/main or
-                 origin/master - i.e. after DRAIN; before that the push decision names it); then the
+                 only once its code is on the delivery branch - <remote>/HEAD, /main or /master,
+                 the remote of the branch's upstream (else the only remote, else origin) - merged,
+                 rebased, cherry-picked or squashed, i.e. after DRAIN; before that the push
+                 decision names it); then the
                  acceptance verdict in ## Validation (PASS -> continue: close; FAIL ->
                  continue: back to IN_PROGRESS; NEEDS_OWNER -> decide; none -> verify:
                  task-validator). deploys: false + surface none needs no verify record,
@@ -47,7 +49,8 @@ Decision order (first match wins):
                  the highest priority of the open tasks that depend on it, directly or
                  not), then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits - not on the delivery branch: against its upstream on that
-                 branch, against the delivery branch on any other (a wip/ or task branch) -
+                 branch, against the delivery branch on any other (a wip/ or task branch; a
+                 commit whose changes are there - squash, rebase, cherry-pick - is not counted) -
                  push is the owner's call; else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
   Parallel work: a task on a linked worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
@@ -312,25 +315,87 @@ def last_code_commit(project, tid):
     return ""
 
 
+def delivery_remote(project):
+    """The remote deliveries go to: the current branch's upstream remote (a wip/ branch is
+    pushed where the delivery branch lives), else the only remote, else `origin`."""
+    rc, out = git(project, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if rc == 0 and "/" in out.strip():
+        rc2, rems = git(project, "remote")
+        for r in sorted(rems.split(), key=len, reverse=True):
+            if out.strip().startswith(r + "/"):
+                return r
+    rc, out = git(project, "remote")
+    names = out.split() if rc == 0 else []
+    if len(names) == 1:
+        return names[0]
+    return "origin"
+
+
 def default_ref(project):
-    """The delivery branch as a remote-tracking ref: origin/HEAD, else origin/main, else
-    origin/master; None without a remote (nothing is ever pushed, so nothing waits for it)."""
-    rc, out = git(project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD")
+    """The delivery branch as a remote-tracking ref: <remote>/HEAD, else <remote>/main, else
+    <remote>/master (the remote: delivery_remote); None without one (nothing is ever pushed,
+    so nothing waits for it)."""
+    remote = delivery_remote(project)
+    rc, out = git(project, "symbolic-ref", "-q", "refs/remotes/%s/HEAD" % remote)
     if rc == 0 and out.strip():
         return out.strip()
-    for ref in ("refs/remotes/origin/main", "refs/remotes/origin/master"):
+    for ref in ("refs/remotes/%s/main" % remote, "refs/remotes/%s/master" % remote):
         if git(project, "rev-parse", "--verify", "-q", ref)[0] == 0:
             return ref
     return None
 
 
+def _blob(project, rev, path):
+    rc, out = git(project, "rev-parse", "-q", "--verify", "%s:%s" % (rev, path))
+    return out.strip() if rc == 0 else None
+
+
+def content_delivered(project, commit, ref):
+    """True when the changes of `commit` are on `ref` although the commit itself is not: a
+    rebase or cherry-pick (same patch id, `git cherry`), or a squash merge - every file the
+    commit touches has, on `ref`, the content it has in the commit or at HEAD (a later commit
+    of the same squash changed it again)."""
+    rc, out = git(project, "cherry", ref, commit, commit + "~1") if \
+        git(project, "rev-parse", "-q", "--verify", commit + "~1")[0] == 0 else (1, "")
+    if rc == 0 and out.strip().startswith("-"):
+        return True
+    return _files_on(project, commit, ref)
+
+
+def _files_on(project, commit, ref):
+    """Every file `commit` touches has, on `ref`, its content in the commit or at HEAD."""
+    rc, files = git(project, "show", "--name-only", "--format=", commit)
+    files = [f for f in files.splitlines() if f]
+    if rc != 0 or not files:
+        return False
+    for f in files:
+        on_ref = _blob(project, ref, f)
+        if on_ref != _blob(project, commit, f) and on_ref != _blob(project, "HEAD", f):
+            return False
+    return True
+
+
 def delivered(project, tid, ref):
-    """True when the task's code is on the delivery branch (its last code commit is reachable
-    from `ref`), or when there is no delivery branch to wait for."""
+    """True when the task's code is on the delivery branch - its last code commit is reachable
+    from `ref` (a merge), or its changes are there (rebase, cherry-pick, squash merge) - or
+    when there is no delivery branch to wait for."""
     if not ref:
         return True
     code = last_code_commit(project, tid)
-    return not code or git(project, "merge-base", "--is-ancestor", code, ref)[0] == 0
+    return not code or git(project, "merge-base", "--is-ancestor", code, ref)[0] == 0 \
+        or content_delivered(project, code, ref)
+
+
+def undelivered_count(project, ref):
+    """Commits on HEAD not on `ref` whose changes are not there either (a squash, rebase or
+    cherry-pick of a wip/ branch delivered them)."""
+    rc, out = git(project, "cherry", ref, "HEAD")
+    if rc != 0:
+        return None
+    plus = [l[2:].strip() for l in out.splitlines() if l.startswith("+ ")]
+    if len(plus) > 200:            # a long branch: patch ids only, no per-file comparison
+        return len(plus)
+    return len([c for c in plus if not _files_on(project, c, ref)])
 
 
 def mark_delivered(project, tasks, st):
@@ -559,7 +624,8 @@ def state_of(project, config):
         on_delivery = bool(ref) and st["branch"] == ref.rsplit("/", 1)[-1]
         rc, out = git(project, "rev-list", "--count", "@{u}..HEAD")
         if (rc != 0 or not on_delivery) and ref:
-            rc, out = git(project, "rev-list", "--count", "%s..HEAD" % ref)
+            n = undelivered_count(project, ref)
+            rc, out = (0, str(n)) if n is not None else (1, "")
         if rc == 0 and out.strip().isdigit():
             st["unpushed"] = int(out.strip())
     st["dirty"] = bool(st["dirty_files"])
