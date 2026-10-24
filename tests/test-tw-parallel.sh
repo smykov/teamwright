@@ -91,6 +91,6 @@ rm -f TEAMWRIGHT_PAUSE
 # launch: background, capped by process.batch.parallel (2 here)
 TW_CLAUDE="$FAKE" python3 "$PAR" launch T-2 --project . > "$TMP/launch.json"
 grep -q '"launched": true' "$TMP/launch.json" && ok "launch starts the run in the background" || bad "launch" "$(cat "$TMP/launch.json")"
-for i in $(seq 1 50); do o=$(python3 -c "import json; print(json.load(open('.teamwright/parallel/T-2.json')).get('outcome',''))"); [ -n "$o" ] && break; sleep 0.2; done
+for _ in $(seq 1 50); do o=$(python3 -c "import json; print(json.load(open('.teamwright/parallel/T-2.json')).get('outcome',''))"); [ -n "$o" ] && break; sleep 0.2; done
 expect_rc "the background run finishes" "done" "$o"
 finish
