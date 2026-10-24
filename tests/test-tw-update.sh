@@ -12,7 +12,7 @@ git add -A; git commit -qm init
 PF="$TMP/installed_plugins.json"
 printf '{"plugins": {"teamwright@teamwright-next": [{"scope": "user", "installPath": "%s", "version": "9.9.9"}]}}\n' "$KIT" > "$PF"
 CL="$TMP/claude"; printf '#!/bin/sh\necho "$*" >> "%s/claude.log"\n' "$TMP" > "$CL"; chmod +x "$CL"
-out="$(TW_PLUGINS_FILE="$PF" TW_CLAUDE_BIN="$CL" python3 "$I" update --project . 2>&1)"; rc=$?
+out="$(TW_PLUGINS_FILE="$PF" TW_CLAUDE="$CL" python3 "$I" update --project . 2>&1)"; rc=$?
 expect_rc "update: plan from the installed copy" 0 "$rc"
 printf '%s' "$out" | grep -q "plugin teamwright@teamwright-next 9.9.9" && ok "the project's plugin and channel are found" || bad "plugin and channel" "$out"
 printf '%s' "$out" | grep -q "^plan:" && ok "plan runs (nothing applied)" || bad "plan runs" "$out"

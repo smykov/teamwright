@@ -1,7 +1,7 @@
 ---
 name: update
 description: Update teamwright in this project in one step — the plugin (its marketplace, then the plugin, through the claude CLI) and the kit files the installer wrote here (hooks, roles, process docs, scripts), shown as a plan first and applied on the owner's yes, then committed. Use when a new teamwright version is out or /teamwright:status reports install drift.
-argument-hint: "[--no-fetch] — skip the plugin update and apply the installed copy"
+argument-hint: "[--no-fetch] — skip the plugin update; plan from the installed copy"
 disable-model-invocation: true
 allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" update *) Bash(git status *) Bash(git diff *) Bash(git add *) Bash(git commit *) Bash(git log *)
 ---
@@ -26,7 +26,7 @@ No change and no conflict → say "up to date" and stop. A step that failed (`cl
 
 ## 2. Apply — on the owner's "yes"
 
-Uncommitted changes in the tree → ask to commit or stash them first: the kit's files and the owner's work must not mix in one commit.
+Uncommitted changes in the tree → ask to commit them first (or set them aside yourself, outside Claude Code: `git stash` is denied here): the kit's files and the owner's work must not mix in one commit.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" update --no-fetch --apply

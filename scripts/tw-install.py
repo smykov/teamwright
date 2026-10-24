@@ -1434,7 +1434,7 @@ def update(project, apply_it, fetch, as_json):
     market = pid.split("@", 1)[1] if "@" in pid else "teamwright"
     steps = []
     if fetch:
-        claude = shutil.which(os.environ.get("TW_CLAUDE_BIN", "claude"))
+        claude = shutil.which(os.environ.get("TW_CLAUDE", "claude"))
         if not claude:
             steps.append({"step": "plugin update", "error": "claude CLI not found - update with /plugin, then run this again with --no-fetch"})
         else:

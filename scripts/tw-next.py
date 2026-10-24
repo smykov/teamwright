@@ -284,7 +284,7 @@ def helper_warnings(project=None):
     if not drift:
         return []
     return ["install drift: %s - the router uses the plugin's copies, the gates still run the old files: "
-            "run `tw-install.py apply` (/teamwright:reconfigure) to update the project's hooks; autonomous "
+            "run `tw-install.py apply` (/teamwright:update) to update the project's hooks; autonomous "
             "jobs do not run until then" % "; ".join(t for _, t in drift)]
 
 
@@ -1074,7 +1074,7 @@ def headless_for(first, cands, info):
         return off("paused: no job runs until TEAMWRIGHT_PAUSE is removed")
     if first.get("install_drift"):
         return off("install drift: no job runs on hooks older than the plugin - the gates it documents "
-                   "(stage gate, stamps) would not run; a person runs `tw-install.py apply` "
+                   "(stage gate, stamps) would not run; a person runs `/teamwright:update` (or `tw-install.py apply`) "
                    "(/teamwright:reconfigure) and commits the result", "install drift: " + "; ".join(first["install_drift"]))
     if first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
         return off("owner decision: no job runs; tell the owner the reason", first["reason"])

@@ -8,7 +8,7 @@
 
 ## Why
 
-AI agents write plausible code fast and fail in a few predictable ways. They stop at the first plausible cause. They mark their own work as reviewed. They patch the same class of bug again and again, each patch fine in its own diff. They call a feature done after clicking through it once. They lose half-finished tasks between sessions. Written instructions do not hold: as the context grows, agents drift from them. teamwright turns each of these steps into a record that a hook checks.
+AI agents write plausible code fast and fail in a few predictable ways. They stop at the first plausible cause. They mark their own work as reviewed. They patch the same class of bug again and again, each patch fine in its own diff. They call a feature done after clicking through it once. They lose half-finished tasks between sessions. Written instructions do not hold: as the context grows, agents drift from them. teamwright turns each of these steps into a record that a hook checks. Terms such as seam, tier or gate-first are in the [Glossary](#glossary).
 
 | Agent failure | What teamwright does | Enforced by |
 |---|---|---|
@@ -25,22 +25,23 @@ AI agents write plausible code fast and fail in a few predictable ways. They sto
 ## What's in the box
 
 - **7 role agents:** requirements-reviewer, problem-investigator, test-writer, developer, technical-writer, code-reviewer, task-validator.
-- **9 hooks:** analysis, review and verify gates with a state guard, a session journal, a `CLAUDE.md` size check, and git hooks — secret scan, commit message, pre-push, patch guard.
+- **11 hooks:** analysis, review and verify gates with a state guard, a test guard, a session journal, a session-start check, a `CLAUDE.md` size check, and git hooks — secret scan, commit message, pre-push, patch guard.
 - **15 principles**, each with how it is checked.
-- **12 commands:** `adopt`, `init`, `requirements`, `flow`, `status`, `progress`, `blockers`, `settings`, `parallel`, `improve`, `feedback`, `reconfigure`.
+- **19 commands:** `adopt`, `init`, `requirements`, `flow`, `router`, the five stage commands (`analyze`, `red-tests`, `implement`, `review`, `verify`), `parallel`, `status`, `progress`, `blockers`, `settings`, `update`, `improve`, `feedback`, `reconfigure`.
 - **Tool adapters per capability:** Spec Kit, OpenSpec, Serena, CodeGraphContext, Context7, Playwright, Patrol, Flutter `integration_test`, Maestro, Espresso / XCUITest, your own test runner — or none. Docker runners for toolchains you do not want on the host.
-- **Process settings** per project — review threshold, tasks per pass, parallel worktrees, autonomy — on a pipeline that stays the same.
-- **Metrics CLI**, a **process review** (`/teamwright:improve`) and a way to send what it finds back here (`/teamwright:feedback`), an **offline demo**, **850 regression checks** of the hooks, installer, router, metrics and scripts.
+- **Process settings** per project — review threshold, tasks per pass, batches and model per stage, parallel worktrees, autonomy — on a pipeline that stays the same.
+- **Metrics CLI**, a **process review** (`/teamwright:improve`) and a way to send what it finds back here (`/teamwright:feedback`), an **offline demo**, **1,400+ regression checks** of the hooks, installer, router, metrics and scripts.
 
 For developers using Claude Code on a real codebase, for teams bringing agents into an existing project (gates warn first and block once the project's checks are green), and for anyone who wants to measure whether agents help — from git and logs rather than impressions.
 
 ## Quickstart
 
-Requires Claude Code, `bash`, `git` and `python3` on Linux or macOS (Docker optional, for toolchains you do not want on the host). Commit your work, then in Claude Code at the repository root:
+Requires Claude Code, `bash` 3.2 or newer, `git` and `python3` (standard library only) on Linux or macOS; Docker and gitleaks are optional (toolchains you do not want on the host, the secret scan). Commit your work, then in Claude Code at the repository root:
 
 ```text
 /plugin marketplace add smykov/teamwright
 /plugin install teamwright@teamwright
+/reload-plugins          # or restart Claude Code
 /teamwright:adopt        # existing project
 /teamwright:init <idea>  # new project: empty, or only documents (a brief, a PRD)
 /teamwright:flow         # pick the next task and drive it through the loop
@@ -72,7 +73,7 @@ Two release channels, two marketplaces from the same repository (Claude Code's r
 
 The installer (`/teamwright:adopt`, `tw-install.py apply`) enables its own channel in `.claude/settings.json` only when no other channel of teamwright is enabled there or in `settings.local.json`; otherwise it leaves `enabledPlugins` alone and says so.
 
-**Updates of the experimental channel.** Auto-update is off by default for marketplaces other than Anthropic's: pull the branch with `/plugin marketplace update teamwright-next`, then `/plugin update teamwright@teamwright-next` (or turn auto-update on for that marketplace in `/plugin`). Restart, or `/reload-plugins`, to load it. `/teamwright:status` then shows the new commit as a kit update; `tw-install.py apply` brings the project's installed files up to it.
+**Updates of the experimental channel.** Auto-update is off by default for marketplaces other than Anthropic's: pull the branch with `/plugin marketplace update teamwright-next`, then `/plugin update teamwright@teamwright-next` (or turn auto-update on for that marketplace in `/plugin`). Restart, or `/reload-plugins`, to load it. `/teamwright:status` then shows the new commit as a kit update; `/teamwright:update` does both steps — the plugin and the project's installed files.
 
 **A working copy.** To try a checkout of the kit without any marketplace: `claude --plugin-dir <path to the checkout>` for one session (disable the installed teamwright in that project first: same name).
 
@@ -109,7 +110,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Review returns a task only for findings at or above the project's threshold (`process.review.blocking`); Critical and dangerous categories (secret leak, security, weakened test, done-not-working, recurrence) always do; the rest become one follow-up task per sprint. [hook blocks] — [settings](skills/settings/SKILL.md)
 - Tasks per flow pass: one by default; the project sets the cap per priority, one task at a time in the tree, a red gate stops the pass. [router] — [passes](docs/process/sessions.md#3-passes-how-many-tasks-in-a-row)
 - Tasks run in parallel only in separate worktrees and sessions, only when their analysed seams do not overlap; each branch is rebased, gated and fast-forwarded in one at a time. [router and tool] — [/teamwright:parallel](skills/parallel/SKILL.md)
-- A requirement is read by id, not by reading every document: `scripts/tw-req FR-03` gives its row, the spec sections and the tasks that cite it. [tool] — [usage](docs/usage.md#settings-improve-and-feedback)
+- A requirement is read by id, not by reading every document: `scripts/tw-req FR-03` gives its row, the spec sections and the tasks that cite it. [tool] — [tw-req](template/scripts/tw-req)
 
 **Tests**
 - Characterization tests where the seam has none; then a failing test for every guarantee before the implementation, and a reproducing test for every bug. [reviewer checks] — [test-writer](template/.claude/agents/test-writer.md)
@@ -220,7 +221,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | [`/teamwright:blockers`](skills/blockers/SKILL.md) | what waits for you — open questions, escalations, acceptance that needs you, blocked tasks — by class and by what each unblocks; then walks you through answering and records each answer so the flow picks the tasks up |
 | [`/teamwright:settings`](skills/settings/SKILL.md) | process settings: review blocking threshold, tasks per flow pass by priority, autonomy, batches and thresholds per stage, model per stage, task selection by the script or the agent; the pipeline stays the same |
 | [`/teamwright:update`](skills/update/SKILL.md) | updates the plugin (`claude plugin update`, the project's channel) and the kit files in this project from the new copy: plan first, apply and commit on your yes, then restart Claude Code |
-| [`/teamwright:parallel`](skills/parallel/SKILL.md) | several tasks at once, each in its own worktree and session, when their seams do not overlap; merges each approved branch back (rebased, gate green) before one push |
+| [`/teamwright:parallel`](skills/parallel/SKILL.md) | several tasks at once, each in its own worktree and session, when their seams do not overlap; merges each approved branch back (rebased, gate green) before one push. `auto`: the orchestrator prepares each worktree's context index, runs its stages headless (`claude -p`, one stage per session), merges approved tasks and starts the next; owner decisions are collected |
 | [`/teamwright:improve`](skills/improve/SKILL.md) | measures what the process costs here (send-backs, findings by severity, DRAIN exceptions, context-tool use, before/after a settings change) and proposes changes: a setting, a project rule, or feedback |
 | [`/teamwright:feedback`](skills/feedback/SKILL.md) | sends an improvement to this repository — an issue through the forms or a pull request from a fork — anonymised, after you read it |
 | [`/teamwright:reconfigure`](skills/reconfigure/SKILL.md) | swaps a tool provider or changes the config through `.teamwright/config.next.yml` |
@@ -243,7 +244,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | seam | the one place in the code where a behaviour is owned, and where a fix belongs |
 | tier | how a rule is enforced: T0 written guidance, T1 reviewer checklist, T2 hook warns, T3 hook or CI blocks |
 | journal | `.teamwright/logs/*.jsonl`: tool calls, agent starts and session outcomes logged by a hook; no file contents or prompts |
-| process settings | `process:` in `.teamwright/config.yml`: review blocking threshold, tasks per pass (per priority), parallel worktrees, autonomy; parameters of fixed steps, set by you through `/teamwright:settings` |
+| process settings | `process:` in `.teamwright/config.yml`: review blocking threshold, tasks per pass (per priority), batches, thresholds and model per stage, task selection (`router.select`), test guard, parallel worktrees, autonomy; parameters of fixed steps, set by you through `/teamwright:settings` |
 | pass | one `/teamwright:flow` run that takes tasks one after another, up to the cap in the settings |
 | follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the sprint's `review-follow-up` task |
 
@@ -316,7 +317,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 
 - [docs/README.md](docs/README.md) — index of the documentation, with a reading order
 - [docs/usage.md](docs/usage.md) — onboarding, gate modes, `/teamwright:flow`, Docker runners, configuration, updating, manual install, metrics
-- [docs/process/](docs/process/) — the process reference installed into projects: [lifecycle](docs/process/lifecycle.md), [gates](docs/process/gates.md), [roles](docs/process/roles.md), [sessions](docs/process/sessions.md), [principles](docs/process/principles.md), [metrics](docs/process/metrics.md), [tools](docs/process/tools.md); installer and config schema in [plugin.md](docs/process/plugin.md)
+- [docs/process/](docs/process/) — the process reference installed into projects: [lifecycle](docs/process/lifecycle.md), [gates](docs/process/gates.md), [roles](docs/process/roles.md), [sessions](docs/process/sessions.md), [stage protocol](docs/process/stage-protocol.md), [principles](docs/process/principles.md), [metrics](docs/process/metrics.md), [tools](docs/process/tools.md); installer and config schema in [plugin.md](docs/process/plugin.md)
 - [skills/](skills/) — the commands above; [providers/](providers/) — one adapter per tool
 - [docs/design-decisions.md](docs/design-decisions.md) — why the kit is shaped this way
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
@@ -325,7 +326,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 
 ## Status
 
-Early: 0.x, built and tried by its author on real projects — adoption of one existing project and the task loop on it, dry runs of `/teamwright:init`, and a first multi-day run of the whole loop on a new project, whose feedback shaped 0.5–0.7 (review threshold, passes, parallel worktrees, CI-only tests). Bug reports from other stacks are the most useful contribution.
+Early: 0.x, built and tried by its author on real projects — adoption of one existing project and the task loop on it, dry runs of `/teamwright:init`, and a first multi-day run of the whole loop on a new project, whose feedback shaped 0.5–0.7 (review threshold, passes, parallel worktrees, CI-only tests); then autonomous runs on CI, one stage per job (0.8–0.11: `tw-gate`, the test guard, headless runs), stages as separate commands (0.12) and parallel worktrees run by the orchestrator (0.13). Bug reports from other stacks are the most useful contribution.
 
 ## Roadmap
 
@@ -336,6 +337,6 @@ Early: 0.x, built and tried by its author on real projects — adoption of one e
 
 ## Author and license
 
-Konstantin Smykov ([@smykov](https://github.com/smykov)) — agent teamwright: an engineering lead who builds software with AI agent teams. The principles come from incidents in a year of running an agent team on a live multi-service project.
+Konstantin Smykov ([@smykov](https://github.com/smykov)), an engineering lead who builds software with AI agent teams. The principles come from incidents in a year of running an agent team on a live multi-service project.
 
 MIT — see [LICENSE](LICENSE).
