@@ -31,7 +31,8 @@
 #      that edit), `## Tests` is filled and, when the task changes code (a commit naming
 #      it, or a tracked uncommitted change, touches a file outside docs/, .teamwright/,
 #      .claude/, .github/ and top-level *.md - _task.code_changed), `## Tests` has the
-#      `### Failure branches` table. Gate-first warns, enforce blocks.
+#      `### Failure branches` table (not with `analysis: skipped:trivial`: a version bump
+#      has no failure branch). Gate-first warns, enforce blocks.
 #
 # ACTIVE TASK (PostToolUse): after an edit of docs/tasks/<ID>.md lands, the gate
 #   writes <ID> to .teamwright/current-task when the task is IN_PROGRESS, and clears
@@ -154,6 +155,11 @@ if m and rel.startswith("docs/tasks/"):
         fbranches = getattr(task, "failure_branches", lambda _t: True)
         changed = getattr(task, "code_changed", lambda _r, _t: False)
         entering = sta == "IN_PROGRESS" and stb != "IN_PROGRESS"
+        # `analysis: skipped:trivial` (never on an rca task): a change with no design freedom -
+        # a version bump, a typo in code - has no failure branch to bite
+        an = ra.get("analysis")
+        trivial = isinstance(an, str) and an.replace(" ", "").startswith("skipped:trivial") \
+            and not task.is_rca(ra)
         why = None
         if sa and sa != sb and sa not in STAGES:
             why = "`stage: %s` is not a stage of IN_PROGRESS (red-tests | implement)" % sa
@@ -178,7 +184,7 @@ if m and rel.startswith("docs/tasks/"):
                                              "stages sets `stage: implement` in this edit")
             elif not tests(after):
                 why = "`## Tests` is empty: a task goes to review with its red tests written down"
-            elif changed(root, tid) and not fbranches(after):
+            elif changed(root, tid) and not fbranches(after) and not trivial:
                 why = "the task changes code (a commit naming %s touches a code file) but `## Tests` " \
                       "has no `### Failure branches` table: the test-writer's failure-branch bite " \
                       "comes before review (implement stage, step 2)" % tid

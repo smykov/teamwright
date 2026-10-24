@@ -159,7 +159,8 @@ root cause cost a full review round; the same seam was reopened five times in a 
      tracked uncommitted change in the tree, touches a code file — anything outside
      `docs/`, `.teamwright/`, `.claude/`, `.github/` and top-level `*.md`
      (`TEAMWRIGHT_NONCODE_RE`, the rule of check 2; `_task.code_changed`). An rca exit
-     (b)/(c) or a docs-only task needs no table.
+     (b)/(c), a docs-only task, or a task with `analysis: skipped:trivial` (a version bump,
+     a typo in code — no failure branch to break; never an rca task) needs no table.
    `red-tests → implement` and back (`implement → red-tests`, or either value when review
    or verification return the task to `IN_PROGRESS`) pass. `gate-first` warns, `enforce`
    blocks, as for every check.
