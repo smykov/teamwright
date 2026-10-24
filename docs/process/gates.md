@@ -224,6 +224,20 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    threshold are follow-ups: the task is approved and the flow collects them into one
    `review-follow-up` task per sprint. Without the key nothing here is checked (every
    finding may send the task back, as before settings existed).
+7. **A review that spawns more than two tasks** (`lifecycle.md` §6: one reviewed task
+   spawns at most two new tasks; more goes into one umbrella task). Creating a new
+   `docs/tasks/<ID>.md` counts toward the review of task R when the session's latest
+   spawn by its main agent was a `code-reviewer` naming R (the journal); a later spawn
+   of another role closes that window, a reviewer's own helper spawns do not. Both the
+   reviewer (an rca task) and the orchestrator (the sprint's follow-up task) count. The
+   third new record is refused — append to an existing record (the follow-up task, one
+   umbrella task) instead, or ask the owner. Counted per reviewed task and spawn in
+   `.teamwright/sessions/<R>.new-tasks.jsonl`; re-creating the same id is not a new
+   task. In `gate-first` the third one warns and is counted. Limit:
+   `TEAMWRIGHT_REVIEW_NEW_TASKS` (2). The seam is the review gate because it already
+   reads the reviewer spawns from the journal: the session's stage is only declared at
+   its end (`Stage:`), so the reviewer spawn is the one fact available while the review
+   runs.
 
 **Human review.** A person reviewing outside Claude Code writes the record with
 `reviewer: human:<name>` and commits it. The gate accepts that record only when no agent
@@ -353,7 +367,7 @@ the agent's report.
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `tools.jsonl` | tool call: `ts`, `event` (`pre`/`post`/`failure`), `session_id`, `agent_id`, `agent_type`, `tool`, `detail`; Agent calls add `subagent_type`, `task_ids` (ids in the spawn description, else the first id in the prompt) |
 | `PermissionRequest`, `PermissionDenied` | `perms.jsonl` | permission decision needed / call denied (`PermissionDenied` fires for auto-mode denials; a deny-rule refusal shows as a `pre` line with no `post`) |
 | `PostToolUse` of Edit/Write on `docs/tasks/<ID>.verify/<n>.md` | `verify.jsonl` | verify record landed: task, round, kind, tool, environment, result, commit (never the command or the body) |
-| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count; `stage` from a `Stage: analyze\|red-tests\|implement\|review\|verify\|flow` line, and `batch` / `batch_reason` from `Batch: <ids> - <why>` (the tasks the session chose from the router's candidates) |
+| `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count; `stage` from a `Stage: analyze\|red-tests\|implement\|review\|verify\|flow` line, and `batch` / `batch_reason` from `Batch: <ids> - <why>` (the tasks the session chose from the router's candidates); `tokens` — model usage of the agent's transcript so far, per model (`input`, `output`, `cache_read`, `cache_write`; cumulative; `Stop`: the session's own lines from `transcript_path`, `SubagentStop`: `agent_transcript_path`; `{}` without a path), read incrementally with the offset kept under `.teamwright/logs/.tokens/` |
 | any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
 
 `detail` classifies a call, it never replays it: program + subcommand of a shell command
@@ -777,6 +791,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_CODE_STATUSES` | analysis gate | statuses of the active task in which code may be edited (`IN_PROGRESS`) |
 | `TEAMWRIGHT_NONCODE_RE` | analysis gate | paths that are not code (`docs/`, `.claude/`, `.github/`, `.teamwright/`, top-level `*.md`) |
 | `TEAMWRIGHT_REVIEWER_AGENT` | review gate | the reviewer's `agent_type` (`code-reviewer`) |
+| `TEAMWRIGHT_REVIEW_NEW_TASKS` | review gate | new task records one review may create (`2`) |
 | `TEAMWRIGHT_ESCALATE_AFTER` | review gate | `REQUEST_CHANGES` rounds in a row before the next record must escalate (`2`) |
 | `TEAMWRIGHT_LOG_DIR` | journal, review gate, `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | journal directory (`.teamwright/logs`); gate logs and records go to its `gate/` subdirectory, test logs to `test/`, mutant reports to `mutants/` |
 | `TEAMWRIGHT_GATE_LOG` | Claude Code gates | a file that gets one plain line per warning or denial: time, gate, `WARN`/`DENY`, first line of the reason (off) |
@@ -817,6 +832,11 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
   file like code (it is committed), and `tw-install.py` refuses lowering the mode.
 - The review gate trusts `agent_type`: anyone who can edit `.claude/agents/` can name
   an agent `code-reviewer`. Review changes to agent definitions like code.
+- The review gate's new-task count (check 7) attributes a new record by the journal's
+  spawns, not by its content: a task the orchestrator creates after the review for an
+  unrelated reason, before spawning another role, counts toward that review; a task
+  created through the shell is not seen (the analysis gate refuses shell writes that
+  set `status:`).
 - `review: skipped:trivial` is declared in the task record by whoever edits it, the
   author included. It is visible to the validator, to later reviews of the history and
   to metrics, not prevented.

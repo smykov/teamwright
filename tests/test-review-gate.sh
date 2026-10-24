@@ -218,4 +218,41 @@ out="$(wh T-40 1 REQUEST_CHANGES "#### New in the fix" "Low|docs-drift")"
 expect_deny "no Findings heading, only Low rows: REQUEST_CHANGES is still denied" "$out" "follow-ups"
 rm -f "$P/.teamwright/config.yml"
 
+# ---- 7. one reviewed task spawns at most two new tasks ----------------------------
+S7=sess-7
+spawn7() {  # spawn7 TYPE DESCRIPTION [agent fields...] : a spawn in session S7
+  local t="$1" d="$2"; shift 2
+  hook_json Agent "$S7" "subagent_type=$t" "description=$d" "prompt=go" @hook_event_name=PreToolUse "$@" | bash "$JOURNAL"
+}
+newtask() {  # newtask ID [agent fields...] : ask the gate to create docs/tasks/ID.md; on allow, create it
+  local id="$1" out; shift
+  out="$(run Write "$S7" "file_path=$(tf "$id")" "content=---
+id: $id
+status: TODO
+---
+" "$@")"
+  case "$out" in *'"deny"'*) ;; *) task_file "$(tf "$id")" "$id" TODO bug none ;; esac
+  printf '%s' "$out"
+}
+out="$(newtask T-70)"; expect_allow "a new task outside a review is not counted" "$out"
+spawn7 code-reviewer "T-71 code-reviewer"
+out="$(newtask T-72 "${REV[@]}")"; expect_allow "review of T-71: first new task (by the reviewer)" "$out"
+out="$(newtask T-73)"; expect_allow "review of T-71: second new task (by the orchestrator)" "$out"
+out="$(newtask T-74)"; expect_deny "review of T-71: a third new task is refused" "$out" "at most 2"
+out="$(run Edit "$S7" "file_path=$(tf T-73)" "old_string=body" "new_string=body, one more finding")"
+expect_allow "adding to an existing task record is not a new task" "$out"
+out="$(TEAMWRIGHT_REVIEW_NEW_TASKS=3 newtask T-74)"; expect_allow "TEAMWRIGHT_REVIEW_NEW_TASKS raises the limit" "$out"
+rm -f "$(tf T-74)"
+out="$(TEAMWRIGHT_GATE_MODE=warn newtask T-75)"
+case "$out" in *'"deny"'*) bad "gate-first: a third new task warns, does not block" "$out" ;;
+  *at\ most*) ok "gate-first: a third new task warns, does not block" ;;
+  *) bad "gate-first: a third new task warns, does not block" "no warning: $out" ;; esac
+spawn7 code-reviewer "T-76 code-reviewer"
+out="$(newtask T-77)"; expect_allow "a new reviewer spawn opens a new count for its task" "$out"
+spawn7 code-reviewer "T-76 code-reviewer" @agent_id=a-rev @agent_type=code-reviewer
+out="$(newtask T-78)"; out="$(newtask T-79)"
+expect_deny "a reviewer's own sub-spawn does not reset the count" "$out" "T-76"
+spawn7 developer "T-80 developer"
+out="$(newtask T-81)"; expect_allow "after a spawn of another role the review window is closed" "$out"
+
 finish

@@ -169,7 +169,7 @@ The failure mode this prevents: agents fix a class of bugs by adding one more `i
    - **(a)** like any task: `IN_PROGRESS` → red test for the invariant → fix → review → verify per its `surface` → `DONE`.
    - **(b) and (c)** produce no deployable code of their own. The owner's decision goes into `decision:` (and `docs/decisions.md`) before `IN_PROGRESS`; the task carries `deploys: false` and `surface: none`. In `IN_PROGRESS` the orchestrator and roles produce the artefacts — follow-up task records with `design_ref` (b), or the separate `PRINCIPLES.md` amendment commit (c), plus the `docs/failures.md` entry. Then `NEEDS_REVIEW`: a fresh code-reviewer checks the artefacts against the decision → `CODE_COMPLETE` → `DONE` (the verify gate needs no record for `deploys: false` + `surface: none`). The follow-up tasks run their own lifecycle; absorbed tasks are re-checked when those are `DONE`.
 4. **The rca task** also records the story in `docs/failures.md` and the decision in `docs/decisions.md` (+ area file).
-5. **Limits:** an `rca` task that itself hits recurrence stops the loop and goes to the owner (depth ≤ 1). One reviewed task may spawn at most two new tasks; more goes into one umbrella task.
+5. **Limits:** an `rca` task that itself hits recurrence stops the loop and goes to the owner (depth ≤ 1). One reviewed task may spawn at most two new tasks; more goes into one umbrella task (the review gate counts them, `gates.md` check 7).
 6. **Expect the next sprint to grow** — in the source process one sprint roughly tripled in task count once recurrences were split out. Growth here is the rule working (hidden debt becoming visible), not a planning failure.
 
 ```mermaid

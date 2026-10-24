@@ -43,6 +43,13 @@
 #      or ESCALATE ends a run (a task back after VERIFY_FAIL or an owner decision
 #      starts a new count).
 #   5. Shell commands that write review records or the local ledgers/journal.
+#   7. A review that spawns too many tasks: creating a new docs/tasks/<ID>.md in a
+#      session whose latest journaled spawn of the main agent was a reviewer for
+#      task R (tools.jsonl; a later spawn of another role ends that window), when
+#      that review already created 2 new task records ($TEAMWRIGHT_REVIEW_NEW_TASKS)
+#      - lifecycle.md section 6: one reviewed task spawns at most two new tasks;
+#      more goes into one umbrella task. Counted per reviewed task and spawn in
+#      .teamwright/sessions/<R>.new-tasks.jsonl; a retry of the same id is not new.
 #   0. (state guard, _hookio.guard_state) Edit/Write by any agent to
 #      .teamwright/config.yml or installed.json, and shell commands that actually
 #      write, move or remove them (hard deny in every mode: agents cannot switch the
@@ -244,6 +251,51 @@ m = io.TASK_FILE_RE.search(rel)
 if not (m and rel.startswith("docs/tasks/")):
     sys.exit(0)
 tid = m.group(1)
+
+# ---- 7. new task records created by one review ----------------------------------
+def review_window(sid):
+    """(reviewed task, window id) when this session's latest spawn by its main agent was
+    a reviewer naming a task; None otherwise (no review running, or the session moved on
+    to another role)."""
+    win = None
+    for i, r in enumerate(io.read_jsonl(os.path.join(io.log_dir(data), "tools.jsonl"))):
+        if (r.get("event") != "pre" or r.get("tool") not in ("Agent", "Task")
+                or r.get("session_id") != sid or r.get("agent_id")):
+            continue
+        ids = r.get("task_ids") or []
+        win = (ids[0], "%s:%d" % (sid, i)) if r.get("subagent_type") == REVIEWER and ids else None
+    return win
+
+try:
+    NEW_LIMIT = int(os.environ.get("TEAMWRIGHT_REVIEW_NEW_TASKS") or 2)
+except ValueError:
+    NEW_LIMIT = 2
+if (who["session_id"] and re.match(r"^%s$" % task.TASK_ID, tid)
+        and not os.path.exists(os.path.join(root, rel))):
+    win = review_window(who["session_id"])
+    if win and win[0] != tid:
+        reviewed, wid = win
+        led = os.path.join(sessions_dir(), reviewed + ".new-tasks.jsonl")
+        made = []
+        for r in io.read_jsonl(led):
+            if r.get("window") == wid and r.get("task") not in made:
+                made.append(r.get("task"))
+        if tid not in made:
+            if len(made) >= NEW_LIMIT and io.gate_mode(data) != "warn":
+                io.deny("REVIEW GATE: the review of %s already created %d new task record(s) in "
+                        "this session (%s); %s would be one more. One reviewed task spawns at most "
+                        "%d new tasks (lifecycle.md section 6): put the rest into one umbrella task "
+                        "or the sprint's review follow-up task (edit an existing record), or ask "
+                        "the owner. Limit: TEAMWRIGHT_REVIEW_NEW_TASKS." % (
+                            reviewed, len(made), ", ".join(made), tid, NEW_LIMIT), "review-gate")
+            io.state_dir(data, "sessions")
+            io.append_jsonl(led, dict(who, ts=io.now(), window=wid, task=tid))
+            if len(made) >= NEW_LIMIT:
+                io.deny("REVIEW GATE: the review of %s creates its new task number %d (%s; before: "
+                        "%s); one reviewed task spawns at most %d (lifecycle.md section 6) - one "
+                        "umbrella task instead." % (reviewed, len(made) + 1, tid, ", ".join(made),
+                                                    NEW_LIMIT), "review-gate")
+
 before, after = io.before_after(data)
 if after is None:
     sys.exit(0)
