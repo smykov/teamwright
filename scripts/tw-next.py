@@ -951,13 +951,50 @@ def headless_for(first, cands, info):
             "note": note, "reason": pick["reason"], "decisions": decisions_of(cands)}
 
 
+def explicit_batch(ids, tasks, cap):
+    """Tasks a stage command names: dependencies among them first (a task goes after the one
+    it depends on), at most the stage's batch cap (the rest is dropped, with a warning), and a
+    warning for every pair whose seams overlap (tw-parallel.py's rule)."""
+    warns, order, seen = [], [], set()
+
+    def visit(tid, stack=()):
+        if tid in seen or tid in stack:
+            return
+        for d in tasks[tid]["depends_on"]:
+            if d in ids and d != tid:
+                visit(d, stack + (tid,))
+        seen.add(tid)
+        order.append(tid)
+    for tid in ids:
+        visit(tid)
+    for tid in ids:
+        for d in tasks[tid]["depends_on"]:
+            if d in ids:
+                warns.append("%s depends on %s: %s goes first" % (tid, d, d))
+    if len(order) > cap:
+        warns.append("%d tasks named, the stage takes at most %d (process.stages.<stage>.batch): %s "
+                     "left for the next session" % (len(order), cap, " ".join(order[cap:])))
+        order = order[:cap]
+    try:
+        par = _parallel_mod()
+    except Exception:
+        par = None
+    if par:
+        for i, a in enumerate(order):
+            for b in order[i + 1:]:
+                if par.overlap(par.seam_paths(tasks[a].get("seam")), par.seam_paths(tasks[b].get("seam"))):
+                    warns.append("%s and %s touch the same code (seams overlap): one after the other, "
+                                 "the second re-reads the first's change" % (a, b))
+    return order, warns
+
+
 def request_for(res, cands, tasks, stage, ids):
     """A stage command's question: may /teamwright:<stage> run now, on which tasks? An
     explicit stage command ignores `min` (the owner asked for it), not the order of work:
     unfinished work in the tree, a pause or a task at another stage is refused with the
     command to run instead."""
     cap = (res.get("stages") or {}).get(stage, {}).get("batch", 1)
-    out = {"stage": stage, "tasks": ids, "ok": False, "batch": [], "hint": "", "model":
+    out = {"stage": stage, "tasks": ids, "ok": False, "batch": [], "hint": "", "warnings": [], "model":
            (res.get("stages") or {}).get(stage, {}).get("model")}
     router = res.get("command") or "%s%s" % (res["action"], " " + res["task"] if res.get("task") else "")
     if res["action"] == "paused":
@@ -989,7 +1026,7 @@ def request_for(res, cands, tasks, stage, ids):
                 why = next((c["reason"] for c in cands if c["task"] == tid), "not ready")
                 out["hint"] = "%s cannot run %s now: %s" % (tid, stage, why)
                 return out
-        out["batch"] = list(ids)
+        out["batch"], out["warnings"] = explicit_batch(list(dict.fromkeys(ids)), tasks, cap)
     else:
         for c in here:
             if c["task"] not in out["batch"] and len(out["batch"]) < cap:

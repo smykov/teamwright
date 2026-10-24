@@ -8,7 +8,7 @@ What every stage session (`/teamwright:analyze`, `red-tests`, `implement`, `revi
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage <stage> [--task <ids>]
 ```
 
-`request` comes first. `request.ok` false → show `request.hint` (the command to run instead: another stage, the unfinished work in the tree, the pause), do nothing else, end with `Outcome: idle`. An explicit stage ignores `min`; it never skips unfinished work in the tree. Do not read task files to look for work.
+`request` comes first. Named tasks are put in dependency order and capped at the stage's batch; read `request.warnings`. `request.ok` false → show `request.hint` (the command to run instead: another stage, the unfinished work in the tree, the pause), do nothing else, end with `Outcome: idle`. An explicit stage ignores `min`; it never skips unfinished work in the tree. Do not read task files to look for work.
 
 ## 2. Choose the batch
 

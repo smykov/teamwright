@@ -487,4 +487,15 @@ j | grep -q "install drift: scripts/hooks/_task.py predates the plugin (missing:
 cp "$HOOKS/_task.py" scripts/hooks/_task.py; commit_all
 j | grep -q "install drift: scripts/hooks/_task.py" && bad "an up-to-date _task.py: no drift warning" || ok "an up-to-date _task.py: no drift warning"
 
+# ---- M6: explicit --task ids: capped by the stage's batch, dependencies first, overlaps named ----
+fresh explicit
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  stages:\n    review:\n      batch: 2\n' > .teamwright/config.yml
+mk T-1 NEEDS_REVIEW "analysis:" "  seam: src/a.py"; mk T-2 NEEDS_REVIEW "depends_on: [T-3]" "analysis:" "  seam: src/a.py"
+mk T-3 NEEDS_REVIEW "analysis:" "  seam: src/b.py"; commit_all
+rq() { python3 "$NEXT" --project . --brief --stage review --task "$1" | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], " ".join(r["batch"]), "|", "; ".join(r["warnings"]))'; }
+got="$(rq T-2,T-3,T-1)"
+expect_rc "three named, cap 2: the dependency first, the rest dropped" "True T-3 T-2" "$(printf '%s' "$got" | cut -d'|' -f1 | sed 's/ $//')"
+case "$got" in *"T-2 depends on T-3: T-3 goes first"*"3 tasks named, the stage takes at most 2"*"T-1 left for the next session"*) ok "warnings: the dependency and the cap" ;; *) bad "warnings: the dependency and the cap" "$got" ;; esac
+case "$(rq T-1,T-2)" in *"T-1 and T-2 touch the same code"*) ok "overlapping seams among named tasks are named" ;; *) bad "overlapping seams among named tasks are named" "$(rq T-1,T-2)" ;; esac
+
 finish
