@@ -281,4 +281,21 @@ out="$(run Edit "$S9-next" "file_path=$(tf T-90)" "old_string=status: NEEDS_REVI
 expect_deny "a stamp without the journaled spawn, journal gone: still denied" "$out" "journaled spawn"
 rm -rf "$P/.teamwright"; mv "$TMP/tw-state" "$P/.teamwright"
 
+# ---- m3: records created outside Edit/Write still count, at the reviewed task's status move ----
+G="$TMP/gproj"; mkdir -p "$G/docs/tasks"; git -C "$G" init -q -b main .
+task_file "$G/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; git -C "$G" add -A; git -C "$G" commit -qm "chore(task): T-1"
+gr() { CLAUDE_PROJECT_DIR="$G" run "$@"; }
+CLAUDE_PROJECT_DIR="$G" hook_json Agent s8 "subagent_type=code-reviewer" "description=T-1 code-reviewer" "prompt=go" @hook_event_name=PreToolUse | CLAUDE_PROJECT_DIR="$G" bash "$JOURNAL"
+printf -- '---\nid: T-2\n---\n' > "$G/docs/tasks/T-2.md"; printf -- '---\nid: T-3\n---\n' > "$G/docs/tasks/T-3.md"
+out="$(gr Edit s8 "file_path=$G/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_allow "two records made by the shell during the review: within the limit" "$out"
+printf -- '---\nid: T-4\n---\n' > "$G/docs/tasks/T-4.md"
+out="$(gr Edit s8 "file_path=$G/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_deny "a third record made outside Edit/Write is counted at the status move" "$out" "created 3 new task records (T-2, T-3, T-4)"
+git -C "$G" add -A; git -C "$G" commit -qm "chore(task): follow-ups"
+out="$(gr Edit s8 "file_path=$G/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_deny "committed since the reviewer spawn: still counted" "$out" "created 3 new task records"
+out="$(gr Edit s9 "file_path=$G/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_allow "another session without a review window: not counted" "$out"
+
 finish

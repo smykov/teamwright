@@ -125,8 +125,10 @@ root cause cost a full review round; the same seam was reopened five times in a 
    `$TEAMWRIGHT_TASK`) is not `IN_PROGRESS` or has no complete analysis. Files under
    `docs/`, `.claude/`, `.github/`, `.teamwright/` and top-level `*.md` are not code.
    If no active task is declared, this check does nothing.
-3. A shell command that rewrites a task status in `docs/tasks/` (`sed -i`, `perl -i`,
-   `>`, `tee`) — status changes must go through Edit/Write so the gates see them.
+3. A shell command that creates or replaces a task record in `docs/tasks/` (`>`, `tee`,
+   `cp` / `mv` / `install` onto it — the whole record, with or without a `status:`), or
+   rewrites its status in place (`sed -i`, `perl -i`) — records and status changes go
+   through Edit/Write so the gates see them.
    Appending (`>>`, `tee -a`) is allowed: it lands after the front matter, where `status:`
    is never read, so a note cannot change the task's state. The same holds for a command
    that rewrites the `stage:` field — recognised by the keys or by their values
@@ -251,7 +253,11 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    third new record is refused — append to an existing record (the follow-up task, one
    umbrella task) instead, or ask the owner. Counted per reviewed task and spawn in
    `.teamwright/sessions/<R>.new-tasks.jsonl`; re-creating the same id is not a new
-   task. In `gate-first` the third one warns and is counted. Limit:
+   task. In `gate-first` the third one warns and is counted. A record created outside
+   Edit/Write (a shell redirect, `cp`, a script) is not seen when it is written, so the
+   count is taken again when R's status leaves `NEEDS_REVIEW` in that window: every
+   `docs/tasks/<ID>.md` added in a commit since the reviewer's spawn, or new in the tree
+   (untracked or added to the index) and written since then, counts. Limit:
    `TEAMWRIGHT_REVIEW_NEW_TASKS` (2). The seam is the review gate because it already
    reads the reviewer spawns from the journal: the session's stage is only declared at
    its end (`Stage:`), so the reviewer spawn is the one fact available while the review
@@ -894,8 +900,9 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
 - The review gate's new-task count (check 7) attributes a new record by the journal's
   spawns, not by its content: a task the orchestrator creates after the review for an
   unrelated reason, before spawning another role, counts toward that review; a task
-  created through the shell is not seen (the analysis gate refuses shell writes that
-  set `status:`).
+  created through the shell is counted when the reviewed task's status leaves
+  `NEEDS_REVIEW` (git), not when it is written; the analysis gate refuses shell writes that
+  create or replace a task record.
 - `review: skipped:trivial` is declared in the task record by whoever edits it, the
   author included. It is visible to the validator, to later reviews of the history and
   to metrics, not prevented.

@@ -13,11 +13,12 @@
 #      invariant seam approach; override with TEAMWRIGHT_ANALYSIS_FIELDS).
 #   2. An edit of a code file while the active task (.teamwright/current-task or
 #      $TEAMWRIGHT_TASK) is not IN_PROGRESS or has an incomplete analysis.
-#   3. A Bash command that rewrites a task record docs/tasks/<ID>.md (sed -i, >, tee…)
-#      and mentions `status`: status changes must go through Edit/Write so the gates
-#      can see them. Only the write target counts - a command that reads a record and
-#      writes elsewhere, or writes text that merely names one, passes. The same holds
-#      for a command that mentions `stage`.
+#   3. A Bash command that creates or replaces a task record docs/tasks/<ID>.md (>, tee,
+#      cp/mv/install onto it - a record written whole, with or without `status:`), or edits
+#      one in place (sed -i, perl -i) and mentions `status`, `stage` or one of their values:
+#      records and their state go through Edit/Write so the gates can see them. Only the
+#      write target counts - a command that reads a record and writes elsewhere, or writes
+#      text that merely names one, passes.
 #      Appending (>>, tee -a) is allowed: it lands after the front matter, where
 #      `status:` is never read, so a note cannot change the task's state.
 #   4. An edit of docs/tasks/<ID>.md that breaks the order of the `stage:` field (the
@@ -122,9 +123,9 @@ if io.event(data) != "PreToolUse":
 # ---- 3. status rewrite through the shell -------------------------------------
 if tool == "Bash":
     if io.shell_rewrites_task_record(ti.get("command") or ""):
-        io.deny("ANALYSIS GATE: task status must be changed with Edit/Write on "
-                "docs/tasks/<ID>.md, not through the shell - otherwise the analysis and "
-                "review gates cannot see the transition.", "analysis-gate")
+        io.deny("ANALYSIS GATE: task records are created and their status or stage changed with "
+                "Edit/Write on docs/tasks/<ID>.md, not through the shell - otherwise the analysis "
+                "and review gates cannot see the transition (or the new record).", "analysis-gate")
     sys.exit(0)
 
 if tool not in ("Edit", "Write", "MultiEdit"):

@@ -414,21 +414,21 @@ def _is_task_record(tok, in_tasks):
 
 
 def shell_rewrites_task_record(cmd):
-    """True when a shell command overwrites a task record (docs/tasks/<ID>.md) and the
-    command mentions `status` or `stage` or one of their values (IN_PROGRESS, red-tests,
-    implement ...): an in-place sed/perl edit, a `>` redirect or a `tee` without -a whose
-    target is the record. Appends (>>, tee -a), reads, and writes to any other file are not -
-    even when the command text names a task record."""
-    if not _STATE_WORDS.search(cmd):
-        return False
+    """True when a shell command creates or replaces a task record (docs/tasks/<ID>.md) - a
+    `>` redirect, a `tee` without -a, or cp / mv / install / rsync onto it: the whole front
+    matter is written, with or without a status, out of the gates' sight - or edits one in
+    place (sed -i, perl -i) and mentions `status` or `stage` or one of their values
+    (IN_PROGRESS, red-tests, implement ...). Appends (>>, tee -a), reads, and writes to any
+    other file are not - even when the command text names a task record."""
+    mentions = bool(_STATE_WORDS.search(cmd))
     text, _ = _split_heredocs(cmd)
     if "docs/tasks" not in text:
         return False
     try:
         segs = _segments(text)
     except ValueError:
-        return bool(re.search(r"(sed\s+(-[a-zA-Z]*i|--in-place)|perl\s+-[a-zA-Z]*i|(?<!>)>(?!>)\s*\S*"
-                              r"docs/tasks/|\btee\b(?!\s+(-a|--append)\b))", text))
+        return bool(re.search(r"((?<!>)>(?!>)\s*\S*docs/tasks/|\btee\b(?!\s+(-a|--append)\b))", text)) or \
+            (mentions and bool(re.search(r"(sed\s+(-[a-zA-Z]*i|--in-place)|perl\s+-[a-zA-Z]*i)", text)))
     in_tasks = False
     for seg in segs:
         for op, target in (w for w in seg if isinstance(w, tuple)):
@@ -444,13 +444,16 @@ def shell_rewrites_task_record(cmd):
         if prog in ("cd", "pushd"):
             in_tasks = bool(args) and args[-1].rstrip("/").endswith("docs/tasks")
             continue
-        records = [a for a in args if not a.startswith("-") and _is_task_record(a, in_tasks)]
+        files = [a for a in args if not a.startswith("-")]
+        records = [a for a in files if _is_task_record(a, in_tasks)]
         if not records:
             continue
         if prog == "tee" and not any(a in ("-a", "--append") or re.fullmatch(r"-[a-zA-Z]*a[a-zA-Z]*", a)
                                      for a in args):
             return True
-        if prog in ("sed", "gsed", "perl") and any(_INPLACE.match(a) for a in args):
+        if prog in ("cp", "mv", "install", "rsync", "ln") and files and _is_task_record(files[-1], in_tasks):
+            return True
+        if mentions and prog in ("sed", "gsed", "perl") and any(_INPLACE.match(a) for a in args):
             return True
     return False
 

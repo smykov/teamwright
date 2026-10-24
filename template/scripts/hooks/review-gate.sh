@@ -49,7 +49,10 @@
 #      that review already created 2 new task records ($TEAMWRIGHT_REVIEW_NEW_TASKS)
 #      - lifecycle.md section 6: one reviewed task spawns at most two new tasks;
 #      more goes into one umbrella task. Counted per reviewed task and spawn in
-#      .teamwright/sessions/<R>.new-tasks.jsonl; a retry of the same id is not new.
+#      .teamwright/sessions/<R>.new-tasks.jsonl; a retry of the same id is not new. And
+#      at R's status move out of NEEDS_REVIEW (in that window) every task record new since
+#      the reviewer's spawn counts, however it was written (git: added in a commit since
+#      then, or untracked/added in the tree) - a record created by the shell or a script.
 #   0. (state guard, _hookio.guard_state) Edit/Write by any agent to
 #      .teamwright/config.yml or installed.json, and shell commands that actually
 #      write, move or remove them (hard deny in every mode: agents cannot switch the
@@ -274,8 +277,48 @@ def review_window(sid):
                 or r.get("session_id") != sid or r.get("agent_id")):
             continue
         ids = r.get("task_ids") or []
-        win = (ids[0], "%s:%d" % (sid, i)) if r.get("subagent_type") == REVIEWER and ids else None
+        win = (ids[0], "%s:%d" % (sid, i), r.get("ts") or "") if r.get("subagent_type") == REVIEWER and ids \
+            else None
     return win
+
+def _epoch(ts):
+    import calendar, time
+    try:
+        return calendar.timegm(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return None
+
+def new_records_since(since, reviewed):
+    """Task records docs/tasks/<ID>.md that appeared since `since` (epoch seconds), however
+    they were written (Edit/Write, a shell redirect, cp, a script): added in a commit since
+    then, or new in the tree (untracked or added to the index) and modified since then."""
+    import subprocess
+    rx = re.compile(r"^docs/tasks/(%s)\.md$" % task.TASK_ID)
+
+    def git(*args):
+        try:
+            p = subprocess.run(("git",) + args, cwd=root, capture_output=True, text=True, timeout=20)
+        except Exception:
+            return ""
+        return p.stdout if p.returncode == 0 else ""
+    found, when = set(), None
+    for line in git("log", "-n", "200", "--diff-filter=A", "--name-only", "--format=@%ct", "--",
+                    "docs/tasks").splitlines():
+        if line.startswith("@"):
+            when = int(line[1:]) if line[1:].isdigit() else None
+        elif when is not None and when >= since and rx.match(line.strip()):
+            found.add(rx.match(line.strip()).group(1))
+    for line in git("status", "--porcelain", "--untracked-files=all", "--", "docs/tasks").splitlines():
+        code, path = line[:2], line[3:].strip()
+        m2 = rx.match(path)
+        if m2 and (code == "??" or code[0] == "A"):
+            try:
+                if os.path.getmtime(os.path.join(root, path)) >= since:
+                    found.add(m2.group(1))
+            except OSError:
+                pass
+    found.discard(reviewed)
+    return sorted(found)
 
 try:
     NEW_LIMIT = int(os.environ.get("TEAMWRIGHT_REVIEW_NEW_TASKS") or 2)
@@ -285,7 +328,7 @@ if (who["session_id"] and re.match(r"^%s$" % task.TASK_ID, tid)
         and not os.path.exists(os.path.join(root, rel))):
     win = review_window(who["session_id"])
     if win and win[0] != tid:
-        reviewed, wid = win
+        reviewed, wid = win[0], win[1]
         led = os.path.join(sessions_dir(), reviewed + ".new-tasks.jsonl")
         made = []
         for r in io.read_jsonl(led):
@@ -314,6 +357,21 @@ rb, ra = task.parse(before or ""), task.parse(after)
 sb, sa = task.status(rb), task.status(ra)
 if sa == sb:
     sys.exit(0)
+
+# ---- 7 (cont.). the reviewed task's status move closes its review: count every new record --
+# A record created through the shell, cp or a script never passes the Edit/Write check above;
+# git sees it whatever wrote it.
+if sb == "NEEDS_REVIEW" and who["session_id"]:
+    win = review_window(who["session_id"])
+    since = _epoch(win[2]) if win and win[0] == tid else None
+    if since is not None:
+        made = new_records_since(since - 1, tid)
+        if len(made) > NEW_LIMIT:
+            io.deny("REVIEW GATE: the review of %s created %d new task records (%s), however they were "
+                    "written; one reviewed task spawns at most %d (lifecycle.md section 6) - fold the "
+                    "rest into one umbrella task or the sprint's review follow-up task, or ask the owner. "
+                    "Limit: TEAMWRIGHT_REVIEW_NEW_TASKS." % (tid, len(made), ", ".join(made), NEW_LIMIT),
+                    "review-gate")
 if sa == "NEEDS_REVIEW" or (sa == "IN_PROGRESS" and sb != "NEEDS_REVIEW"):
     # a send-back (NEEDS_REVIEW -> IN_PROGRESS) is not development
     record_dev(tid)
