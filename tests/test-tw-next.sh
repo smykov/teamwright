@@ -397,4 +397,12 @@ mk T-2 DONE; echo y > g.txt; git add -A; git commit -qm "chore: g"
 expect_rc "only a push decision: no work available, no job" "decide False False" \
   "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["work_available"], d["headless"]["run"])')"
 
+
+# ---- the main checkout on a task branch is not a per-task worktree (autonomous run) ----
+mk T-2 CODE_COMPLETE; mk T-3 CODE_COMPLETE; git add -A; git commit -qm "chore: two tasks to verify"
+git checkout -q -b task/T-2-run18
+expect_rc "main checkout on task/T-2-run18: verify sees both tasks" "True T-2,T-3" \
+  "$(python3 "$NEXT" --project . --json --stage verify --task T-2,T-3 | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], ",".join(c.get("id") or c.get("task") for c in r["candidates"]))')"
+git checkout -q main
+
 finish

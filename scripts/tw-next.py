@@ -39,7 +39,7 @@ Decision order (first match wins):
                  not), then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits (push is the owner's call), else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
-  Parallel work: a task on a worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
+  Parallel work: a task on a linked worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
   or `task/<ID>`, any suffix after the id allowed; $TEAMWRIGHT_TASK_BRANCH_RE overrides
   the pattern, group 1 = the id - is worked in that worktree's session. Its state comes
   from the worktree's copy of the record (status, analysis, review and verify rounds),
@@ -123,7 +123,13 @@ def task_worktrees(project, task):
     rx = branch_re(task)
     _, cur = git(project, "rev-parse", "--abbrev-ref", "HEAD")
     m = rx.match(cur.strip())
-    own = m.group(1) if m else None
+    # Only a linked worktree is a per-task tree. The main checkout on a task branch (an
+    # autonomous run's `task/T-051-run18`) is the whole project: it verifies and reviews
+    # any task, and a branch name alone must not shrink it to one task.
+    _, gd = git(project, "rev-parse", "--absolute-git-dir")
+    _, cd = git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    linked = bool(gd.strip()) and os.path.realpath(gd.strip()) != os.path.realpath(cd.strip() or gd.strip())
+    own = m.group(1) if m and linked else None
     _, top = git(project, "rev-parse", "--show-toplevel")
     here = os.path.realpath(top.strip() or project)
     rc, out = git(project, "worktree", "list", "--porcelain")
