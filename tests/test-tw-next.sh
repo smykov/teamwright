@@ -467,4 +467,24 @@ for s in analyze red-tests implement review verify router flow; do
 done
 ok "stage skills and flow use --brief and the short stage protocol"
 
+# ---- M5: a project's _task.py older than the plugin (updated without apply) -------------
+fresh olddrift
+mkdir -p scripts/hooks; cp "$HOOKS/_config.py" scripts/hooks/
+python3 - "$HOOKS/_task.py" scripts/hooks/_task.py <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+for name in ("tests_written", "failure_branches", "task_stage", "code_changed", "section", "_without_placeholders"):
+    src = re.sub(r"(?ms)^def %s\(.*?(?=^def |^[A-Z_]+ = |\Z)" % name, "", src)
+open(sys.argv[2], "w").write(src)
+PY
+python3 -c 'import sys; sys.path.insert(0, "scripts/hooks"); import _task; assert not hasattr(_task, "tests_written") and not hasattr(_task, "task_stage")' \
+  && ok "fixture: an installed _task.py without the stage helpers" || bad "fixture: an installed _task.py without the stage helpers"
+mk T-1 IN_PROGRESS "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
+expect_rc "old installed _task.py: the stage still comes from the kit's helpers (implement, not red-tests)" "implement developer" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["stage"], d["role"])')"
+j | grep -q "install drift: scripts/hooks/_task.py predates the plugin (missing: .*task_stage.*tests_written.*tw-install.py apply" \
+  && ok "the drift is a warning naming the missing helpers and tw-install.py apply" || bad "the drift is a warning naming the missing helpers and tw-install.py apply" "$(j | grep -A3 warnings)"
+cp "$HOOKS/_task.py" scripts/hooks/_task.py; commit_all
+j | grep -q "install drift: scripts/hooks/_task.py" && bad "an up-to-date _task.py: no drift warning" || ok "an up-to-date _task.py: no drift warning"
+
 finish

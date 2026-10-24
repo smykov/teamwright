@@ -186,15 +186,47 @@ def budget_of(proc, tasks, taken, candidate=None):
     return {"taken": len(taken), "limit": cap, "left": max(cap - len(taken), 0)}
 
 
+HELPER_DRIFT = []   # names the project's installed _task.py lacks (filled by _load_helpers)
+
+
 def _load_helpers(project):
-    for d in (os.path.join(project, "scripts", "hooks"),
-              os.path.join(KIT, "template", "scripts", "hooks")):
-        if os.path.isfile(os.path.join(d, "_task.py")) and os.path.isfile(os.path.join(d, "_config.py")):
-            sys.path.insert(0, d)
-            break
+    """The project's installed _task / _config (the gates run the same code), with every
+    helper the project's copy lacks taken from the kit's: a plugin updated without
+    `tw-install.py apply` must not route on missing helpers (an old _task.py without
+    tests_written / task_stage sent every IN_PROGRESS task to red-tests, silently).
+    HELPER_DRIFT names what was filled in; the router reports it as a warning."""
+    import importlib.util
+    import types
+    kit_dir = os.path.join(KIT, "template", "scripts", "hooks")
+    proj_dir = os.path.join(project, "scripts", "hooks")
+    d = proj_dir if all(os.path.isfile(os.path.join(proj_dir, f)) for f in ("_task.py", "_config.py")) \
+        else kit_dir
+    sys.path.insert(0, d)
     import _task
     import _config
+    del HELPER_DRIFT[:]
+    if os.path.realpath(os.path.dirname(os.path.abspath(_task.__file__))) != os.path.realpath(kit_dir):
+        try:
+            spec = importlib.util.spec_from_file_location("tw_kit_task", os.path.join(kit_dir, "_task.py"))
+            kt = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(kt)
+        except Exception:  # an unreadable kit copy only loses the fallback
+            kt = None
+        for name in sorted(vars(kt)) if kt else []:
+            v = getattr(kt, name)
+            if name.startswith("_") or isinstance(v, types.ModuleType) or hasattr(_task, name):
+                continue
+            setattr(_task, name, v)
+            HELPER_DRIFT.append(name)
     return _task, _config
+
+
+def helper_warnings():
+    if not HELPER_DRIFT:
+        return []
+    return ["install drift: scripts/hooks/_task.py predates the plugin (missing: %s) - the router uses "
+            "the plugin's copies, the gates still run the old file: run `tw-install.py apply` "
+            "(/teamwright:reconfigure) to update the project's hooks" % ", ".join(HELPER_DRIFT)]
 
 
 def git(project, *args):
@@ -1073,7 +1105,7 @@ def decide(project, taken=None, stage=None, ids=None):
     first["counts"] = {}
     for t in tasks.values():
         first["counts"][t["status"]] = first["counts"].get(t["status"], 0) + 1
-    first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
+    first["warnings"] = helper_warnings() + warnings_for(tasks, oqs) + drift_warnings(project)
     first["settings"] = proc
     first["recommended"] = getattr(kc, "PROCESS_RECOMMENDED", {})
     first["parallel"] = {"own": own, "elsewhere": elsewhere, "worktrees": wts}

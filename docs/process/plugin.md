@@ -196,7 +196,10 @@ and deterministic. It reads `docs/tasks/*.md` (status, priority, `depends_on`, `
 `surface`, `blocked_on`), the latest round in `<ID>.reviews/` (verdict) and `<ID>.verify/`
 (result), `.teamwright/current-task`, the last `Stop` in `.teamwright/logs/outcomes.jsonl`
 (outcome `interrupted`), the mode, `TEAMWRIGHT_PAUSE`, and git (tracked changes, unpushed
-commits). First match wins:
+commits). It parses records with the project's installed `scripts/hooks/_task.py` (the
+gates run the same code); a helper that copy lacks — the plugin was updated without
+`tw-install.py apply` — is taken from the plugin's own copy, and `warnings` says
+`install drift: … (missing: …)` with the command that updates the project. First match wins:
 
 | # | Situation | `action` |
 |---|---|---|
