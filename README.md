@@ -50,6 +50,32 @@ Both ask before every install, download, rewrite or commit. `adopt` starts the g
 
 ![The demo: one task through the analysis, review and verify gates](docs/assets/demo.gif)
 
+## Channels
+
+Two release channels, two marketplaces from the same repository (Claude Code's release-channel pattern). The plugin's name is `teamwright` in both, so the commands stay `/teamwright:*`.
+
+| Channel | Branch | Add the marketplace | Install | Updates |
+|---|---|---|---|---|
+| **stable** | `main`, tagged releases | `/plugin marketplace add smykov/teamwright` | `/plugin install teamwright@teamwright` | when the version in `plugin.json` is bumped ([CHANGELOG](CHANGELOG.md)) |
+| **experimental** | `next`: the newest feature work, before release | `/plugin marketplace add smykov/teamwright#next` | `/plugin install teamwright@teamwright-next` | every pushed commit: `next` carries no version, so the commit is the version |
+
+**One channel per project.** Both marketplaces can be added on one machine and both plugins installed, but enable exactly one of them in a project — two enabled copies with the same name do not mix, and one copy's hooks silently do not run. Choose in the project's settings: `.claude/settings.json` for the whole team, `.claude/settings.local.json` for this machine only (it wins over the team file):
+
+```json
+{
+  "enabledPlugins": {
+    "teamwright@teamwright": false,
+    "teamwright@teamwright-next": true
+  }
+}
+```
+
+The installer (`/teamwright:adopt`, `tw-install.py apply`) enables its own channel in `.claude/settings.json` only when no other channel of teamwright is enabled there or in `settings.local.json`; otherwise it leaves `enabledPlugins` alone and says so.
+
+**Updates of the experimental channel.** Auto-update is off by default for marketplaces other than Anthropic's: pull the branch with `/plugin marketplace update teamwright-next`, then `/plugin update teamwright@teamwright-next` (or turn auto-update on for that marketplace in `/plugin`). Restart, or `/reload-plugins`, to load it. `/teamwright:status` then shows the new commit as a kit update; `tw-install.py apply` brings the project's installed files up to it.
+
+**A working copy.** To try a checkout of the kit without any marketplace: `claude --plugin-dir <path to the checkout>` for one session (disable the installed teamwright in that project first: same name).
+
 ## How a task moves
 
 ```mermaid

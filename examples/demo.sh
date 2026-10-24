@@ -154,7 +154,7 @@ move() {
 }
 
 say "teamwright demo: one task, every gate, real hook output"
-say "kit: this checkout, version $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$KIT/.claude-plugin/plugin.json")"
+say "kit: this checkout, version $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version") or "none (a channel build: the commit is the version)")' "$KIT/.claude-plugin/plugin.json")"
 
 # --------------------------------------------------------------------------------------
 step "1. A small project with a bug"

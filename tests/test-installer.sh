@@ -693,7 +693,8 @@ git -C "$X" checkout -q -- outside.txt
 
 
 # ---- the plugin travels with the project --------------------------------------
-KV="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$KIT/.claude-plugin/plugin.json")"
+# the version the installer records: plugin.json's, or on a release channel (no version) the commit
+KV="$(python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("twi", sys.argv[1]+"/scripts/tw-install.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.kit_info(sys.argv[1])["version"])' "$K")"
 KM="$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"; mkdir -p "$(dirname "$KM")"
 P="$TMP/plug"; mkdir -p "$P"; git -C "$P" init -q -b main
 write_cfg "$TMP/plug.yml"
@@ -748,6 +749,51 @@ has "no shareable source: noted" "$TMP/out" "no shareable source for marketplace
 python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright": True}' "$P3" \
   && ok "no source: the plugin is still enabled" || bad "no source: plugin enabled"
 rm -f "$KM"
+
+# ---- release channels: a kit without a version, one channel per project ----------------
+KC="$TMP/kit-next"; cp -R "$K" "$KC"
+python3 - "$KC" <<'PY'
+import json, sys
+p = sys.argv[1] + "/.claude-plugin/plugin.json"; d = json.load(open(p)); d.pop("version", None); json.dump(d, open(p, "w"))
+p = sys.argv[1] + "/.claude-plugin/marketplace.json"; d = json.load(open(p)); d["name"] = "teamwright-next"
+for e in d["plugins"]:
+    e.pop("version", None)
+json.dump(d, open(p, "w"))
+PY
+twc() { python3 "$1/scripts/tw-install.py" --kit "$1" --providers "$FIX" "${@:2}"; }
+kitrec() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]+"/.teamwright/installed.json"))["@kit"], sort_keys=True))' "$1"; }
+git -C "$KC" init -q -b next && git -C "$KC" add -A && git -C "$KC" commit -qm channel
+SHA="$(git -C "$KC" rev-parse HEAD | cut -c1-12)"
+PC="$TMP/chan1"; mkdir -p "$PC"; git -C "$PC" init -q -b main
+twc "$KC" apply --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+expect_rc "channel kit from a git checkout: version = the commit (12 hex, as Claude Code computes it)" \
+  "{\"plugin\": \"teamwright@teamwright-next\", \"version\": \"$SHA\"}" "$(kitrec "$PC")"
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright-next": True}, s' "$PC" \
+  && ok "channel kit alone: its plugin id is enabled" || bad "channel kit alone: its plugin id is enabled"
+KCC="$TMP/cache/teamwright-next/teamwright/abcdef012345"; mkdir -p "$(dirname "$KCC")"; cp -R "$KC" "$KCC"; rm -rf "$KCC/.git"
+mkdir -p "$CLAUDE_CONFIG_DIR/plugins"
+printf '{"version": 2, "plugins": {"teamwright@teamwright-next": [{"scope": "user", "installPath": "%s", "version": "abcdef012345"}]}}\n' "$KCC" \
+  > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+twc "$KCC" apply --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+expect_rc "channel kit from the plugin cache (no .git): version from installed_plugins.json" \
+  '{"plugin": "teamwright@teamwright-next", "version": "abcdef012345"}' "$(kitrec "$PC")"
+rm -f "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+twc "$KCC" plan --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+has "a channel copy nobody recorded: version empty, re-recorded (no crash)" "$TMP/out" "kit-version"
+PS2="$TMP/chan2"; mkdir -p "$PS2/.claude"; git -C "$PS2" init -q -b main
+printf '{"enabledPlugins": {"teamwright@teamwright": true}}\n' > "$PS2/.claude/settings.json"
+twc "$KC" apply --project "$PS2" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright": True}, s["enabledPlugins"]; assert "teamwright-next" not in (s.get("extraKnownMarketplaces") or {}), s' "$PS2" \
+  && ok "the project enables the stable channel: the channel kit does not enable a second copy" \
+  || bad "the project enables the stable channel: the channel kit does not enable a second copy"
+has "one channel per project: noted" "$TMP/out" "one channel per project"
+has "the rest of the settings are still merged (hooks)" "$PS2/.claude/settings.json" "session-check.sh"
+PS3="$TMP/chan3"; mkdir -p "$PS3/.claude"; git -C "$PS3" init -q -b main
+printf '{"enabledPlugins": {"teamwright@teamwright-next": true}}\n' > "$PS3/.claude/settings.local.json"
+tw apply --project "$PS3" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert "teamwright@teamwright" not in (s.get("enabledPlugins") or {}), s' "$PS3" \
+  && ok "next enabled in settings.local.json: the stable kit does not enable itself in settings.json" \
+  || bad "next enabled in settings.local.json: the stable kit does not enable itself in settings.json"
 
 # ---- process settings: validated, rendered, absent = defaults -------------------------
 PS="$TMP/procset"; mkdir -p "$PS"; git -C "$PS" init -q -b main

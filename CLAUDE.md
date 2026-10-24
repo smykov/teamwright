@@ -22,7 +22,7 @@ Run before every commit: `make test`, `make lint`, `make scan`. Before tagging: 
 - A change to a hook, the installer or the router comes with a test that fails without it.
 - Everything here reads as published: no hosts, IPs, absolute paths, names of real projects, clients or people, no secrets. Examples are generic.
 - User-facing files are in English.
-- Anything that changes what the plugin ships (`skills/`, `scripts/`, `template/`, `providers/`, `docs/process/`) bumps `version` in `.claude-plugin/plugin.json` and `marketplace.json` together and gets a `CHANGELOG.md` entry.
+- Anything that changes what the plugin ships (`skills/`, `scripts/`, `template/`, `providers/`, `docs/process/`) bumps `version` in `.claude-plugin/plugin.json` and `marketplace.json` together and gets a `CHANGELOG.md` entry. The `next` branch is the exception: its one channel commit removes the version (CONTRIBUTING, Branches and channels); never merge `next`.
 - The process stays fixed, tools stay pluggable: no hook may depend on a specific tool.
 - `template/docs/failures.md` ships empty — incidents belong to the project that has them.
 - Metrics come from git and logs, never from an agent's self-report.

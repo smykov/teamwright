@@ -209,7 +209,7 @@ python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml  
 /plugin update teamwright@teamwright
 ```
 
-It compares the `version` in `.claude-plugin/plugin.json` with the installed one: from a git marketplace you get a change only when the version was bumped (see [CHANGELOG.md](../CHANGELOG.md)). A local marketplace (`/plugin marketplace add ./path/to/teamwright`) reads files directly from that checkout, so it may report "already at latest version" and still load the new skills after a reload. Run `/plugin` commands in a terminal session: they are not available over Remote Control.
+It compares the `version` in `.claude-plugin/plugin.json` with the installed one: from a git marketplace you get a change only when the version was bumped (see [CHANGELOG.md](../CHANGELOG.md)). The experimental channel (`teamwright@teamwright-next`, branch `next`) has no version: each commit is one, after `/plugin marketplace update teamwright-next` ([README, Channels](../README.md#channels)). A local marketplace (`/plugin marketplace add ./path/to/teamwright`) reads files directly from that checkout, so it may report "already at latest version" and still load the new skills after a reload. Run `/plugin` commands in a terminal session: they are not available over Remote Control.
 
 The plugin update does not touch your project. `/teamwright:status` reports kit updates for the installed files; `tw-install.py apply` (or `/teamwright:adopt` again) updates the files the installer wrote and you did not edit, and keeps and reports the ones you changed. Project documents (`docs/requirements.md`, `plan.md`, `architecture.md`, `decisions.md`, `open-questions.md`) are never replaced.
 
