@@ -63,4 +63,19 @@ git worktree add -q -b task/T-80 .worktrees/T-80 HEAD
 ( cd "$p/.worktrees/T-80" && mk T-8 IN_PROGRESS "web/x.ts" && git add -A && git commit -qm "chore(task): T-8 edited on T-80" )
 expect_rc "task/T-80 is not a branch of T-8" "TODO" \
   "$(nj | q 'next(t["status"] for t in d["tasks"] if t["id"]=="T-8")')"
+# one task IN_PROGRESS per tree means per tree: T-9 IN_PROGRESS on main (its record is on
+# every branch cut from main) does not hold the analysed task of another worktree
+mk T-9 IN_PROGRESS "core/a.py"; mk T-10 ANALYSIS "core/b.py"; git add -A; git commit -qm "chore(task): T-9, T-10"
+git worktree add -q -b tw/T-10 .worktrees/T-10 HEAD
+W10="$p/.worktrees/T-10"
+expect_rc "a worktree is not held by another task's IN_PROGRESS on its branch" "continue T-10 {}" \
+  "$(nj "$W10" | q 'd["action"]+" "+d["task"]+" "+str(d["state"]["wip_waiting"])')"
+expect_rc "the stage request for it is not refused" "True" \
+  "$(python3 "$NEXT" --project "$W10" --brief --stage analyze --task T-10 | q 'd["request"]["ok"]')"
+echo "# local" >> "$W10/.gitignore"
+expect_rc "uncommitted changes in a worktree belong to its own task" "resume T-10" \
+  "$(nj "$W10" | q 'd["action"]+" "+d["task"]')"
+git -C "$W10" checkout -q -- .gitignore
+expect_rc "the main tree still holds its own analysed task behind T-9" "{'T-10': 'T-9'}" \
+  "$(git worktree remove --force "$W10" && nj | q 'str(d["state"]["wip_waiting"])')"
 finish
