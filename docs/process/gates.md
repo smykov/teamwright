@@ -200,6 +200,10 @@ rca_task: T-050             # required with REJECT_RECURRENCE
      spawned for this task in that session — the task id must appear in the spawn's
      description or prompt. A top-level `claude --agent code-reviewer` session has no
      spawn and needs none;
+   - when this checkout has no ledger entry for the round (a status move in a later
+     session — an autonomous job on a fresh checkout), the round's committed stamp
+     `docs/tasks/<ID>.reviews/<n>.gate.json` (*Gate stamps* below) stands in for the
+     ledger entry and the journaled spawn, as long as it matches the record;
    - `reviewer` differs from the task's `implemented_by` (when set).
    Who moves the status (normally the orchestrator) does not matter; who wrote the
    approval does.
@@ -314,7 +318,8 @@ may be empty).
      `docs/sprints/`, `docs/process-reviews/`, `docs/decisions.md`,
      `docs/open-questions.md` — a decision naming the task is not a code change). If no
      commit names the task, the record must verify `HEAD` itself;
-   - each counted record matches its ledger entry (kind, result, commit), or is a
+   - each counted record matches its ledger entry (kind, result, commit) — or, when this
+     checkout has no ledger, its committed stamp `<n>.gate.json` (*Gate stamps*) — or is a
      person's committed record (`verifier: human:<name>`, no ledger entry).
 4. `kind: manual` without `verify_exception` in the task (at write time and at the
    transition); with the exception, at least one fresh manual `PASS` must come from an
@@ -326,7 +331,7 @@ may be empty).
    template `docs/tasks/_validation-template.md`): written only by `task-validator`,
    only with Edit/Write, append-only, next round only, commit must resolve; ledger
    `.teamwright/sessions/<ID>.validation.jsonl`. Entering `DONE` needs the latest round
-   `PASS`, matching its ledger entry, for the task's current code (same freshness rule as
+   `PASS`, matching its ledger entry (or its committed stamp), for the task's current code (same freshness rule as
    verify records) — for every `surface`, including `deploys: false` + `surface: none`,
    where it is the only check. A round whose file is gone while the ledger has it blocks
    `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`). After two `FAIL`
@@ -812,6 +817,43 @@ guard's variables. Unset means the default.
 | `TW_RUN_COPY`, `TW_CACHE_ROOT` | `scripts/tw-run` (set by `scripts/tw-mutants`) | apply the area's `copy_env`; whose `.teamwright/cache` holds the runner's caches |
 | `TEAMWRIGHT_OWNER=1` | installer (in the kit) | owner override outside Claude Code; ignored when `CLAUDECODE` is set |
 
+## Gate stamps
+
+The ledgers (`.teamwright/sessions/`) and the journal (`.teamwright/logs/`) are local and
+gitignored. A session that writes a review, verify or acceptance record and a later
+session that moves the task's status do not always share them: in an autonomous run each
+job starts from a fresh checkout. A job cut after the reviewer's `APPROVE` (or the
+validator's `PASS`) was committed but before the status move would then loop — the next
+job's gate finds no ledger entry and refuses, the router sends the same stage again.
+
+So when the review gate lets a review record through, and the verify gate a verify or
+validation record, the gate also writes `<n>.gate.json` next to it: the writer's
+`session_id`, `agent_id` and `agent_type`, the round, the verdict (verify: kind, result,
+commit; validation: verdict, commit), for a review whether the reviewer's spawn was
+journaled, and the sha256 of the record as written. The stage commits it with the record.
+A status move whose ledger has no entry for the round uses the stamp instead, when it
+matches the record on disk.
+
+What it keeps, what it does not:
+
+- **The same checks.** The stamp says what the ledger says: written by a `code-reviewer`
+  (`task-validator`) through the gate, after the write-time checks (not the implementer,
+  the verdict rules, the findings threshold), with the spawn journaled. A record changed
+  after its stamp does not match the hash and does not count; a stamp with
+  `spawned: false` does not pass without the journal.
+- **The same protection, no more.** Only the gates write stamps: the state guard refuses
+  Edit/Write to them, the gates' shell checks refuse redirects, `tee`, `cp`, `sed -i` into
+  the record directories. Like the local ledgers they are not signed — a script that
+  writes the file directly (an interpreter opening it) is not seen (*Known limitations*).
+  Unlike the ledgers they are in git: a forged stamp is a reviewable line in a diff, and
+  `git log` says which commit brought it.
+- **The implementer check stays at write time.** The status move in a later session has no
+  `.dev` ledger; whether the reviewer implemented the task was checked when the review was
+  written. One stage per job also means the reviewer's session is never the implementer's.
+- **The journal is still local.** Tool calls, outcomes and tokens per stage do not survive
+  a fresh checkout; keep `.teamwright/logs` (and `.teamwright/sessions`) between jobs with a
+  cache or a workspace that is not cleaned (`docs/usage.md`, *Autonomous runs*).
+
 ## Overriding deliberately
 
 Every gate has an exit that leaves a trace (a field in the task file, a trailer in the
@@ -823,9 +865,11 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
 
 - Claude Code gates see Edit/Write and obvious shell rewrites; a determined script
   (e.g. Python writing the file) bypasses them. Git hooks and review are the backstop.
-- Ledgers and the journal are local (`.teamwright/`, gitignored): a review written by
-  an agent on another machine is not recognised — record it as `reviewer: human:<name>`
-  after a person checked it, or run the review where the work was done.
+- Ledgers and the journal are local (`.teamwright/`, gitignored). The gate stamps committed
+  with review, verify and validation records carry what a later status move needs
+  (*Gate stamps*); a review written before 0.12 (no stamp) by an agent on another machine
+  is not recognised — record it as `reviewer: human:<name>` after a person checked it, or
+  run the review where the work was done.
 - One `.teamwright/current-task` per working tree; parallel sessions need worktrees.
 - The state guard parses shell commands; a script file that writes
   `.teamwright/config.yml` without the command naming it, or a path built at run time,

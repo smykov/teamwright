@@ -3,9 +3,12 @@
 
   usage_example.py extract USAGE_MD OUT_DIR
       parse the YAML block under "### Autonomous runs", check its structure, and write
-      route.sh (the "Ask the router" step's script) and facts.json (step outputs it
-      must print, the outputs other steps read, the dispatched workflow file, the CLI
-      flags the steps use) into OUT_DIR. Exit 1 with the reasons on a structural error.
+      route.sh (the "Ask the router" step's script), dispatch.sh (the step that starts
+      the next stage, with its no-new-commit guard) and facts.json (step outputs it must
+      print, the outputs other steps read, the dispatched workflow file, the CLI flags the
+      steps use, whether the journal is cached) into OUT_DIR. Exit 1 with the reasons on a
+      structural error: also when nothing keeps .teamwright/logs between jobs, no step
+      creates the wip/ branch, or the dispatch has no guard.
 
 PyYAML is used when it is installed (unless TW_YAML_LITE is set); otherwise a small parser for the subset the example
 uses (block mappings and sequences, `|` block scalars, one-line `{ k: v }` mappings,
@@ -190,6 +193,22 @@ def main(argv):
     used = set(re.findall(r"steps\.route\.outputs\.(\w+)", text))
     for o in sorted(used - printed):
         errs.append("steps.route.outputs.%s is read but the route step never prints it" % o)
+    # the journal and ledgers survive the job boundary: a cache of .teamwright/logs, or a
+    # checkout that does not clean the workspace
+    cached = any(isinstance(s.get("with"), dict) and ".teamwright/logs" in str(s["with"].get("path") or "")
+                 for s in steps if str(s.get("uses") or "").startswith("actions/cache"))
+    unclean = any(isinstance(s.get("with"), dict) and s["with"].get("clean") is False
+                  for s in steps if str(s.get("uses") or "").startswith("actions/checkout"))
+    if not (cached or unclean):
+        errs.append("nothing keeps .teamwright/logs between jobs (actions/cache or checkout clean: false)")
+    # the work branch is created when it does not exist yet
+    if not any("refs/heads/wip/" in str(s.get("run") or "") for s in steps):
+        errs.append("no step creates the wip/ branch when it is missing")
+    # no new commit -> stop: the dispatching step compares HEAD with the route step's head
+    disp = [s for s in steps if "gh workflow run" in str(s.get("run") or "")]
+    if disp and not all("steps.route.outputs.head" in json.dumps(s) and "rev-parse HEAD" in str(s.get("run"))
+                        for s in disp):
+        errs.append("the step that dispatches the next stage does not stop when the stage made no commit")
     dispatched = re.findall(r"gh workflow run (\S+)", text)
     m = re.search(r"saved as `\.github/workflows/([^`]+)`", md)
     if not dispatched:
@@ -204,9 +223,13 @@ def main(argv):
     if route:
         with open(os.path.join(argv[3], "route.sh"), "w") as fh:
             fh.write(route[0]["run"])
+    if disp:
+        with open(os.path.join(argv[3], "dispatch.sh"), "w") as fh:
+            fh.write(disp[0]["run"])
     with open(os.path.join(argv[3], "facts.json"), "w") as fh:
         json.dump({"parser": how, "printed": sorted(printed), "used": sorted(used),
-                   "claude_flags": flags, "dispatched": dispatched}, fh)
+                   "claude_flags": flags, "dispatched": dispatched, "cached": cached,
+                   "unclean": unclean}, fh)
     for e in errs:
         print(e)
     return 1 if errs else 0

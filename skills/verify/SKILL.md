@@ -22,7 +22,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage verify [--task
 A candidate whose verdict is already recorded (the router's `continue` with role `orchestrator`: acceptance PASS → close, FAIL → back) needs only step 2.
 
 1. Spawn a **fresh `task-validator`** (with `model: request.model` when it is set) with the task id, `surface`, environment and commit. It runs the committed tests against the running system, failure branch included, and writes `docs/tasks/T-NNN.verify/<n>.md`, and the acceptance verdict `docs/tasks/T-NNN.validation/<n>.md` (verdict + the commit it checked). With `deploys: false` + `surface: none` it gives only the acceptance verdict. The router's reason says when this round must be `method: sweep` or `NEEDS_OWNER`.
-2. Act on the records; commit them, and the validator's additions to `docs/tasks/T-NNN.mutants/`, with the status change:
+2. Act on the records; commit them — with the stamps the verify gate wrote next to them (`<n>.gate.json`) — and the validator's additions to `docs/tasks/T-NNN.mutants/`, with the status change:
    - verify `PASS` for the current commit and acceptance `PASS` → `VERIFIED → DONE` (the verify gate checks both);
    - verify `FAIL` → `VERIFY_FAIL`; the next analyze session re-analyses it;
    - verify `PASS`, acceptance `FAIL` → back to `IN_PROGRESS` with the findings and `stage: implement` (or `red-tests` when a test is missing or toothless), then a new review;

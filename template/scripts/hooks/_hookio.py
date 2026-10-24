@@ -20,6 +20,57 @@ VALIDATION_FILE_RE = re.compile(r"(?:^|/)docs/tasks/([^/]+)\.validation/(\d+)\.m
 
 REVIEWER_AGENT = os.environ.get("TEAMWRIGHT_REVIEWER_AGENT", "code-reviewer")
 
+# ---- gate stamps: the ledger line that is committed with the record ----------------
+# The local ledgers (.teamwright/sessions/, gitignored) do not survive a fresh checkout:
+# in an autonomous run each job starts from a clean clone, so a job cut after the
+# reviewer's APPROVE (or the validator's PASS) was committed but before the status move
+# would loop forever - the next job's gate finds no ledger entry. When a gate lets a
+# review, verify or validation record through it also writes <n>.gate.json next to it:
+# who wrote it (session, agent, agent type), the verdict, whether the reviewer's spawn was
+# journaled, and the sha256 of the record as written. The orchestrator commits it with the
+# record; a later status move in another session verifies against it when the local ledger
+# has no entry. Only the gates write stamps (the state guard refuses Edit/Write, the gates'
+# shell checks refuse redirects into the record directories); a record changed after its
+# stamp no longer matches the hash and does not count.
+STAMP_RE = re.compile(r"(?:^|/)docs/tasks/[^/]+\.(reviews|verify|validation)/\d+\.gate\.json$")
+
+
+def _digest(text):
+    import hashlib
+    norm = (text or "").replace("\r\n", "\n").rstrip("\n") + "\n"
+    return hashlib.sha256(norm.encode("utf-8", "replace")).hexdigest()
+
+
+def stamp_path(root, rel):
+    """docs/tasks/<ID>.<kind>/<n>.md -> its stamp, docs/tasks/<ID>.<kind>/<n>.gate.json."""
+    return os.path.join(root, re.sub(r"\.md$", ".gate.json", rel))
+
+
+def write_stamp(root, rel, entry, text):
+    """Write the committed stamp of a record the gate let through (best effort)."""
+    path = stamp_path(root, rel)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(dict(entry, sha256=_digest(text)), fh, ensure_ascii=False, sort_keys=True, indent=1)
+            fh.write("\n")
+    except OSError:
+        pass
+
+
+def read_stamp(root, rel):
+    """The stamp of a record when it matches the record on disk, else None."""
+    try:
+        with open(stamp_path(root, rel), encoding="utf-8") as fh:
+            st = json.load(fh)
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except (OSError, ValueError):
+        return None
+    if not isinstance(st, dict) or st.get("sha256") != _digest(text):
+        return None
+    return st
+
 
 def event(data):
     """Hook event name; tests and old runtimes may omit it (treated as PreToolUse)."""
@@ -442,9 +493,9 @@ def guard_state(data):
              ".teamwright/config.next.yml (allowed) and run `tw-install.py apply --config "
              ".teamwright/config.next.yml` from the main session, or a person edits it outside "
              "Claude Code. Agents cannot switch the gates to gate-first." % rel, gate, data, hard=True)
-    if LEDGER_RE.search(rel):
-        deny("STATE GUARD: %s is written only by the hooks (ledgers and journal are facts "
-             "the gates rely on), never by an agent." % rel, gate, data)
+    if LEDGER_RE.search(rel) or STAMP_RE.search(rel):
+        deny("STATE GUARD: %s is written only by the hooks (ledgers, gate stamps and the journal "
+             "are facts the gates rely on), never by an agent." % rel, gate, data)
 
 
 def deny(reason, gate, data=None, hard=False, mode=None, warn_note=None):

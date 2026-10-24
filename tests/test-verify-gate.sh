@@ -289,5 +289,19 @@ commit "docs: OQ-3 raised by T-24" docs/open-questions.md >/dev/null
 out="$(to T-24 CODE_COMPLETE DONE)"; expect_allow "a decision commit naming the task keeps the acceptance PASS fresh" "$out"
 commit "docs: T-24 user guide" docs/guide.md >/dev/null
 out="$(to T-24 CODE_COMPLETE DONE)"; expect_deny "other docs naming the task still count as a change" "$out" "stale"
+# ---- B2: committed stamps stand in for the ledgers on a fresh checkout ---------------
+C60="$(commit "fix(api): T-60 the stamp case" src/stamp.txt)"
+vtask T-60 DEPLOYED api
+wv T-60 1 api PASS "$C60" "" "${VAL[@]}" >/dev/null
+validate T-60 PASS "${VAL[@]}" >/dev/null
+[ -f "$(vd T-60)/1.gate.json" ] && [ -f "$(xd T-60)/1.gate.json" ] && ok "verify and validation records get a stamp" || bad "verify and validation records get a stamp"
+mv "$P/.teamwright" "$TMP/vg-state"
+out="$(to T-60 DEPLOYED DONE)"; expect_allow "fresh checkout: DONE is checked against the stamps" "$out"
+echo "edited" >> "$(xd T-60)/1.md"
+out="$(to T-60 DEPLOYED DONE)"; expect_deny "a validation record edited after its stamp does not count" "$out" "not written by task-validator"
+rm -f "$(xd T-60)/1.gate.json" "$(xd T-60)/1.md"; validate T-60 PASS "${VAL[@]}" >/dev/null
+echo "changed" >> "$(vd T-60)/1.md"
+out="$(to T-60 DEPLOYED DONE)"; expect_deny "a verify record edited after its stamp does not count" "$out" "not written through the gate"
+rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

@@ -81,17 +81,30 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with: { ref: wip/teamwright, fetch-depth: 0 }
+        with: { fetch-depth: 0, clean: false }
+      - name: Work branch
+        run: |
+          if git fetch -q origin wip/teamwright; then git checkout -B wip/teamwright FETCH_HEAD
+          else git checkout -B wip/teamwright; git push -q origin HEAD:refs/heads/wip/teamwright; fi
+      - name: Journal and ledgers from the previous job
+        uses: actions/cache@v4
+        with:
+          path: |
+            .teamwright/logs
+            .teamwright/sessions
+          key: teamwright-state-${{ github.run_id }}
+          restore-keys: teamwright-state-
       - name: Ask the router
         id: route
         run: |
           python3 "$TEAMWRIGHT_KIT/scripts/tw-next.py" --json > route.json
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json; r = json.load(open("route.json")); h = r["headless"]
+          import json, subprocess; r = json.load(open("route.json")); h = r["headless"]
           print("run=%s" % ("true" if h["run"] else "false"))
           print("prompt=%s" % (h["prompt"] or ""))
           print("model=%s" % (h["model"] or "opus"))
-          print("reason=%s" % r["reason"].replace("\n", " "))
+          print("reason=%s" % (h.get("reason") or r["reason"]).replace("\n", " "))
+          print("head=%s" % subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip())
           PY
       - name: One stage
         if: steps.route.outputs.run == 'true'
@@ -102,8 +115,11 @@ jobs:
           claude_args: --model ${{ steps.route.outputs.model }}
       - name: Keep the work, start the next stage
         if: steps.route.outputs.run == 'true'
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env: { GH_TOKEN: "${{ github.token }}", BEFORE: "${{ steps.route.outputs.head }}" }
         run: |
+          if [ "$(git rev-parse HEAD)" = "$BEFORE" ]; then
+            echo "the stage made no commit: stopping the chain - a person looks at the run"; exit 1
+          fi
           git push origin HEAD:wip/teamwright
           gh workflow run teamwright-stage.yml
       - name: Nothing to run
@@ -113,7 +129,13 @@ jobs:
           echo "router: $REASON"
 ```
 
-`concurrency` keeps one stage running per repository (reviewers one at a time); a `decide` (push, an escalation, `NEEDS_OWNER`) stops the chain until a person acts.
+`concurrency` keeps one stage running per repository (reviewers one at a time); when only owner decisions are left (push, an escalation, `NEEDS_OWNER`), `run` is false and the chain stops until a person acts.
+
+What survives between jobs, and why:
+
+- **The gates' evidence is committed.** When the review gate lets a review record through, and the verify gate a verify or acceptance record, each writes a stamp next to it (`docs/tasks/<ID>.reviews/<n>.gate.json`, `.verify/<n>.gate.json`, `.validation/<n>.gate.json`: who wrote it, the verdict, the record's hash). The stage commits it with the record, so a job cut after the reviewer's APPROVE was committed but before the status move does not loop: the next job's gate checks the stamp instead of the local ledger it does not have (`docs/process/gates.md`, *Gate stamps*).
+- **The journal is not.** `.teamwright/logs` (tool calls, outcomes, tokens per stage) and `.teamwright/sessions` are local and gitignored; `actions/checkout` cleans them. The cache step carries them from job to job (`clean: false` alone is enough on a self-hosted runner that keeps its workspace); without it the per-stage metrics of CI runs are lost and an `interrupted` outcome is not seen by the next job.
+- **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
 
 ## `/teamwright:blockers`
 

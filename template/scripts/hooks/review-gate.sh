@@ -61,6 +61,11 @@
 #   .teamwright/sessions/<ID>.dev            agents that started (-> IN_PROGRESS,
 #       except a NEEDS_REVIEW -> IN_PROGRESS send-back) or submitted (-> NEEDS_REVIEW)
 #   .teamwright/sessions/<ID>.reviews.jsonl  who wrote which review round, verdict
+# STAMP (committed with the record): docs/tasks/<ID>.reviews/<n>.gate.json - the same
+#   ledger line plus whether the reviewer's spawn was journaled and the record's sha256.
+#   Check 2 uses it when the local ledger has no entry (a status move in a later session,
+#   e.g. a CI job on a fresh checkout). Only the gate writes it; an edited record no longer
+#   matches its hash.
 #
 # HUMAN REVIEW. A person reviewing outside Claude Code writes the record with
 # `reviewer: human:<name>` and commits it; an agent cannot write that marker.
@@ -244,6 +249,12 @@ if m and rel.startswith("docs/tasks/"):
                 "not %s." % (tid, prior_rc, tid, n, verdict), "review-gate")
     io.state_dir(data, "sessions")
     io.append_jsonl(review_ledger(tid), dict(who, ts=io.now(), round=n, verdict=verdict))
+    if hasattr(io, "write_stamp"):
+        # committed with the record: a status move in a later session (a CI job on a fresh
+        # checkout, without this ledger) checks the stamp instead
+        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="review", round=n, verdict=verdict,
+                                       spawned=bool(not who["agent_id"] or
+                                                    spawned_reviewer(tid, who["session_id"]))), after)
     sys.exit(0)
 
 # ---- 2. task record transition --------------------------------------------------
@@ -344,6 +355,9 @@ if impl and reviewer == impl:
     io.deny("REVIEW GATE: reviewer %r is also implemented_by of %s - self-review never "
             "counts." % (reviewer, tid), "review-gate")
 entry = ledger_entry(tid, n)
+stamp = io.read_stamp(root, "docs/tasks/%s.reviews/%d.md" % (tid, n)) if hasattr(io, "read_stamp") else None
+if entry is None and stamp is not None and stamp.get("gate") == "review" and stamp.get("round") == n:
+    entry = stamp  # the committed stamp stands in for a ledger this checkout does not have
 if is_human(reviewer):
     if entry is not None:
         io.deny("REVIEW GATE: round %d of %s says `reviewer: human` but was written by an "
@@ -362,7 +376,8 @@ if entry.get("verdict") != "APPROVE":
     io.deny("REVIEW GATE: round %d of %s was written with verdict %r and later changed "
             "to APPROVE outside the reviewer. Run a new review round."
             % (n, tid, entry.get("verdict")), "review-gate")
-if entry.get("agent_id") and not spawned_reviewer(tid, entry.get("session_id")):
+if entry.get("agent_id") and not spawned_reviewer(tid, entry.get("session_id")) and \
+        not (stamp is not None and stamp.get("spawned") and io.actor_key(stamp) == io.actor_key(entry)):
     io.deny("REVIEW GATE: no journaled spawn of a %s subagent for %s in session %s "
             "(.teamwright/logs/tools.jsonl). Spawn the reviewer with the task id in its "
             "prompt; the journal hook (journal.sh) must be enabled in .claude/settings.json."

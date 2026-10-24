@@ -255,4 +255,30 @@ expect_deny "a reviewer's own sub-spawn does not reset the count" "$out" "T-76"
 spawn7 developer "T-80 developer"
 out="$(newtask T-81)"; expect_allow "after a spawn of another role the review window is closed" "$out"
 
+# ---- B2: the committed stamp survives a fresh checkout (an autonomous job) ----------
+S9=sess-9
+task_file "$(tf T-90)" T-90 NEEDS_REVIEW bug full
+hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-90 code-reviewer" "prompt=go" @hook_event_name=PreToolUse | bash "$JOURNAL"
+c90="$(review_text T-90 APPROVE)"
+out="$(run Write "$S9" "file_path=$(rd T-90)/1.md" "content=$c90" "${REV[@]}")"
+expect_allow "reviewer writes APPROVE for T-90" "$out"
+mkdir -p "$(rd T-90)"; printf '%s\n' "$c90" > "$(rd T-90)/1.md"
+[ -f "$(rd T-90)/1.gate.json" ] && ok "the gate writes the stamp next to the record" || bad "the gate writes the stamp next to the record"
+grep -q '"spawned": true' "$(rd T-90)/1.gate.json" && ok "the stamp records the journaled spawn" || bad "the stamp records the journaled spawn" "$(cat "$(rd T-90)/1.gate.json" 2>/dev/null)"
+mv "$P/.teamwright" "$TMP/tw-state"           # a fresh checkout: no ledgers, no journal
+out="$(run Edit "$S9-next" "file_path=$(tf T-90)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_allow "fresh checkout: the status move in a later session is checked against the stamp" "$out"
+printf '%s\nedited later\n' "$c90" > "$(rd T-90)/1.md"
+out="$(run Edit "$S9-next" "file_path=$(tf T-90)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a record changed after its stamp does not count" "$out" "not written by a code-reviewer"
+printf '%s\n' "$c90" > "$(rd T-90)/1.md"
+out="$(run Write "$S9" "file_path=$(rd T-90)/1.gate.json" "content={}" "${REV[@]}")"
+expect_deny "no agent writes a stamp (state guard)" "$out" "written only by the hooks"
+out="$(run Bash "$S9" "command=echo {} > docs/tasks/T-90.reviews/1.gate.json")"
+expect_deny "no shell write of a stamp" "$out" "never by shell"
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["spawned"]=False; json.dump(d,open(p,"w"))' "$(rd T-90)/1.gate.json"
+out="$(run Edit "$S9-next" "file_path=$(tf T-90)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a stamp without the journaled spawn, journal gone: still denied" "$out" "journaled spawn"
+rm -rf "$P/.teamwright"; mv "$TMP/tw-state" "$P/.teamwright"
+
 finish

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Regression: the autonomous-run example in docs/usage.md (one stage per CI job). Not an
 # end-to-end run on GitHub: the YAML parses, the router call in its "Ask the router" step
-# runs against a real project and prints every output the other steps read, and the
-# file it dispatches is the one the docs say it is saved as.
+# runs against a real project and prints every output the other steps read, the file it
+# dispatches is the one the docs say it is saved as, the journal is cached between jobs,
+# the wip/ branch is created when missing, and a stage without a new commit stops the chain.
 . "$(dirname "$0")/lib.sh"
 echo "usage example (autonomous runs)"
 OUT="$TMP/example"
@@ -13,7 +14,8 @@ expect_rc "the subset parser (no PyYAML, e.g. bash 3.2 CI) reads it too${msg:+ (
 [ -f "$OUT/route.sh" ] || { bad "the route step's script was extracted"; finish; exit 1; }
 fact() { python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))[sys.argv[2]]) if isinstance(json.load(open(sys.argv[1]))[sys.argv[2]], list) else json.load(open(sys.argv[1]))[sys.argv[2]])' "$OUT/facts.json" "$1"; }
 echo "  (YAML read with: $(fact parser))"
-expect_rc "the steps read run, prompt, model and reason from the route step" "model prompt reason run" "$(fact used)"
+expect_rc "the steps read run, prompt, model, reason and head from the route step" "head model prompt reason run" "$(fact used)"
+expect_rc "the journal and ledgers are kept between jobs (cache)" True "$(fact cached)"
 
 # the route step against a project with work: run=true and a stage command
 P="$TMP/proj"; mkdir -p "$P/docs/tasks" "$P/.teamwright" && cd "$P" || exit 1
@@ -33,6 +35,10 @@ expect_rc "run=true when there is work" true "$(out_of run)"
 expect_rc "prompt is the stage command from headless.prompt (no ids)" "/teamwright:analyze" "$(out_of prompt)"
 expect_rc "model comes from headless.model (process.models)" sonnet "$(out_of model)"
 case "$(out_of reason)" in "") bad "reason is printed";; *) ok "reason is printed";; esac
+expect_rc "head is the commit the job starts from (the no-progress guard)" "$(git rev-parse HEAD)" "$(out_of head)"
+guard="$(BEFORE="$(git rev-parse HEAD)" bash -e "$OUT/dispatch.sh" 2>&1)"; rc=$?
+expect_rc "the dispatch step stops the chain when the stage made no commit" 1 "$rc"
+case "$guard" in *"no commit"*) ok "the guard says why" ;; *) bad "the guard says why" "$guard" ;; esac
 rm -f docs/tasks/T-1.md && git add -A && git commit -qm empty
 got="$(route)"
 expect_rc "nothing to do: run=false" false "$(out_of run)"

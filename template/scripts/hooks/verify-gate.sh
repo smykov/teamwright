@@ -64,6 +64,10 @@
 #
 # LEDGER (local, gitignored): .teamwright/sessions/<ID>.verify.jsonl - who wrote which
 # round, kind, result, commit; <ID>.validation.jsonl - acceptance verdicts. Implementers: .teamwright/sessions/<ID>.dev (review gate).
+# STAMP (committed with the record): docs/tasks/<ID>.verify/<n>.gate.json and
+# <ID>.validation/<n>.gate.json - the same ledger line and the record's sha256; checks 3 and
+# 5 use it when the local ledger has no entry (a status move in a later session, e.g. a CI
+# job on a fresh checkout). Only the gate writes it; an edited record no longer matches.
 # SAFETY: fail-open on any internal error; silent on allow. Freshness is skipped when
 # git is unavailable.
 set -uo pipefail
@@ -173,12 +177,18 @@ def ledger(tid):
 def validation_ledger(tid):
     return os.path.join(sessions_dir(), tid + ".validation.jsonl")
 
+def stamp_of(tid, kind, n, gate):
+    """The committed stamp docs/tasks/<ID>.<kind>/<n>.gate.json when it matches the record
+    (it stands in for a local ledger this checkout does not have), else None."""
+    st = io.read_stamp(root, "docs/tasks/%s.%s/%d.md" % (tid, kind, n)) if hasattr(io, "read_stamp") else None
+    return st if st is not None and st.get("gate") == gate and st.get("round") == n else None
+
 def ledger_entry(tid, n):
     hit = None
     for r in io.read_jsonl(ledger(tid)):
         if r.get("round") == n:
             hit = r
-    return hit
+    return hit if hit is not None else stamp_of(tid, "verify", n, "verify")
 
 def filled(v):
     v = (v or "").strip() if isinstance(v, str) else ""
@@ -280,6 +290,9 @@ if m and rel.startswith("docs/tasks/"):
     io.state_dir(data, "sessions")
     io.append_jsonl(ledger(tid), dict(who, ts=io.now(), round=n, kind=kind,
                                       result=w(rec, "result"), commit=commit))
+    if hasattr(io, "write_stamp"):
+        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="verify", round=n, kind=kind,
+                                       result=w(rec, "result"), commit=commit), after)
     sys.exit(0)
 
 # ---- 6. validation record (acceptance verdict) being written ---------------------------
@@ -350,6 +363,9 @@ if m and rel.startswith("docs/tasks/"):
     io.state_dir(data, "sessions")
     io.append_jsonl(validation_ledger(tid), dict(who, ts=io.now(), round=n,
                                                  verdict=w(rec, "verdict"), commit=w(rec, "commit")))
+    if hasattr(io, "write_stamp"):
+        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="validation", round=n,
+                                       verdict=w(rec, "verdict"), commit=w(rec, "commit")), after)
     sys.exit(0)
 
 # ---- 3. task record entering VERIFIED / DONE ---------------------------------------
@@ -397,6 +413,11 @@ def acceptance_check():
            "docs/tasks/%s.validation/<n>.md - with `deploys: false` and `surface: none` that "
            "is its whole job, no verify record needed" % (VALIDATOR, tid))
     written = [r.get("round") for r in io.read_jsonl(validation_ledger(tid))]
+    vdir = os.path.join(root, "docs", "tasks", tid + ".validation")
+    try:  # a stamp without its record: the round was written, then its file removed
+        written += [int(f.split(".")[0]) for f in os.listdir(vdir) if re.match(r"^\d+\.gate\.json$", f)]
+    except OSError:
+        pass
     if not vrounds:
         deny("%s cannot become DONE without an acceptance verdict PASS (no validation "
              "record). %s." % (tid, how))
@@ -412,6 +433,8 @@ def acceptance_check():
     for r in io.read_jsonl(validation_ledger(tid)):
         if r.get("round") == n:
             entry = r
+    if entry is None:
+        entry = stamp_of(tid, "validation", n, "validation")
     if entry is None or (entry.get("verdict"), entry.get("commit")) != ("PASS", w(rec, "commit")):
         deny("validation round %d of %s was not written by %s through this gate, or was "
              "changed after it was written (ledger .teamwright/sessions/%s.validation.jsonl). "
