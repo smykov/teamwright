@@ -52,9 +52,11 @@ validate() {
   content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n%b---\n## Acceptance checked\n- every item against evidence\n' \
     "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}" "${VMETHOD:+method: $VMETHOD\n}")"
   out="$(run Write "$S" "file_path=$(xd "$id")/$n.md" "content=$content" "$@")"
-  if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; fi
+  if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; landed "$(xd "$id")/$n.md" "$@"; fi
   printf '%s' "$out"
 }
+# landed FILE WHO... : the Write ran - PostToolUse turns the gate's pending ledger line and stamp into evidence
+landed() { local f="$1"; shift; hook_json Write "$S" "file_path=$f" @hook_event_name=PostToolUse "$@" | bash "$GATE" >/dev/null; }
 # vtext ID N KIND RESULT COMMIT [VERIFIER] [TOOL] [EVIDENCE] [FAILURE-BRANCH-LINE]
 vtext() {
   printf -- '---\ntask: %s\nround: %s\nkind: %s\n%scommand: make e2e\nenvironment: staging\ncommit: %s\nresult: %s\nevidence: %s\nverifier: %s\n---\n## Scenarios checked\n- Happy path: valid header -> 200\n%s\n' \
@@ -70,7 +72,7 @@ wv() {
   local content out
   content="$(vtext "$id" "$n" "$kind" "$res" "$c" "$verifier" "$tool")"
   out="$(run Write "$S" "file_path=$(vd "$id")/$n.md" "content=$content" "$@")"
-  if [ -z "$out" ]; then mkdir -p "$(vd "$id")"; printf '%s\n' "$content" > "$(vd "$id")/$n.md"; fi
+  if [ -z "$out" ]; then mkdir -p "$(vd "$id")"; printf '%s\n' "$content" > "$(vd "$id")/$n.md"; landed "$(vd "$id")/$n.md" "$@"; fi
   printf '%s' "$out"
 }
 to() {  # to ID FROM TO
@@ -331,5 +333,16 @@ io.write_stamp(sys.argv[2], rel, dict(session_id="sess-1", agent_id="a-val", age
                                       gate="validation", verdict="PASS", commit=sys.argv[3]), text)
 PY
 out="$(to T-62 DEPLOYED DONE)"; expect_deny "a scripted stamp does not count where the validation ledger exists" "$out" "not written by task-validator"
+# minor: a record write the gate allowed but that never landed leaves no evidence behind
+vtask T-63 DEPLOYED none false
+validate T-63 PASS "${VAL[@]}" >/dev/null
+c63="$(printf -- '---\ntask: T-63\nround: 2\nverdict: FAIL\ncommit: %s\nvalidator: task-validator\n---\nx\n' "$(git -C "$P" rev-parse HEAD)")"
+out="$(run Write "$S" "file_path=$(xd T-63)/2.md" "content=$c63" "${VAL[@]}")"
+expect_allow "the gate lets round 2 through (then the write is cancelled)" "$out"
+[ ! -f "$(xd T-63)/2.gate.json" ] && ok "no stamp before the write lands" || bad "no stamp before the write lands"
+out="$(to T-63 DEPLOYED DONE)"; expect_allow "a cancelled write neither blocks DONE nor leaves a ledger line" "$out"
+cp "$(xd T-63)/1.gate.json" "$(xd T-63)/3.gate.json"
+out="$(to T-63 DEPLOYED DONE)"; expect_allow "an orphan stamp (no record) is ignored" "$out"
+[ ! -f "$(xd T-63)/3.gate.json" ] && ok "and removed by the gate" || bad "and removed by the gate"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

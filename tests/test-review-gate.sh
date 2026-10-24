@@ -25,9 +25,11 @@ write_review() {
   local content out
   content="$(review_text "$id" "$verdict")"
   out="$(run Write "$S" "file_path=$(rd "$id")/$n.md" "content=$content" "$@")"
-  if [ -z "$out" ]; then mkdir -p "$(rd "$id")"; printf '%s\n' "$content" > "$(rd "$id")/$n.md"; fi
+  if [ -z "$out" ]; then mkdir -p "$(rd "$id")"; printf '%s\n' "$content" > "$(rd "$id")/$n.md"; landed "$(rd "$id")/$n.md" "$@"; fi
   printf '%s' "$out"
 }
+# landed FILE WHO... : the Write ran - PostToolUse turns the gate's pending ledger line and stamp into evidence
+landed() { local f="$1"; shift; hook_json Write "$S" "file_path=$f" @hook_event_name=PostToolUse "$@" | bash "$GATE" >/dev/null; }
 to_cc() {  # to_cc ID [WHO...]  (default: orchestrator = no agent fields)
   local id="$1"; shift
   run Edit "$S" "file_path=$(tf "$id")" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE" "$@"
@@ -262,7 +264,7 @@ hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-90 code-revie
 c90="$(review_text T-90 APPROVE)"
 out="$(run Write "$S9" "file_path=$(rd T-90)/1.md" "content=$c90" "${REV[@]}")"
 expect_allow "reviewer writes APPROVE for T-90" "$out"
-mkdir -p "$(rd T-90)"; printf '%s\n' "$c90" > "$(rd T-90)/1.md"
+mkdir -p "$(rd T-90)"; printf '%s\n' "$c90" > "$(rd T-90)/1.md"; S="$S9" landed "$(rd T-90)/1.md" "${REV[@]}"
 [ -f "$(rd T-90)/1.gate.json" ] && ok "the gate writes the stamp next to the record" || bad "the gate writes the stamp next to the record"
 grep -q '"spawned": true' "$(rd T-90)/1.gate.json" && ok "the stamp records the journaled spawn" || bad "the stamp records the journaled spawn" "$(cat "$(rd T-90)/1.gate.json" 2>/dev/null)"
 mv "$P/.teamwright" "$TMP/tw-state"           # a fresh checkout: no ledgers, no journal
@@ -315,7 +317,7 @@ hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-93 code-revie
 mkdir -p "$(rd T-93)"
 out="$(run Write "$S9" "file_path=$(rd T-93)/1.md" "content=$(review_text T-93 REQUEST_CHANGES)" "${REV[@]}")"
 expect_allow "round 1 of T-93 goes through the gate (the ledger now exists)" "$out"
-review_text T-93 REQUEST_CHANGES > "$(rd T-93)/1.md"
+review_text T-93 REQUEST_CHANGES > "$(rd T-93)/1.md"; S="$S9" landed "$(rd T-93)/1.md" "${REV[@]}"
 review_text T-93 APPROVE | sed 's/^round: 1$/round: 2/' > "$(rd T-93)/2.md"
 python3 - "$HOOKS" "$P" <<'PY'
 import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io
@@ -345,6 +347,17 @@ done
 for c in "cd docs/tasks && cat T-90.reviews/1.md" "git add docs/tasks/T-90.reviews" "ls docs/tasks/T-90.reviews"; do
   out="$(run Bash "$S9" "command=$c")"; expect_allow "reading or staging records is fine: $c" "$out"
 done
+
+# minor: a review write the gate allowed but that never landed leaves no stamp or ledger line
+task_file "$(tf T-95)" T-95 NEEDS_REVIEW bug full
+out="$(run Write "$S9" "file_path=$(rd T-95)/1.md" "content=$(review_text T-95 APPROVE)" "${REV[@]}")"
+expect_allow "the gate lets the review through (then the write is refused elsewhere)" "$out"
+[ ! -e "$(rd T-95)/1.gate.json" ] && [ ! -e "$P/.teamwright/sessions/T-95.reviews.jsonl" ] \
+  && ok "no stamp and no ledger line before the write lands" || bad "no stamp and no ledger line before the write lands"
+mkdir -p "$(rd T-95)"; { review_text T-95 APPROVE; echo "changed after the check"; } > "$(rd T-95)/1.md"
+S="$S9" landed "$(rd T-95)/1.md" "${REV[@]}"
+[ ! -e "$(rd T-95)/1.gate.json" ] && ok "a landed file that differs from what the gate checked gets no stamp" \
+  || bad "a landed file that differs from what the gate checked gets no stamp"
 
 # ---- m3: records created outside Edit/Write still count, at the reviewed task's status move ----
 G="$TMP/gproj"; mkdir -p "$G/docs/tasks"; git -C "$G" init -q -b main .

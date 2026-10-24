@@ -65,7 +65,8 @@
 # LEDGERS (local, gitignored, written by this hook = facts, not claims):
 #   .teamwright/sessions/<ID>.dev            agents that started (-> IN_PROGRESS,
 #       except a NEEDS_REVIEW -> IN_PROGRESS send-back) or submitted (-> NEEDS_REVIEW)
-#   .teamwright/sessions/<ID>.reviews.jsonl  who wrote which review round, verdict
+#   .teamwright/sessions/<ID>.reviews.jsonl  who wrote which review round, verdict (written
+#       with the stamp in PostToolUse, once the record write landed)
 # STAMP (committed with the record): docs/tasks/<ID>.reviews/<n>.gate.json - the same
 #   ledger line plus whether the reviewer's spawn was journaled, the record it belongs to
 #   (task, path, round: a copy into another task or round does not count) and its sha256.
@@ -103,6 +104,13 @@ except ValueError:
     ESCALATE_AFTER = 2
 REVIEWER = io.REVIEWER_AGENT
 data = io.load_input()
+if data and io.event(data) == "PostToolUse" and hasattr(io, "commit_record"):
+    # the record write landed: its pending ledger line and stamp become evidence
+    if (data.get("tool_name") or "") in ("Edit", "Write", "MultiEdit"):
+        _rel = io.rel_path(data, (data.get("tool_input") or {}).get("file_path") or "")
+        if io.REVIEW_FILE_RE.search(_rel) and _rel.startswith("docs/tasks/"):
+            io.commit_record(io.project_root(data), _rel)
+    sys.exit(0)
 if not data or io.event(data) != "PreToolUse":
     sys.exit(0)
 tool = data.get("tool_name") or ""
@@ -269,13 +277,16 @@ if m and rel.startswith("docs/tasks/"):
                 "attempt: write verdict ESCALATE (the owner decides) or REJECT_RECURRENCE, "
                 "not %s." % (tid, prior_rc, tid, n, verdict), "review-gate")
     io.state_dir(data, "sessions")
-    io.append_jsonl(review_ledger(tid), dict(who, ts=io.now(), round=n, verdict=verdict))
-    if hasattr(io, "write_stamp"):
-        # committed with the record: a status move in a later session (a CI job on a fresh
-        # checkout, without this ledger) checks the stamp instead
-        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="review", round=n, verdict=verdict,
-                                       spawned=bool(not who["agent_id"] or
-                                                    spawned_reviewer(tid, who["session_id"]))), after)
+    line = dict(who, ts=io.now(), round=n, verdict=verdict)
+    if hasattr(io, "stage_record"):
+        # ledger line and stamp once the write lands (PostToolUse); the stamp is committed with
+        # the record: a status move on a fresh checkout (a CI job, no ledger) checks it instead
+        io.stage_record(root, rel, ".teamwright/sessions/%s.reviews.jsonl" % tid, line,
+                        dict(line, gate="review", spawned=bool(not who["agent_id"] or
+                                                               spawned_reviewer(tid, who["session_id"]))),
+                        after)
+    else:
+        io.append_jsonl(review_ledger(tid), line)
     sys.exit(0)
 
 # ---- 2. task record transition --------------------------------------------------

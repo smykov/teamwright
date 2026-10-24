@@ -20,8 +20,8 @@ them as `python3 <kit>/scripts/tw-install.py ...`, where `<kit>` is the plugin d
 | Gate | Where it runs | Tier | Prevents |
 |------|---------------|------|----------|
 | [Analysis gate](#analysis-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) + `PostToolUse` | T3 | Coding before the root cause is known; a task handed to review from the red-tests stage |
-| [Review gate](#review-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) | T3 | Self-review, skipped review, endless review loops, recurrence accepted as a patch |
-| [Verify gate](#verify-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) | T3 | "Done" that does not work in the running system |
+| [Review gate](#review-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) + `PostToolUse` | T3 | Self-review, skipped review, endless review loops, recurrence accepted as a patch |
+| [Verify gate](#verify-gate) | Claude Code `PreToolUse` (Edit/Write/Bash) + `PostToolUse` | T3 | "Done" that does not work in the running system |
 | [Journal](#journal) | Claude Code tool, permission and stop events | — (facts) | Metrics and gates built on self-report |
 | [Deny list](#deny-list) | `.claude/settings.json` permissions | T3 | Destroying uncommitted work or shared history |
 | [Patch guard](#patch-guard) | git `commit-msg` | T2 (warns; blocking is opt-in) | "One more `if`" fixes in an area already fixed before |
@@ -216,7 +216,8 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    task. The hook records every agent (`session_id:agent_id`) that starts
    (`→ IN_PROGRESS`) or submits (`→ NEEDS_REVIEW`) a task in
    `.teamwright/sessions/<ID>.dev`, and every review round it lets through, with its
-   author and verdict, in `.teamwright/sessions/<ID>.reviews.jsonl`. The record's
+   author and verdict, in `.teamwright/sessions/<ID>.reviews.jsonl` — once the write
+   has landed (`PostToolUse`). The record's
    `task:` must be the task whose `.reviews/` directory it is written to. A send-back
    (`NEEDS_REVIEW → IN_PROGRESS`) is not recorded as development.
 2. `→ CODE_COMPLETE` unless the latest round says `APPROVE` and
@@ -882,7 +883,12 @@ validation record, the gate also writes `<n>.gate.json` next to it: the writer's
 `session_id`, `agent_id` and `agent_type`, the round, the verdict (verify: kind, result,
 commit; validation: verdict, commit), for a review whether the reviewer's spawn was
 journaled, the record it belongs to (`task`, `path`, `round`) and the sha256 of the
-record as written. A stamp counts only for the record it names: copied with its record
+record as written. The ledger line and the stamp are written when the write has landed
+(`PostToolUse`, with the record on disk equal to what the gate checked): a write the gate
+allowed that another hook then refused, the person cancelled or that failed leaves
+neither — no orphan stamp, no ledger round "written but gone" that would block the task.
+A stamp without its record (from a pre-release of 0.12) is ignored and removed by the
+verify gate. A stamp counts only for the record it names: copied with its record
 into another task's directory or another round it does not count, and the gates also
 check that a review or acceptance record's `task:` is the task it is counted for. The stage commits it with the record.
 A status move on a checkout that has **no ledger of that kind for the task at all** (a

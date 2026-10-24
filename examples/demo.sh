@@ -128,8 +128,9 @@ call() {
     say "  !! expected a deny from $expect only"; FAILED=1; fi
   [ -z "$denied" ]
 }
-# landed AGENT TOOL FILE : the call ran - PostToolUse to the journal and the analysis
-# gate (which keeps .teamwright/current-task).
+# landed AGENT TOOL FILE : the call ran - PostToolUse to the journal, the analysis gate
+# (which keeps .teamwright/current-task) and the review and verify gates (a record they let
+# through becomes evidence - ledger line and stamp - once the write landed).
 landed() {
   local agent="$1" tool="$2" file="$3" who=() json
   case "$agent" in main) ;; *) who=("@agent_id=a-$agent" "@agent_type=$agent") ;; esac
@@ -137,6 +138,8 @@ landed() {
     @hook_event_name=PostToolUse ${who[@]+"${who[@]}"})"
   printf '%s' "$json" | bash "$P/scripts/hooks/journal.sh"
   printf '%s' "$json" | bash "$P/scripts/hooks/analysis-gate.sh" >/dev/null
+  printf '%s' "$json" | bash "$P/scripts/hooks/review-gate.sh" >/dev/null
+  printf '%s' "$json" | bash "$P/scripts/hooks/verify-gate.sh" >/dev/null
 }
 sedi() { sed "$1" "$2" > "$2.tmp" && mv "$2.tmp" "$2"; }
 TASK="$P/docs/tasks/T-001.md"

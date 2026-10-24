@@ -97,6 +97,13 @@ SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
 FB_LINE = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:\[[ xX]\]\s*)?\**failure branch\**\s*[:\-]\s*(.*)$")
 
 data = io.load_input()
+if data and io.event(data) == "PostToolUse" and hasattr(io, "commit_record"):
+    # the record write landed: its pending ledger line and stamp become evidence
+    if (data.get("tool_name") or "") in ("Edit", "Write", "MultiEdit"):
+        _rel = io.rel_path(data, (data.get("tool_input") or {}).get("file_path") or "")
+        if (io.VERIFY_FILE_RE.search(_rel) or io.VALIDATION_FILE_RE.search(_rel)) and _rel.startswith("docs/tasks/"):
+            io.commit_record(io.project_root(data), _rel)
+    sys.exit(0)
 if not data or io.event(data) != "PreToolUse":
     sys.exit(0)
 tool = data.get("tool_name") or ""
@@ -292,11 +299,12 @@ if m and rel.startswith("docs/tasks/"):
              "api/ui test>\"` in docs/tasks/%s.md. Otherwise write an API test or a UI "
              "test (Playwright for web, an integration/e2e driver for mobile)." % tid)
     io.state_dir(data, "sessions")
-    io.append_jsonl(ledger(tid), dict(who, ts=io.now(), round=n, kind=kind,
-                                      result=w(rec, "result"), commit=commit))
-    if hasattr(io, "write_stamp"):
-        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="verify", round=n, kind=kind,
-                                       result=w(rec, "result"), commit=commit), after)
+    line = dict(who, ts=io.now(), round=n, kind=kind, result=w(rec, "result"), commit=commit)
+    if hasattr(io, "stage_record"):   # ledger line and stamp once the write lands (PostToolUse)
+        io.stage_record(root, rel, ".teamwright/sessions/%s.verify.jsonl" % tid, line,
+                        dict(line, gate="verify"), after)
+    else:
+        io.append_jsonl(ledger(tid), line)
     sys.exit(0)
 
 # ---- 6. validation record (acceptance verdict) being written ---------------------------
@@ -365,11 +373,12 @@ if m and rel.startswith("docs/tasks/"):
         deny("commit %s does not resolve in this repository; check a committed revision "
              "and record its sha." % w(rec, "commit"))
     io.state_dir(data, "sessions")
-    io.append_jsonl(validation_ledger(tid), dict(who, ts=io.now(), round=n,
-                                                 verdict=w(rec, "verdict"), commit=w(rec, "commit")))
-    if hasattr(io, "write_stamp"):
-        io.write_stamp(root, rel, dict(who, ts=io.now(), gate="validation", round=n,
-                                       verdict=w(rec, "verdict"), commit=w(rec, "commit")), after)
+    line = dict(who, ts=io.now(), round=n, verdict=w(rec, "verdict"), commit=w(rec, "commit"))
+    if hasattr(io, "stage_record"):   # ledger line and stamp once the write lands (PostToolUse)
+        io.stage_record(root, rel, ".teamwright/sessions/%s.validation.jsonl" % tid, line,
+                        dict(line, gate="validation"), after)
+    else:
+        io.append_jsonl(validation_ledger(tid), line)
     sys.exit(0)
 
 # ---- 3. task record entering VERIFIED / DONE ---------------------------------------
@@ -417,11 +426,8 @@ def acceptance_check():
            "docs/tasks/%s.validation/<n>.md - with `deploys: false` and `surface: none` that "
            "is its whole job, no verify record needed" % (VALIDATOR, tid))
     written = [r.get("round") for r in io.read_jsonl(validation_ledger(tid))]
-    vdir = os.path.join(root, "docs", "tasks", tid + ".validation")
-    try:  # a stamp without its record: the round was written, then its file removed
-        written += [int(f.split(".")[0]) for f in os.listdir(vdir) if re.match(r"^\d+\.gate\.json$", f)]
-    except OSError:
-        pass
+    if hasattr(io, "remove_orphan_stamps"):
+        io.remove_orphan_stamps(root, tid, "validation")  # a stamp without its record proves nothing
     if not vrounds:
         deny("%s cannot become DONE without an acceptance verdict PASS (no validation "
              "record). %s." % (tid, how))

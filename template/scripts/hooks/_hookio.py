@@ -75,6 +75,70 @@ def write_stamp(root, rel, entry, text):
         pass
 
 
+def _pending_path(root, rel):
+    norm, tid, n = _record_id(rel)
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", norm or rel)
+    return os.path.join(root, ".teamwright", "sessions", ".pending", name + ".json")
+
+
+def stage_record(root, rel, ledger, line, stamp, text):
+    """PreToolUse: the gate let a record write through. Its ledger line and stamp are kept
+    pending until the write lands (commit_record, PostToolUse): a write that is then refused
+    by another hook, cancelled by the person or fails leaves neither a ledger line nor an
+    orphan stamp that would block the task."""
+    path = _pending_path(root, rel)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"ledger": ledger, "line": line, "stamp": stamp, "sha256": _digest(text)}, fh)
+    except OSError:
+        pass
+
+
+def commit_record(root, rel):
+    """PostToolUse: the record write landed - append the pending ledger line and write the
+    stamp, when the record on disk is what the gate checked; drop the pending entry either
+    way. False when nothing was pending."""
+    path = _pending_path(root, rel)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            p = json.load(fh)
+        os.remove(path)
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except (OSError, ValueError):
+        return False
+    if not isinstance(p, dict) or p.get("sha256") != _digest(text):
+        return True            # the file is not what the gate let through: no evidence
+    if p.get("ledger") and isinstance(p.get("line"), dict):
+        led = os.path.join(root, p["ledger"])
+        try:
+            os.makedirs(os.path.dirname(led), exist_ok=True)
+        except OSError:
+            pass
+        append_jsonl(led, p["line"])
+    if isinstance(p.get("stamp"), dict):
+        write_stamp(root, rel, p["stamp"], text)
+    return True
+
+
+def remove_orphan_stamps(root, tid, kind):
+    """Stamps whose record is missing (written by a 0.12 pre-release gate before the write
+    landed): ignored and removed."""
+    d = os.path.join(root, "docs", "tasks", "%s.%s" % (tid, kind))
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    for f in names:
+        m = re.match(r"^(\d+)\.gate\.json$", f)
+        if m and not os.path.exists(os.path.join(d, m.group(1) + ".md")):
+            try:
+                os.remove(os.path.join(d, f))
+            except OSError:
+                pass
+
+
 def read_stamp(root, rel):
     """The stamp of a record when it matches the record on disk, else None."""
     try:
