@@ -309,6 +309,43 @@ hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-92 code-revie
 out="$(run Write "$S9" "file_path=$(rd T-92)/1.md" "content=$(review_text T-90 APPROVE)" "${REV[@]}")"
 expect_deny "a review record naming another task is refused when written" "$out" "task: T-92"
 
+# ---- N2: with a local ledger the ledger alone decides; no forging through the shell -----
+task_file "$(tf T-93)" T-93 NEEDS_REVIEW bug full
+hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-93 code-reviewer" "prompt=go" @hook_event_name=PreToolUse | bash "$JOURNAL"
+mkdir -p "$(rd T-93)"
+out="$(run Write "$S9" "file_path=$(rd T-93)/1.md" "content=$(review_text T-93 REQUEST_CHANGES)" "${REV[@]}")"
+expect_allow "round 1 of T-93 goes through the gate (the ledger now exists)" "$out"
+review_text T-93 REQUEST_CHANGES > "$(rd T-93)/1.md"
+review_text T-93 APPROVE | sed 's/^round: 1$/round: 2/' > "$(rd T-93)/2.md"
+python3 - "$HOOKS" "$P" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io
+rel = "docs/tasks/T-93.reviews/2.md"; text = open(sys.argv[2] + "/" + rel).read()
+io.write_stamp(sys.argv[2], rel, dict(session_id="sess-9", agent_id="a-x", agent_type="code-reviewer",
+                                      gate="review", verdict="APPROVE", spawned=True), text)
+PY
+out="$(run Edit "$S9-next" "file_path=$(tf T-93)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a stamp made by a script does not count where the task's ledger exists" "$out" "not written by a code-reviewer"
+out="$(run Bash "$S9" "command=echo '{}' | bash scripts/hooks/review-gate.sh")"
+expect_deny "piping a payload into a gate is refused" "$out" "scripts/hooks"
+out="$(run Bash "$S9" "command=cd scripts/hooks && python3 -c 'import _hookio'")"
+expect_deny "importing the hook helpers in a one-liner is refused" "$out" "scripts/hooks"
+out="$(run Bash "$S9" "command=cat scripts/hooks/review-gate.sh")"
+expect_allow "reading a hook is fine" "$out"
+for c in "cd docs/tasks && cp T-90.reviews/1.md T-90.reviews/1.gate.json T-94.reviews/" \
+         "cd docs/tasks/T-94.reviews && printf '{}' > 1.gate.json" \
+         "git checkout HEAD~1 -- docs/tasks/T-94.reviews/1.md" \
+         "rsync -a /tmp/copy/ docs/tasks/T-94.reviews/" \
+         "dd if=/tmp/a of=docs/tasks/T-94.verify/1.gate.json" \
+         "python3 -c \"open('docs/tasks/T-94.reviews/1.md','w').write('x')\"" \
+         "perl -e 'open(F, \">docs/tasks/T-94.validation/1.md\")'" \
+         "cp -r /tmp/T-94.reviews docs/tasks/"; do
+  out="$(run Bash "$S9" "command=$c")"
+  expect_deny "shell write into a record directory is refused: $c" "$out" "never by shell"
+done
+for c in "cd docs/tasks && cat T-90.reviews/1.md" "git add docs/tasks/T-90.reviews" "ls docs/tasks/T-90.reviews"; do
+  out="$(run Bash "$S9" "command=$c")"; expect_allow "reading or staging records is fine: $c" "$out"
+done
+
 # ---- m3: records created outside Edit/Write still count, at the reviewed task's status move ----
 G="$TMP/gproj"; mkdir -p "$G/docs/tasks"; git -C "$G" init -q -b main .
 task_file "$G/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; git -C "$G" add -A; git -C "$G" commit -qm "chore(task): T-1"

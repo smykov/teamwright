@@ -31,10 +31,11 @@ REVIEWER_AGENT = os.environ.get("TEAMWRIGHT_REVIEWER_AGENT", "code-reviewer")
 # review, verify or validation record through it also writes <n>.gate.json next to it:
 # who wrote it (session, agent, agent type), the verdict, whether the reviewer's spawn was
 # journaled, and the sha256 of the record as written. The orchestrator commits it with the
-# record; a later status move in another session verifies against it when the local ledger
-# has no entry. Only the gates write stamps (the state guard refuses Edit/Write, the gates'
-# shell checks refuse redirects into the record directories); a record changed after its
-# stamp no longer matches the hash and does not count.
+# record; a later status move on a checkout without the task's ledger (a fresh clone)
+# verifies against it - where the ledger exists it alone decides. Only the gates write
+# stamps (the state guard refuses Edit/Write and running a hook by hand, the review gate's
+# shell check refuses writes into the record directories, pre-commit refuses a stamp the
+# local ledger does not have); a record changed after its stamp no longer matches the hash.
 STAMP_RE = re.compile(r"(?:^|/)docs/tasks/[^/]+\.(reviews|verify|validation)/\d+\.gate\.json$")
 
 
@@ -432,7 +433,18 @@ def _is_task_record(tok, in_tasks):
     return in_tasks and "/" not in t and bool(re.fullmatch(r"(?:%s)\.md" % TASK_ID, t))
 
 
-def shell_rewrites_task_record(cmd):
+def shell_rewrites_task_record(cmd, root=None):
+    """See _shell_rewrites_task_record; plus dd, git checkout/restore/stash/apply and
+    interpreter one-liners that write a record."""
+    if _shell_rewrites_task_record(cmd):
+        return True
+    try:
+        return "docs/tasks" in cmd and _task_record_extra(cmd, root)
+    except Exception:
+        return False
+
+
+def _shell_rewrites_task_record(cmd):
     """True when a shell command creates or replaces a task record (docs/tasks/<ID>.md) - a
     `>` redirect, a `tee` without -a, or cp / mv / install / rsync onto it: the whole front
     matter is written, with or without a status, out of the gates' sight - or edits one in
@@ -474,8 +486,234 @@ def shell_rewrites_task_record(cmd):
             return True
         if mentions and prog in ("sed", "gsed", "perl") and any(_INPLACE.match(a) for a in args):
             return True
+        if prog == "git" and args and args[0] in ("checkout", "restore") and \
+                any(_is_task_record(a, in_tasks) for a in files[1:] + (files[:1] if args[0] == "restore" else [])):
+            return True          # an old version of the record: its status, out of the gates' sight
     return False
 
+
+def _task_record_extra(cmd, root=None):
+    """Writes of a task record the segment parser above does not model: dd of=, interpreter
+    one-liners that name a record and write, git stash pop|apply / git apply|am touching
+    one (best effort)."""
+    text, bodies = _split_heredocs(cmd)
+    body_text = "\n".join(b for _, b in bodies)
+    try:
+        segs = _segments(text)
+    except ValueError:
+        return False
+    in_tasks = False
+    for seg in segs:
+        words = [w for w in seg if isinstance(w, str)]
+        while words and (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]) or words[0] in _PREFIX
+                         or words[0] == "env"):
+            words = words[1:]
+        if not words:
+            continue
+        prog, args = os.path.basename(words[0]), words[1:]
+        if prog in ("cd", "pushd"):
+            in_tasks = bool(args) and args[-1].rstrip("/").endswith("docs/tasks")
+            continue
+        if prog == "dd" and any(a.startswith("of=") and _is_task_record(a[3:], in_tasks) for a in args):
+            return True
+        if prog == "git" and args and ((args[0] == "stash" and len(args) > 1 and args[1] in ("pop", "apply"))
+                                       or args[0] in ("apply", "am")):
+            if any(TASK_FILE_RE.search(p) for p in _git_paths(root, args)):
+                return True
+        if _INTERPRETERS.match(prog):
+            code = " ".join(args) + "\n" + body_text
+            if (_CODE_WRITE.search(code) or re.search(r"open\s*\(?[^)]*['\"]\s*\+?>", code)) and \
+                    (re.search(r"docs/tasks/%s\.md" % TASK_ID, code) or
+                     (in_tasks and re.search(r"\b%s\.md" % TASK_ID, code))):
+                return True
+    return False
+
+
+# ---- gate records and stamps: written by the gates' Edit/Write path only ------------
+# Review, verify and validation records (docs/tasks/<ID>.<kind>/<n>.md) and their stamps
+# (<n>.gate.json) are what the status gates count. A shell command that writes one - into
+# the directory, a copy from another task, a checkout of an old version, a one-liner that
+# opens it - is refused. Best effort: the parser follows `cd`/`pushd`, redirects, the file
+# commands, git checkout/restore/stash/apply, rsync, dd, tar/unzip -C, find -delete/-exec and
+# interpreter one-liners that name such a path and write; a path built at run time or a
+# script file that writes it is not seen (gates.md, Known limitations). Git hooks and review
+# are the backstop.
+_REC_PATH = re.compile(r"(?:^|/)docs/tasks/[^/]+\.(?:reviews|verify|validation)(?:/|$)|\.gate\.json$")
+_REC_TEXT = re.compile(r"\.(?:reviews|verify|validation)\b|gate\.json")
+_HOOK_PATH = re.compile(r"(?:^|/)scripts/hooks(?:/|$)")
+
+
+def _cd(cwd, args):
+    import posixpath
+    dest = [a for a in args if not a.startswith("-")]
+    if not dest or dest[-1] in ("~", "-"):
+        return ""
+    t = dest[-1].replace("\\", "/")
+    return t if t.startswith("/") else posixpath.normpath(posixpath.join(cwd or ".", t))
+
+
+def _at(cwd, tok):
+    """A shell word as a path relative to where the command runs (after `cd`)."""
+    import posixpath
+    t = tok.replace("\\", "/")
+    if t.startswith("/") or not cwd:
+        return t
+    return posixpath.normpath(posixpath.join(cwd, t)) + ("/" if t.endswith("/") else "")
+
+
+def _git_paths(root, args):
+    """Files a `git stash pop|apply` or `git apply|am <patch>` would write (best effort)."""
+    import subprocess
+    sub = args[0]
+    try:
+        if sub == "stash":
+            ref = [a for a in args[2:] if not a.startswith("-")]
+            p = subprocess.run(["git", "stash", "show", "--include-untracked", "--name-only"] + ref[:1],
+                               cwd=root or None, capture_output=True, text=True, timeout=10)
+            return p.stdout.splitlines()
+        out = []
+        for a in args[1:]:
+            if a.startswith("-"):
+                continue
+            with open(os.path.join(root or "", a), encoding="utf-8", errors="replace") as fh:
+                out += [ln[6:].strip() for ln in fh if ln.startswith(("+++ b/", "--- a/"))]
+        return out
+    except Exception:
+        return []
+
+
+def shell_writes_records(cmd, root=None, _depth=0, _cwd=""):
+    """True when a shell command writes, moves, removes or restores a review / verify /
+    validation record or a gate stamp (see the comment above)."""
+    text, bodies = _split_heredocs(cmd)
+    body_text = "\n".join(b for _, b in bodies)
+    if not (_REC_TEXT.search(cmd) or "docs" in cmd or "tasks" in cmd or "git" in cmd):
+        return False
+    try:
+        segs = _segments(text)
+    except ValueError:
+        return bool(_REC_TEXT.search(cmd) and re.search(
+            r">|\b(tee|cp|mv|rm|sed|perl|python3?|node|ruby|truncate|install|rsync|dd|git|tar|unzip)\b", cmd))
+    cwd = _cwd
+
+    def hit(tok):
+        return bool(_REC_PATH.search(_at(cwd, tok)))
+    for seg in segs:
+        words = [w for w in seg if isinstance(w, str)]
+        targets = [w[1] for w in seg if isinstance(w, tuple)]
+        if any(hit(t) for t in targets):
+            return True
+        while words and (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]) or words[0] in _PREFIX
+                         or words[0] == "env" or (words[0].startswith("-") and len(words) > 1
+                                                  and words[0] != "-")):
+            words = words[1:]
+        if not words:
+            continue
+        prog, args = os.path.basename(words[0]), words[1:]
+        if prog in ("cd", "pushd"):
+            cwd = _cd(cwd, args)
+            continue
+        if prog == "popd":
+            cwd = ""
+            continue
+        files = [a for a in args if not a.startswith("-")]
+        if prog in _SHELLS:
+            code = " ".join(args[args.index("-c") + 1:args.index("-c") + 2]) if "-c" in args else \
+                (" ".join(args) if prog == "eval" else body_text)
+            if code and _depth < 3 and shell_writes_records(code, root, _depth + 1, cwd):
+                return True
+            continue
+        if prog in _WRITES_ARGS and any(hit(a) for a in files):
+            return True
+        if prog in _WRITES_DEST or prog == "mv":
+            dests = [a.split("=", 1)[1] for a in args if a.startswith("--target-directory=")]
+            if "-t" in args and args.index("-t") + 1 < len(args):
+                dests.append(args[args.index("-t") + 1])
+            if not dests and files:
+                dests = [files[-1]]
+            srcs = [f for f in files if f not in dests]
+            if any(hit(d) or any(hit(d.rstrip("/") + "/" + os.path.basename(s.rstrip("/"))) for s in srcs)
+                   for d in dests):
+                return True
+            if prog == "mv" and any(hit(s) for s in srcs):
+                return True
+            continue
+        if prog == "dd" and any(a.startswith("of=") and hit(a[3:]) for a in args):
+            return True
+        if prog in ("sed", "gsed", "perl", "ruby") and any(_INPLACE.match(a) for a in args) \
+                and any(hit(a) for a in files):
+            return True
+        if prog in ("tar", "bsdtar", "unzip") and (cwd and _REC_PATH.search(cwd + "/") or any(
+                hit(args[i + 1]) for i, a in enumerate(args[:-1]) if a in ("-C", "-d", "--directory"))):
+            return True
+        if prog == "find" and any(hit(a) for a in files) and any(a in ("-delete", "-exec", "-execdir")
+                                                                  for a in args):
+            return True
+        if prog == "git" and args:
+            sub = args[0]
+            if sub in ("checkout", "restore", "mv", "rm") and any(hit(a) for a in files[1:] + (
+                    files[:1] if sub in ("restore", "rm", "mv") else [])):
+                return True
+            if (sub == "stash" and len(args) > 1 and args[1] in ("pop", "apply")) or sub in ("apply", "am"):
+                if any(_REC_PATH.search(p) for p in _git_paths(root, args)):
+                    return True
+            continue
+        if _INTERPRETERS.match(prog):
+            code = " ".join(args) + "\n" + body_text
+            if (_CODE_WRITE.search(code) or re.search(r"open\s*\(?[^)]*['\"]\s*\+?>", code)) and (
+                    _REC_TEXT.search(code) or
+                                             (cwd and _REC_PATH.search(cwd + "/"))):
+                return True
+    return False
+
+
+def runs_hook_script(cmd, _depth=0, _cwd=""):
+    """True when a shell command runs one of the project's hooks (scripts/hooks/*) or
+    imports their helpers in an interpreter one-liner. Hooks are run by Claude Code and git
+    with the runtime's own input; an agent piping a crafted payload into a gate would get a
+    genuine-looking stamp or ledger line. Reading them (cat, grep, git diff) is fine."""
+    if "hooks" not in cmd:
+        return False
+    text, bodies = _split_heredocs(cmd)
+    body_text = "\n".join(b for _, b in bodies)
+    try:
+        segs = _segments(text)
+    except ValueError:
+        return bool(re.search(r"(bash|sh|python3?|source|\.)\s+\S*scripts/hooks/", cmd))
+    cwd = _cwd
+
+    def hook(tok):
+        return bool(_HOOK_PATH.search(os.path.dirname(_at(cwd, tok)) + "/")) and not tok.startswith("-")
+    for seg in segs:
+        words = [w for w in seg if isinstance(w, str)]
+        while words and (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]) or words[0] in _PREFIX
+                         or words[0] == "env"):
+            words = words[1:]
+        if not words:
+            continue
+        prog, args = words[0], words[1:]
+        base = os.path.basename(prog)
+        if base in ("cd", "pushd"):
+            cwd = _cd(cwd, args)
+            continue
+        if "/" in prog and hook(prog):
+            return True                     # ./scripts/hooks/review-gate.sh, an absolute path
+        if base in _SHELLS or base in ("source", ".") or _INTERPRETERS.match(base):
+            if "-c" in args and base in _SHELLS:
+                code = " ".join(args[args.index("-c") + 1:args.index("-c") + 2])
+                if _depth < 3 and runs_hook_script(code, _depth + 1, cwd):
+                    return True
+                continue
+            files = [a for a in args if not a.startswith("-")]
+            if files and hook(files[0]):
+                return True
+            code = " ".join(args) + "\n" + body_text
+            if _INTERPRETERS.match(base) and re.search(r"scripts/hooks|_hookio", code):
+                return True
+            if base in _SHELLS and not files and body_text and _depth < 3 and \
+                    runs_hook_script(body_text, _depth + 1, cwd):
+                return True
+    return False
 
 def guard_state(data):
     """Deny agent writes to teamwright's own state; return silently otherwise.
@@ -500,6 +738,15 @@ def guard_state(data):
                  "owner (e.g. /teamwright:reconfigure); a subagent does not change the "
                  "teamwright setup. Write the proposal to .teamwright/config.next.yml and "
                  "hand it to the main session.", gate, data, hard=True)
+        try:
+            runs_hook = runs_hook_script(cmd)
+        except Exception:
+            runs_hook = False
+        if runs_hook:
+            deny("STATE GUARD: scripts/hooks/* are run by Claude Code and git with the runtime's "
+                 "own input, never by an agent: a gate fed a hand-made payload would write a "
+                 "genuine-looking ledger line or stamp. Read them (cat, grep) as you like; to test "
+                 "a gate, a person runs the kit's tests outside Claude Code.", gate, data)
         try:
             writes = shell_writes_switch(cmd)
         except Exception:

@@ -15,7 +15,7 @@ expect_rc "the subset parser (no PyYAML, e.g. bash 3.2 CI) reads it too${msg:+ (
 fact() { python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))[sys.argv[2]]) if isinstance(json.load(open(sys.argv[1]))[sys.argv[2]], list) else json.load(open(sys.argv[1]))[sys.argv[2]])' "$OUT/facts.json" "$1"; }
 echo "  (YAML read with: $(fact parser))"
 expect_rc "the steps read run, prompt, model, reason and head from the route step" "head model prompt reason run" "$(fact used)"
-expect_rc "the journal and ledgers are kept between jobs (cache)" True "$(fact cached)"
+expect_rc "the journal is kept between jobs (cache), the ledgers are not" True "$(fact cached)"
 
 # the route step against a project with work: run=true and a stage command
 P="$TMP/proj"; mkdir -p "$P/docs/tasks" "$P/.teamwright" && cd "$P" || exit 1

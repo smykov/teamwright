@@ -51,4 +51,14 @@ try ".env is refused"               1 .env     "A=1"
 try ".env.prod is refused"          1 .env.prod "A=1"
 try "*.local.json is refused"       1 settings.local.json "{}"
 try ".env.example is allowed"       0 .env.example "API_KEY=<your key>"
+# N2: a staged gate stamp must match the local ledger where this checkout has one
+mkdir -p docs/tasks/T-7.reviews .teamwright/sessions
+STAMP_OK='{"agent_id": "a-rev", "agent_type": "code-reviewer", "gate": "review", "round": 1, "session_id": "s1", "verdict": "APPROVE"}'
+try "a stamp without a ledger (fresh clone): allowed" 0 docs/tasks/T-7.reviews/1.gate.json "$STAMP_OK"
+printf '%s\n' '{"agent_id": "a-rev", "agent_type": "code-reviewer", "round": 2, "session_id": "s1", "verdict": "APPROVE"}' > .teamwright/sessions/T-7.reviews.jsonl
+try "a stamp matching a ledger line: allowed" 0 docs/tasks/T-7.reviews/2.gate.json "${STAMP_OK/\"round\": 1/\"round\": 2}"
+try "a stamp with no ledger line for its round: refused" 1 docs/tasks/T-7.reviews/3.gate.json "${STAMP_OK/\"round\": 1/\"round\": 3}"
+grep -q "not written by the gate here" "$TMP/err" && ok "the refusal names the stamp" || bad "the refusal names the stamp" "$(cat "$TMP/err")"
+W2="${STAMP_OK/\"round\": 1/\"round\": 2}"
+try "a stamp whose writer differs from the ledger: refused" 1 docs/tasks/T-7.reviews/2.gate.json "${W2/a-rev/a-x}"
 finish

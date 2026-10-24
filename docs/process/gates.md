@@ -97,6 +97,11 @@ install manifest and the ledgers are not the agents' to change:
   are covered by the review gate (5).
 - `tw-install.py` runs only from the main session (a subagent is denied; it hands the
   proposal file to the main session).
+- Running a hook is refused: `bash scripts/hooks/review-gate.sh`, `./scripts/hooks/…`,
+  `cd scripts/hooks && …`, `sh -c` with one, and interpreter code that imports the hook
+  helpers (`scripts/hooks`, `_hookio`). Hooks are run by Claude Code and git with the
+  runtime's input; a gate fed a hand-made payload would write a genuine-looking ledger
+  line or stamp. Reading them (`cat`, `grep`, `git diff`) is fine.
 - Owner override: a person runs `TEAMWRIGHT_OWNER=1 python3 <kit>/scripts/tw-install.py apply ...`
   outside Claude Code, or edits the file by hand. The variable is ignored when
   `CLAUDECODE` is set (every Claude Code tool call), and agent commands that mention
@@ -133,6 +138,10 @@ root cause cost a full review round; the same seam was reopened five times in a 
    is never read, so a note cannot change the task's state. The same holds for a command
    that rewrites the `stage:` field — recognised by the keys or by their values
    (`perl -pi -e 's/red-tests/implement/'`, `sed -i 's/ANALYSIS/IN_PROGRESS/'`).
+   Also refused: an old version put back (`git checkout <rev> -- <record>`, `git restore`,
+   `git stash pop|apply` or `git apply|am` of changes that touch a record), `dd of=<record>`,
+   and interpreter one-liners that name a record and write (after `cd docs/tasks` too) —
+   best effort, like every shell parser here.
 4. **Stage order** — an edit of `docs/tasks/<ID>.md` that breaks the order of the
    `stage:` field, the sub-stage of `IN_PROGRESS` (`sessions.md` §8). Not opt-in:
    - a value other than `red-tests` or `implement`;
@@ -217,10 +226,12 @@ rca_task: T-050             # required with REJECT_RECURRENCE
      spawned for this task in that session — the task id must appear in the spawn's
      description or prompt. A top-level `claude --agent code-reviewer` session has no
      spawn and needs none;
-   - when this checkout has no ledger entry for the round (a status move in a later
-     session — an autonomous job on a fresh checkout), the round's committed stamp
+   - when this checkout has no review ledger for the task at all (a status move on a
+     fresh checkout — an autonomous job), the round's committed stamp
      `docs/tasks/<ID>.reviews/<n>.gate.json` (*Gate stamps* below) stands in for the
-     ledger entry and the journaled spawn, as long as it matches the record;
+     ledger entry and the journaled spawn, as long as it matches the record. Where the
+     ledger exists it alone decides, as before stamps: a round it does not have is not
+     recognised, whatever the stamp says;
    - the record's `task:` names this task (a review copied from another task's
      directory does not count), and the stamp names this task, record and round;
    - `reviewer` differs from the task's `implemented_by` (when set).
@@ -235,7 +246,16 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    the task). An `APPROVE` or `ESCALATE` ends a run: a task that comes back after
    `VERIFY_FAIL`, or after the owner's decision on an escalation, starts a new count.
    Deny messages quote the counted rounds.
-5. Shell commands that write review records or the `.teamwright/` ledgers and journal.
+5. Shell commands that write review records or the `.teamwright/` ledgers and journal,
+   and any shell write that targets a review, verify or validation record directory or a
+   stamp (`docs/tasks/<ID>.reviews|verify|validation/`, `*.gate.json`): redirects, `tee`,
+   `cp` / `mv` / `install` / `rsync` / `ln` onto them (also a directory copied *into*
+   `docs/tasks/`), `rm`, `dd of=`, `sed -i` / `perl -i`, `tar` / `unzip` into them,
+   `find … -delete|-exec`, `git checkout|restore|mv|rm` of them, `git stash pop|apply` and
+   `git apply|am` of changes that touch them, `sh -c` with any of these, and interpreter
+   one-liners (python, node, perl, ruby …) that name such a path and write — after a `cd`
+   or `pushd` too. Reading, `ls`, `git add` and `git commit` are fine. Best effort: a path
+   built at run time or a script file is not seen (*Known limitations*).
 6. With `process.review.blocking` set in `.teamwright/config.yml` (the owner's threshold,
    `low` | `medium` | `high`): an `APPROVE` whose findings table holds a blocking
    row, or a `REQUEST_CHANGES` with none. The findings table is the first table with a
@@ -342,7 +362,8 @@ may be empty).
      `docs/open-questions.md` — a decision naming the task is not a code change). If no
      commit names the task, the record must verify `HEAD` itself;
    - each counted record matches its ledger entry (kind, result, commit) — or, when this
-     checkout has no ledger, its committed stamp `<n>.gate.json` (*Gate stamps*) — or is a
+     checkout has no verify ledger for the task at all, its committed stamp `<n>.gate.json`
+     (*Gate stamps*) — or is a
      person's committed record (`verifier: human:<name>`, no ledger entry).
 4. `kind: manual` without `verify_exception` in the task (at write time and at the
    transition); with the exception, at least one fresh manual `PASS` must come from an
@@ -354,7 +375,7 @@ may be empty).
    template `docs/tasks/_validation-template.md`): written only by `task-validator`,
    only with Edit/Write, append-only, next round only, commit must resolve; ledger
    `.teamwright/sessions/<ID>.validation.jsonl`. Entering `DONE` needs the latest round
-   `PASS`, matching its ledger entry (or its committed stamp), for the task's current code (same freshness rule as
+   `PASS`, matching its ledger entry (or, with no validation ledger for the task, its committed stamp), for the task's current code (same freshness rule as
    verify records) — for every `surface`, including `deploys: false` + `surface: none`,
    where it is the only check. A round whose file is gone while the ledger has it blocks
    `DONE` (`TEAMWRIGHT_VALIDATOR_AGENT`, default `task-validator`). After two `FAIL`
@@ -538,6 +559,13 @@ settings files into commits. Once pushed, a secret has to be rotated, not delete
   cries wolf gets bypassed. gitleaks, when installed, applies its own rules unchanged.
   `python3 <kit>/scripts/tw-install.py scan` reports the same classes with a summary and fails only on
   secret-like findings.
+
+**Gate stamps.** The same hook refuses a staged new or changed stamp
+(`docs/tasks/<ID>.<reviews|verify|validation>/<n>.gate.json`) that matches no line of the
+task's local ledger (`.teamwright/sessions/`: same round, writer, verdict), where that
+ledger exists — the gate writes both together, so a stamp without its line was not
+written by the gate on this machine. Without the ledger (a fresh clone) it is not
+checked (*Gate stamps*).
 
 **False positive:** add `teamwright:allow-secret` (or `gitleaks:allow`) to the line.
 **Deliberate bypass** (human, rare): `git commit --no-verify` — and say why in review.
@@ -857,8 +885,11 @@ journaled, the record it belongs to (`task`, `path`, `round`) and the sha256 of 
 record as written. A stamp counts only for the record it names: copied with its record
 into another task's directory or another round it does not count, and the gates also
 check that a review or acceptance record's `task:` is the task it is counted for. The stage commits it with the record.
-A status move whose ledger has no entry for the round uses the stamp instead, when it
-matches the record on disk.
+A status move on a checkout that has **no ledger of that kind for the task at all** (a
+fresh clone) uses the stamp instead, when it matches the record on disk. Where the ledger
+exists it alone decides, as in 0.11: a round it lacks is not recognised whatever its stamp
+says — so do not restore `.teamwright/sessions` from a cache that may be older than the
+last job (`docs/usage.md`, *Autonomous runs*).
 
 What it keeps, what it does not:
 
@@ -867,12 +898,16 @@ What it keeps, what it does not:
   the verdict rules, the findings threshold), with the spawn journaled. A record changed
   after its stamp does not match the hash and does not count; a stamp with
   `spawned: false` does not pass without the journal.
-- **The same protection, no more.** Only the gates write stamps: the state guard refuses
-  Edit/Write to them, the gates' shell checks refuse redirects, `tee`, `cp`, `sed -i` into
-  the record directories. Like the local ledgers they are not signed — a script that
-  writes the file directly (an interpreter opening it) is not seen (*Known limitations*).
-  Unlike the ledgers they are in git: a forged stamp is a reviewable line in a diff, and
-  `git log` says which commit brought it.
+- **Not tamper-proof.** Only the gates write stamps: the state guard refuses Edit/Write
+  to them and running a hook by hand, and the review gate refuses shell writes into the
+  record directories (check 5, a best-effort parser). The stamps are not signed: anyone
+  who can run a script that computes a sha256 and writes a file can make one, and the
+  gates cannot tell. What limits that: on a checkout with the task's ledger the stamp is
+  not consulted at all; the git `pre-commit` hook refuses a staged stamp that matches no
+  line of the local ledger, where that ledger exists; a stamp names its task, record and
+  round, so a copy does not count elsewhere; and stamps are in git — a forged one is a
+  reviewable file in a diff, and `git log` says which commit brought it. On a fresh
+  checkout (CI) the stamp is all the gate has: review what the jobs commit.
 - **The implementer check stays at write time.** The status move in a later session has no
   `.dev` ledger; whether the reviewer implemented the task was checked when the review was
   written. One stage per job also means the reviewer's session is never the implementer's.
@@ -890,7 +925,9 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
 ## Known limitations
 
 - Claude Code gates see Edit/Write and obvious shell rewrites; a determined script
-  (e.g. Python writing the file) bypasses them. Git hooks and review are the backstop.
+  (e.g. Python writing the file from a script file, or a path assembled at run time)
+  bypasses them. Git hooks and review are the backstop. The same holds for gate stamps
+  on a fresh checkout, where no local ledger can contradict them (*Gate stamps*).
 - Ledgers and the journal are local (`.teamwright/`, gitignored). The gate stamps committed
   with review, verify and validation records carry what a later status move needs
   (*Gate stamps*); a review written before 0.12 (no stamp) by an agent on another machine

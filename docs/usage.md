@@ -86,12 +86,10 @@ jobs:
         run: |
           if git fetch -q origin wip/teamwright; then git checkout -B wip/teamwright FETCH_HEAD
           else git checkout -B wip/teamwright; git push -q origin HEAD:refs/heads/wip/teamwright; fi
-      - name: Journal and ledgers from the previous job
+      - name: Journal from the previous job
         uses: actions/cache@v4
         with:
-          path: |
-            .teamwright/logs
-            .teamwright/sessions
+          path: .teamwright/logs
           key: teamwright-state-${{ github.run_id }}
           restore-keys: teamwright-state-
       - name: Ask the router
@@ -134,7 +132,8 @@ jobs:
 What survives between jobs, and why:
 
 - **The gates' evidence is committed.** When the review gate lets a review record through, and the verify gate a verify or acceptance record, each writes a stamp next to it (`docs/tasks/<ID>.reviews/<n>.gate.json`, `.verify/<n>.gate.json`, `.validation/<n>.gate.json`: who wrote it, the verdict, the record's hash). The stage commits it with the record, so a job cut after the reviewer's APPROVE was committed but before the status move does not loop: the next job's gate checks the stamp instead of the local ledger it does not have (`docs/process/gates.md`, *Gate stamps*).
-- **The journal is not.** `.teamwright/logs` (tool calls, outcomes, tokens per stage) and `.teamwright/sessions` are local and gitignored; `actions/checkout` cleans them. The cache step carries them from job to job (`clean: false` alone is enough on a self-hosted runner that keeps its workspace); without it the per-stage metrics of CI runs are lost and an `interrupted` outcome is not seen by the next job.
+- **The journal is not.** `.teamwright/logs` (tool calls, outcomes, tokens per stage) is local and gitignored; `actions/checkout` cleans it. The cache step carries it from job to job (`clean: false` alone is enough on a self-hosted runner that keeps its workspace); without it the per-stage metrics of CI runs are lost and an `interrupted` outcome is not seen by the next job.
+- **The ledgers are not cached.** Where a task's ledger (`.teamwright/sessions/<ID>.reviews.jsonl`, `.verify.jsonl`, `.validation.jsonl`) exists, it alone decides and the stamps are not consulted — a stamp is never a way around a local ledger. A cache restored from an older job (the job that wrote the round was cut before its cache was saved) would hold the task's ledger without that round and refuse it; without the cache every job is a fresh checkout and the stamps decide. On a machine where a round was written elsewhere (a review in CI, the status move on your laptop with an older ledger for that task), move the status where the round was written, or remove that task's ledger file yourself.
 - **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
 
 ## `/teamwright:blockers`

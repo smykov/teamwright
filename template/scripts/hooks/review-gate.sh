@@ -42,7 +42,9 @@
 #      counted from the .reviews/ files, never from the task's own field; an APPROVE
 #      or ESCALATE ends a run (a task back after VERIFY_FAIL or an owner decision
 #      starts a new count).
-#   5. Shell commands that write review records or the local ledgers/journal.
+#   5. Shell commands that write review records or the local ledgers/journal, and any shell
+#      write into a review/verify/validation record directory or a stamp, after `cd` too
+#      (_hookio.shell_writes_records, best effort).
 #   7. A review that spawns too many tasks: creating a new docs/tasks/<ID>.md in a
 #      session whose latest journaled spawn of the main agent was a reviewer for
 #      task R (tools.jsonl; a later spawn of another role ends that window), when
@@ -67,9 +69,10 @@
 # STAMP (committed with the record): docs/tasks/<ID>.reviews/<n>.gate.json - the same
 #   ledger line plus whether the reviewer's spawn was journaled, the record it belongs to
 #   (task, path, round: a copy into another task or round does not count) and its sha256.
-#   Check 2 uses it when the local ledger has no entry (a status move in a later session,
-#   e.g. a CI job on a fresh checkout). Only the gate writes it; an edited record no longer
-#   matches its hash.
+#   Check 2 uses it only when this checkout has no review ledger for the task at all (a
+#   fresh checkout, e.g. a CI job); where the ledger exists it alone decides. Only the gate
+#   writes it; an edited record no longer matches its hash; pre-commit refuses a staged
+#   stamp the local ledger does not have. Not signed: see gates.md, Gate stamps.
 #
 # HUMAN REVIEW. A person reviewing outside Claude Code writes the record with
 # `reviewer: human:<name>` and commits it; an agent cannot write that marker.
@@ -125,6 +128,16 @@ if tool == "Bash":
                 "through Edit/Write (review records: by a %s agent), never by shell "
                 "commands - otherwise the gate cannot tell who wrote them." % REVIEWER,
                 "review-gate")
+    try:
+        rec_write = io.shell_writes_records(cmd, root) if hasattr(io, "shell_writes_records") else False
+    except Exception:
+        rec_write = False
+    if rec_write:
+        io.deny("REVIEW GATE: this command writes, copies, restores or removes a review, verify or "
+                "validation record or a gate stamp (docs/tasks/<ID>.reviews|verify|validation/, "
+                "*.gate.json), never by shell commands: records are written through Edit/Write by "
+                "their agent, stamps only by the gates. A copy from another task or an old version "
+                "does not count anyway.", "review-gate")
     sys.exit(0)
 
 rel = io.rel_path(data, ti.get("file_path") or "")
@@ -422,9 +435,13 @@ if impl and reviewer == impl:
     io.deny("REVIEW GATE: reviewer %r is also implemented_by of %s - self-review never "
             "counts." % (reviewer, tid), "review-gate")
 entry = ledger_entry(tid, n)
-stamp = io.read_stamp(root, "docs/tasks/%s.reviews/%d.md" % (tid, n)) if hasattr(io, "read_stamp") else None
-if entry is None and stamp is not None and stamp.get("gate") == "review" and stamp.get("round") == n:
-    entry = stamp  # the committed stamp stands in for a ledger this checkout does not have
+stamp = None
+if not os.path.exists(review_ledger(tid)):
+    # a fresh checkout (no ledger for this task at all): the committed stamp stands in. Where
+    # the ledger exists it alone decides - a stamp is never a way around a local ledger.
+    st = io.read_stamp(root, "docs/tasks/%s.reviews/%d.md" % (tid, n)) if hasattr(io, "read_stamp") else None
+    if st is not None and st.get("gate") == "review" and st.get("round") == n:
+        entry = stamp = st
 if is_human(reviewer):
     if entry is not None:
         io.deny("REVIEW GATE: round %d of %s says `reviewer: human` but was written by an "
@@ -444,7 +461,7 @@ if entry.get("verdict") != "APPROVE":
             "to APPROVE outside the reviewer. Run a new review round."
             % (n, tid, entry.get("verdict")), "review-gate")
 if entry.get("agent_id") and not spawned_reviewer(tid, entry.get("session_id")) and \
-        not (stamp is not None and stamp.get("spawned") and io.actor_key(stamp) == io.actor_key(entry)):
+        not (stamp is not None and stamp.get("spawned") is True):
     io.deny("REVIEW GATE: no journaled spawn of a %s subagent for %s in session %s "
             "(.teamwright/logs/tools.jsonl). Spawn the reviewer with the task id in its "
             "prompt; the journal hook (journal.sh) must be enabled in .claude/settings.json."

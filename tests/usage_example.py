@@ -201,6 +201,12 @@ def main(argv):
                   for s in steps if str(s.get("uses") or "").startswith("actions/checkout"))
     if not (cached or unclean):
         errs.append("nothing keeps .teamwright/logs between jobs (actions/cache or checkout clean: false)")
+    # the ledgers are not restored from a cache: an older cache holds a task's ledger without the
+    # round a cut job wrote, and where the ledger exists it alone decides (the stamps do not count)
+    sessions_cached = any(isinstance(s.get("with"), dict) and ".teamwright/sessions" in str(s["with"].get("path") or "")
+                          for s in steps if str(s.get("uses") or "").startswith("actions/cache"))
+    if sessions_cached:
+        errs.append(".teamwright/sessions is cached between jobs: a restored ledger without a cut job's round refuses it")
     # the work branch is created when it does not exist yet
     if not any("refs/heads/wip/" in str(s.get("run") or "") for s in steps):
         errs.append("no step creates the wip/ branch when it is missing")

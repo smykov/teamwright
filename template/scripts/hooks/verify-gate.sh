@@ -66,8 +66,9 @@
 # round, kind, result, commit; <ID>.validation.jsonl - acceptance verdicts. Implementers: .teamwright/sessions/<ID>.dev (review gate).
 # STAMP (committed with the record): docs/tasks/<ID>.verify/<n>.gate.json and
 # <ID>.validation/<n>.gate.json - the same ledger line and the record's sha256; checks 3 and
-# 5 use it when the local ledger has no entry (a status move in a later session, e.g. a CI
-# job on a fresh checkout). Only the gate writes it; an edited record no longer matches.
+# 5 use it only when this checkout has no ledger of that kind for the task at all (a fresh
+# checkout, e.g. a CI job); where the ledger exists it alone decides. Only the gate writes
+# it; an edited record no longer matches.
 # SAFETY: fail-open on any internal error; silent on allow. Freshness is skipped when
 # git is unavailable.
 set -uo pipefail
@@ -179,7 +180,10 @@ def validation_ledger(tid):
 
 def stamp_of(tid, kind, n, gate):
     """The committed stamp docs/tasks/<ID>.<kind>/<n>.gate.json when it matches the record
-    (it stands in for a local ledger this checkout does not have), else None."""
+    and this checkout has no ledger of that kind for the task at all (a fresh checkout),
+    else None: where the ledger exists it alone decides."""
+    if os.path.exists(ledger(tid) if kind == "verify" else validation_ledger(tid)):
+        return None
     st = io.read_stamp(root, "docs/tasks/%s.%s/%d.md" % (tid, kind, n)) if hasattr(io, "read_stamp") else None
     return st if st is not None and st.get("gate") == gate and st.get("round") == n else None
 

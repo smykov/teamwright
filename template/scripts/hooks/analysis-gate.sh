@@ -122,7 +122,7 @@ if io.event(data) != "PreToolUse":
 
 # ---- 3. status rewrite through the shell -------------------------------------
 if tool == "Bash":
-    if io.shell_rewrites_task_record(ti.get("command") or ""):
+    if io.shell_rewrites_task_record(ti.get("command") or "", io.project_root(data)):
         io.deny("ANALYSIS GATE: task records are created and their status or stage changed with "
                 "Edit/Write on docs/tasks/<ID>.md, not through the shell - otherwise the analysis "
                 "and review gates cannot see the transition (or the new record).", "analysis-gate")

@@ -320,5 +320,16 @@ json.dump(st, open(sys.argv[1], "w"))
 PY
 out="$(to T-61 DEPLOYED DONE)"; expect_deny "fresh checkout: a re-hashed copy still names T-60's record" "$out" "not written by task-validator"
 rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
+# N2: where the task's ledger exists it alone decides - a scripted stamp does not count
+vtask T-62 DEPLOYED none false
+validate T-62 FAIL "${VAL[@]}" >/dev/null
+printf -- '---\ntask: T-62\nround: 2\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\nok\n' "$(git -C "$P" rev-parse HEAD)" > "$(xd T-62)/2.md"
+python3 - "$HOOKS" "$P" "$(git -C "$P" rev-parse HEAD)" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io
+rel = "docs/tasks/T-62.validation/2.md"; text = open(sys.argv[2] + "/" + rel).read()
+io.write_stamp(sys.argv[2], rel, dict(session_id="sess-1", agent_id="a-val", agent_type="task-validator",
+                                      gate="validation", verdict="PASS", commit=sys.argv[3]), text)
+PY
+out="$(to T-62 DEPLOYED DONE)"; expect_deny "a scripted stamp does not count where the validation ledger exists" "$out" "not written by task-validator"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

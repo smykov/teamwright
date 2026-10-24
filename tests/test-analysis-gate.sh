@@ -281,6 +281,20 @@ out="$(run Bash s1 "command=cp docs/tasks/T-1.md /tmp/backup.md")"
 expect_allow "copying a task record elsewhere passes" "$out"
 out="$(run Bash s1 "command=sed -i 's/typo/fixed/' docs/tasks/T-1.md")"
 expect_allow "an in-place fix that names no status or stage still passes" "$out"
+# N2: an old version, dd or a one-liner is a rewrite of the record too
+for c in "git checkout HEAD~1 -- docs/tasks/T-1.md" \
+         "git restore --source=HEAD~2 docs/tasks/T-1.md" \
+         "cd docs/tasks && git checkout HEAD~1 -- T-1.md" \
+         "dd if=/tmp/old.md of=docs/tasks/T-1.md" \
+         "python3 -c \"open('docs/tasks/T-1.md','w').write(open('/tmp/x').read())\"" \
+         "cd docs/tasks && node -e \"require('fs').writeFileSync('T-1.md', 'x')\""; do
+  out="$(run Bash s1 "command=$c")"
+  expect_deny "shell rewrite of a task record is denied: $c" "$out" "Edit/Write"
+done
+out="$(run Bash s1 "command=python3 -c \"print(open('docs/tasks/T-1.md').read())\"")"
+expect_allow "reading a task record in a one-liner passes" "$out"
+out="$(run Bash s1 "command=git log -p docs/tasks/T-1.md")"
+expect_allow "the history of a task record passes" "$out"
 printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\n' > "$TMP/gf.yml"; mkdir -p "$P/.teamwright"; cp "$TMP/gf.yml" "$P/.teamwright/config.yml"
 staged IN_PROGRESS red-tests
 out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
