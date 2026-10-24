@@ -71,6 +71,9 @@ when `min` tasks wait, a P0/P1 task waits, the oldest waiting task is older than
 "what runs" and "nothing to do"). `batch` = the tasks one stage session takes, in router
 order. `process.models.<stage>` is reported as `model`.
 
+`process.router.select: agent` leaves `candidates` and `batch` empty (also in `request`, unless
+--task names the tasks) and `command` without ids: the session reads the task records itself.
+
 --stage STAGE [--task IDS] answers a stage command (/teamwright:<stage>): `request` says
 whether the stage may run now (ok), on which tasks (batch), and if not, which command to run
 instead (hint). An explicit stage ignores `min`.
@@ -1181,6 +1184,18 @@ def decide(project, taken=None, stage=None, ids=None):
         first["request"]["candidates"] = first["candidates"] if first["stage"] == stage else \
             stage_candidates(project, stage, cands, tasks, eff)
         first["request"]["batch_cap"] = first["stages"][stage]["batch"]
+    if first["select"] == "agent":
+        # process.router.select: agent - the session finds the stage's tasks itself (reads
+        # the records); the router still decides pause, resume, the stage and whether there
+        # is work, but lists no candidates and picks no batch
+        first["candidates"], first["batch"] = [], []
+        if first.get("stage"):
+            first["command"] = "/teamwright:%s" % first["stage"]
+        req = first.get("request")
+        if req is not None:
+            req["candidates"] = []
+            if not ids:
+                req["batch"] = []
     return first
 
 

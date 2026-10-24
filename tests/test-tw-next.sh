@@ -392,7 +392,7 @@ expect_rc "headless prompt for one stage per job, without ids (the session picks
 j | grep -q 'claude -p \\"/teamwright:review\\" --model sonnet' && ok "headless note has the command line" || bad "headless note has the command line"
 expect_rc "selection mode agent is reported" agent "$(field '["select"]')"
 out="$(python3 "$NEXT" --project .)"
-printf '%s' "$out" | grep -q "stage: review | batch: T-2 | model: sonnet | run: /teamwright:review T-2" && ok "human summary: stage line" \
+printf '%s' "$out" | grep -q "stage: review | batch: - | model: sonnet | run: /teamwright:review$" && ok "human summary: stage line (select: agent - no batch)" \
   || bad "human summary: stage line" "$out"
 git init -q --bare "$TMP/remote2.git"; git remote add origin "$TMP/remote2.git"; git push -q -u origin main 2>/dev/null
 mk T-2 DONE; echo y > g.txt; git add -A; git commit -qm "chore: g"
@@ -533,5 +533,15 @@ python3 "$KIT/scripts/tw-progress.py" --project . --json | python3 -c 'import js
   && ok "tw-progress ignores side files too" || bad "tw-progress ignores side files too"
 python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io; assert not io.TASK_FILE_RE.search("docs/tasks/T-89.history.md") and io.TASK_FILE_RE.search("docs/tasks/T-89.md") and not io.TASK_FILE_RE.search("docs/tasks/_task-template.md")' "$HOOKS" \
   && ok "the gates' task-record pattern matches <ID>.md only" || bad "the gates' task-record pattern matches <ID>.md only"
+
+# ---- m8: process.router.select changes the output -----------------------------------------
+fresh select
+mk T-1 NEEDS_REVIEW; mk T-2 NEEDS_REVIEW; commit_all
+sel() { python3 "$NEXT" --project . --json --stage review | python3 -c 'import json,sys; d=json.load(sys.stdin); r=d["request"]; print(d["select"], len(d["candidates"]), " ".join(d["batch"]) or "-", d["command"], r["ok"], len(r["candidates"]), " ".join(r["batch"]) or "-")'; }
+expect_rc "select: script - candidates and a batch" "script 2 T-1 /teamwright:review T-1 True 2 T-1" "$(sel)"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  router:\n    select: agent\n' > .teamwright/config.yml
+expect_rc "select: agent - the stage and ok, but no candidates, no batch, a bare command" "agent 0 - /teamwright:review True 0 -" "$(sel)"
+expect_rc "select: agent - named tasks are still checked and kept" "True T-2" \
+  "$(python3 "$NEXT" --project . --brief --stage review --task T-2 | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], " ".join(r["batch"]))')"
 
 finish

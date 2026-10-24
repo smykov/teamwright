@@ -18,7 +18,7 @@ Take at most `request.batch_cap` tasks from `request.candidates` (router order; 
 - the same area: shared context, a cheaper batch;
 - a candidate that depends on another goes after it, or waits.
 
-`settings.router.select: agent` → read `docs/tasks/*.md`, apply the readiness rule (`lifecycle.md` §4) and the stage rule (sessions.md §8) yourself.
+`settings.router.select: agent` → the router lists no candidates and picks no batch (it still decides whether the stage may run): read `docs/tasks/*.md`, apply the readiness rule (`lifecycle.md` §4) and the stage rule (sessions.md §8) yourself.
 
 ## 3. Per task, one after another
 
