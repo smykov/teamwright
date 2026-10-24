@@ -50,8 +50,10 @@ Decision order (first match wins):
 Stages. Every task-bound decision carries the stage that does it: analyze (TODO ->
 ANALYSIS -> IN_PROGRESS, VERIFY_FAIL re-analysis), red-tests and implement (inside
 IN_PROGRESS: the task's `stage:` field, checked against the evidence - `## Tests` filled
-means the red tests are written; the evidence wins on disagreement, with a warning; a task
-without the field is routed by the evidence), review (NEEDS_REVIEW), verify (CODE_COMPLETE
+means the red tests are written; the field wins when it is behind the evidence (red-tests
+with tests filled: a send-back to the tests), the evidence when the field is ahead of it
+(implement without tests), with a warning; a task without the field is routed by the
+evidence), review (NEEDS_REVIEW), verify (CODE_COMPLETE
 and later). `process.stages.<stage>` holds a stage back while other work exists: it runs
 when `min` tasks wait, a P0/P1 task waits, the oldest waiting task is older than
 `max_wait_hours`, or nothing else is to do (`work_available` is the one predicate for both
@@ -586,8 +588,11 @@ def candidates(tasks, st, oqs=None, after="verified"):
 def stage_of(t):
     """(stage, warning or None). IN_PROGRESS: the `stage:` field checked against the
     evidence; `## Tests` filled = the red tests are written (implement), else red-tests.
-    The evidence wins on disagreement; a task without the field (started before stages)
-    is routed by the evidence alone."""
+    The field wins when it is BEHIND the evidence (`stage: red-tests` with the tests filled:
+    review or verify sent the task back to its tests, a legal step back); the evidence wins
+    only when the field is AHEAD of it (`stage: implement` with no tests), with a warning. A
+    task without the field (started before stages), or with an unknown value, is routed by
+    the evidence."""
     s = t["status"]
     if s in ("TODO", "ANALYSIS", "VERIFY_FAIL"):
         return "analyze", None
@@ -605,6 +610,8 @@ def stage_of(t):
     if f and f not in TASK_STAGES:
         warn = "%s: `stage: %s` is not a stage (red-tests | implement); routed by the evidence (%s) " \
                "to %s" % (t["id"], f, why, by_evidence)
+    elif f == "red-tests" and by_evidence == "implement":
+        by_evidence = "red-tests"  # sent back to its tests: the field is authoritative
     elif f and f != by_evidence:
         warn = "%s: `stage: %s`, but the evidence says %s (%s) - routed to %s; fix the field or " \
                "the record" % (t["id"], f, by_evidence, why, by_evidence)

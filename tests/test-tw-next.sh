@@ -287,10 +287,12 @@ expect_rc "work available" True "$(field '["work_available"]')"
 expect_rc "no model configured: the role files decide" None "$(field '["model"]')"
 expect_rc "selection by the script by default" script "$(field '["select"]')"
 tests_md >> docs/tasks/T-1.md; commit_all
-expect_rc "stage: red-tests but ## Tests filled: the evidence wins (implement), with a warning" "implement developer 1" "$(st_of)"
-j | grep -q "evidence says implement" && ok "the warning names the evidence" || bad "the warning names the evidence"
+expect_rc "stage: red-tests with ## Tests filled: the field is behind the evidence, a legal step back (red-tests, no warning)" "red-tests test-writer 0" "$(st_of)"
+expect_rc "a stage request for red-tests on it is ok (sent back to its tests)" "True" \
+  "$(python3 "$NEXT" --project . --json --stage red-tests --task T-1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["request"]["ok"])')"
 mk T-1 IN_PROGRESS "stage: implement"; commit_all
-expect_rc "stage: implement without tests: back to red-tests, with a warning" "red-tests test-writer 1" "$(st_of)"
+expect_rc "stage: implement without tests: the field is ahead, the evidence wins (red-tests), with a warning" "red-tests test-writer 1" "$(st_of)"
+j | grep -q "evidence says red-tests" && ok "the warning names the evidence" || bad "the warning names the evidence"
 mk T-1 IN_PROGRESS "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
 expect_rc "stage: implement with tests: implement, developer, no warning" "implement developer 0" "$(st_of)"
 mk T-1 IN_PROGRESS; tests_md >> docs/tasks/T-1.md; commit_all
