@@ -22,10 +22,15 @@
 #      `status:` is never read, so a note cannot change the task's state.
 #   4. An edit of docs/tasks/<ID>.md that breaks the order of the `stage:` field (the
 #      sub-stage of IN_PROGRESS, written by the stage that finished its work): a value
-#      other than red-tests | implement; removing it from an IN_PROGRESS task; leaving
-#      ANALYSIS straight into `stage: implement`; IN_PROGRESS -> NEEDS_REVIEW while the
-#      task is at `stage: red-tests` (only the implement stage hands a task to review).
-#      Tasks without the field (started before stages) are not checked.
+#      other than red-tests | implement; entering IN_PROGRESS without a stage (from TODO,
+#      ANALYSIS or VERIFY_FAIL it must be red-tests; a send-back from NEEDS_REVIEW, a
+#      verified status or BLOCKED may set implement); removing it from an IN_PROGRESS
+#      task; `stage: implement` while `## Tests` is empty; IN_PROGRESS -> NEEDS_REVIEW
+#      unless the task is at `stage: implement` (a task started before stages sets it in
+#      that edit), `## Tests` is filled and, when the task changes code (a commit naming
+#      it, or a tracked uncommitted change, touches a file outside docs/, .teamwright/,
+#      .claude/, .github/ and top-level *.md - _task.code_changed), `## Tests` has the
+#      `### Failure branches` table. Gate-first warns, enforce blocks.
 #
 # ACTIVE TASK (PostToolUse): after an edit of docs/tasks/<ID>.md lands, the gate
 #   writes <ID> to .teamwright/current-task when the task is IN_PROGRESS, and clears
@@ -144,18 +149,38 @@ if m and rel.startswith("docs/tasks/"):
     if stage:
         sb, sa, stb, sta, tid = stage(rb), stage(ra), task.status(rb), task.status(ra), m.group(1)
         STAGES = ("red-tests", "implement")
+        tests = getattr(task, "tests_written", lambda _t: True)
+        fbranches = getattr(task, "failure_branches", lambda _t: True)
+        changed = getattr(task, "code_changed", lambda _r, _t: False)
+        entering = sta == "IN_PROGRESS" and stb != "IN_PROGRESS"
         why = None
         if sa and sa != sb and sa not in STAGES:
             why = "`stage: %s` is not a stage of IN_PROGRESS (red-tests | implement)" % sa
-        elif stb == "IN_PROGRESS" and sta == "IN_PROGRESS" and sb in STAGES and not sa:
+        elif entering and not sa:
+            why = "a task entering IN_PROGRESS sets its stage in the same edit: `stage: red-tests` " \
+                  "(a send-back from review or verification may set `stage: implement`)"
+        elif entering and stb in ("", "TODO", "ANALYSIS", "VERIFY_FAIL") and sa != "red-tests":
+            why = "a task leaving %s enters `stage: red-tests` - the red tests come before " \
+                  "the implementation" % (stb or "a new record")
+        elif stb == "IN_PROGRESS" and sta == "IN_PROGRESS" and sb and not sa:
             why = "the `stage:` field of an IN_PROGRESS task is not removed; set the stage the " \
                   "task is at (red-tests | implement)"
-        elif stb == "ANALYSIS" and sta == "IN_PROGRESS" and sa == "implement":
-            why = "a task leaving ANALYSIS enters `stage: red-tests` - the red tests come before " \
-                  "the implementation"
-        elif stb == "IN_PROGRESS" and sta == "NEEDS_REVIEW" and sb == "red-tests":
-            why = "only the implement stage moves a task to NEEDS_REVIEW; this task is at " \
-                  "`stage: red-tests` (commit the red tests with `stage: implement` first)"
+        elif sta == "IN_PROGRESS" and sa == "implement" and (sb != "implement" or entering) \
+                and not tests(after):
+            why = "`stage: implement` needs the red tests written down: `## Tests` is empty " \
+                  "(the red-tests stage fills it and sets the stage in the same edit)"
+        elif stb == "IN_PROGRESS" and sta == "NEEDS_REVIEW":
+            if not (sb == "implement" or (not sb and sa == "implement")):
+                why = "only the implement stage moves a task to NEEDS_REVIEW; this task is at " \
+                      "`stage: %s` (%s)" % (sb or "<none>", "commit the red tests with `stage: implement` "
+                                             "first" if sb == "red-tests" else "a task started before "
+                                             "stages sets `stage: implement` in this edit")
+            elif not tests(after):
+                why = "`## Tests` is empty: a task goes to review with its red tests written down"
+            elif changed(root, tid) and not fbranches(after):
+                why = "the task changes code (a commit naming %s touches a code file) but `## Tests` " \
+                      "has no `### Failure branches` table: the test-writer's failure-branch bite " \
+                      "comes before review (implement stage, step 2)" % tid
         if why:
             io.deny("STAGE GATE: %s: %s. The stage moves forward red-tests -> implement (back to " \
                     "red-tests only from implement, or from review/verify when the task returns to " \

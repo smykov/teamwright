@@ -400,6 +400,10 @@ def shell_writes_switch(cmd, _depth=0):
 
 
 _INPLACE = re.compile(r"^(-[a-zA-Z]*i|--in-place)")
+# What makes a shell rewrite of a task record a state change: the keys, or any of the values
+# they take - `perl -pi -e 's/red-tests/implement/'` names neither key.
+_STATE_WORDS = re.compile(r"status|stage|red-tests|implement|\b(TODO|ANALYSIS|IN_PROGRESS|NEEDS_REVIEW|"
+                          r"CODE_COMPLETE|DEPLOYED|VERIFIED|VERIFY_FAIL|DONE|BLOCKED|DEFERRED)\b")
 
 
 def _is_task_record(tok, in_tasks):
@@ -411,10 +415,11 @@ def _is_task_record(tok, in_tasks):
 
 def shell_rewrites_task_record(cmd):
     """True when a shell command overwrites a task record (docs/tasks/<ID>.md) and the
-    command mentions `status` or `stage`: an in-place sed/perl edit, a `>` redirect or a
-    `tee` without -a whose target is the record. Appends (>>, tee -a), reads, and writes to
-    any other file are not - even when the command text names a task record."""
-    if "status" not in cmd and "stage" not in cmd:
+    command mentions `status` or `stage` or one of their values (IN_PROGRESS, red-tests,
+    implement ...): an in-place sed/perl edit, a `>` redirect or a `tee` without -a whose
+    target is the record. Appends (>>, tee -a), reads, and writes to any other file are not -
+    even when the command text names a task record."""
+    if not _STATE_WORDS.search(cmd):
         return False
     text, _ = _split_heredocs(cmd)
     if "docs/tasks" not in text:

@@ -8,6 +8,7 @@ type: feature
 # side: BLOCKED | DEFERRED (+ absorbed_by) | VERIFY_FAIL (→ ANALYSIS)
 status: TODO
 # sub-stage inside IN_PROGRESS, written by the stage that finished its work: red-tests | implement
+# (set to red-tests in the edit that moves the task into IN_PROGRESS - the stage gate requires it)
 # (analyze sets red-tests, red-tests sets implement; review/verify set it when they send the task back)
 stage: ""
 # sprint the task was created in; never changes

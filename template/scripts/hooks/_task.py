@@ -174,6 +174,36 @@ def task_stage(rec):
     return v.strip().lower()
 
 
+# A code file, as the analysis gate's check 2 reads it: anything outside docs/, .teamwright/,
+# .claude/, .github/ and top-level Markdown files ($TEAMWRIGHT_NONCODE_RE overrides).
+NONCODE_RE = os.environ.get("TEAMWRIGHT_NONCODE_RE",
+                            r"^(docs/|\.teamwright/|\.claude/|\.github/|[^/]*\.md$)")
+
+
+def is_code(path):
+    return bool(path) and not path.startswith("..") and not re.search(NONCODE_RE, path)
+
+
+def code_changed(root, tid):
+    """True when the task changes code: a commit whose message names the task id (subject,
+    body or trailer - the commit convention), or a tracked uncommitted change in the tree,
+    touches a code file (is_code). An rca exit (b)/(c) or a docs-only task does not. False
+    when git is unavailable (nothing to check against)."""
+    import subprocess
+
+    def git(*args):
+        try:
+            p = subprocess.run(("git",) + args, cwd=root, capture_output=True, text=True, timeout=20)
+        except Exception:
+            return ""
+        return p.stdout if p.returncode == 0 else ""
+
+    pat = r"(^|[^A-Za-z0-9_-])" + re.escape(tid) + r"([^A-Za-z0-9_]|$)"
+    files = git("log", "--format=", "--name-only", "-E", "--grep=" + pat, "HEAD").splitlines()
+    files += git("diff", "--name-only", "HEAD").splitlines()
+    return any(is_code(f.strip()) for f in files)
+
+
 def _rounds(root, tid, suffix, with_body=False):
     d = os.path.join(root, "docs", "tasks", tid + suffix)
     try:

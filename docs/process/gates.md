@@ -129,15 +129,29 @@ root cause cost a full review round; the same seam was reopened five times in a 
    `>`, `tee`) — status changes must go through Edit/Write so the gates see them.
    Appending (`>>`, `tee -a`) is allowed: it lands after the front matter, where `status:`
    is never read, so a note cannot change the task's state. The same holds for a command
-   that rewrites the `stage:` field.
+   that rewrites the `stage:` field — recognised by the keys or by their values
+   (`perl -pi -e 's/red-tests/implement/'`, `sed -i 's/ANALYSIS/IN_PROGRESS/'`).
 4. **Stage order** — an edit of `docs/tasks/<ID>.md` that breaks the order of the
-   `stage:` field, the sub-stage of `IN_PROGRESS` (`sessions.md` §8): a value other than
-   `red-tests` or `implement`; removing the field from an `IN_PROGRESS` task; leaving
-   `ANALYSIS` straight into `stage: implement` (the red tests come first); and
-   `IN_PROGRESS → NEEDS_REVIEW` while the task is at `stage: red-tests` — only the
-   implement stage hands a task to review. `red-tests → implement` and back
-   (`implement → red-tests`, or either value when review or verification return the task to
-   `IN_PROGRESS`) pass. A task without the field (started before stages) is not checked.
+   `stage:` field, the sub-stage of `IN_PROGRESS` (`sessions.md` §8). Not opt-in:
+   - a value other than `red-tests` or `implement`;
+   - **entering `IN_PROGRESS` without a stage** in the same edit: from `TODO`, `ANALYSIS`
+     or `VERIFY_FAIL` it is `stage: red-tests` (the red tests come first); a send-back
+     (from `NEEDS_REVIEW`, a verified status, `BLOCKED`) may set `red-tests` or
+     `implement`;
+   - removing the field from an `IN_PROGRESS` task;
+   - **`stage: implement` while `## Tests` is empty** (nothing but the template
+     placeholder): the red-tests stage fills it and sets the stage in the same edit;
+   - **`IN_PROGRESS → NEEDS_REVIEW`** unless the task is at `stage: implement` (a task
+     started before stages sets it in that edit), `## Tests` is filled, and — when the
+     task changes code — `## Tests` has the `### Failure branches` table of the
+     test-writer's bite. *Changes code*: a commit whose message names the task id, or a
+     tracked uncommitted change in the tree, touches a code file — anything outside
+     `docs/`, `.teamwright/`, `.claude/`, `.github/` and top-level `*.md`
+     (`TEAMWRIGHT_NONCODE_RE`, the rule of check 2; `_task.code_changed`). An rca exit
+     (b)/(c) or a docs-only task needs no table.
+   `red-tests → implement` and back (`implement → red-tests`, or either value when review
+   or verification return the task to `IN_PROGRESS`) pass. `gate-first` warns, `enforce`
+   blocks, as for every check.
 
 **Deliberate exits** (all stay visible in the task file)
 

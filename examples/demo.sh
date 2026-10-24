@@ -140,16 +140,34 @@ landed() {
 }
 sedi() { sed "$1" "$2" > "$2.tmp" && mv "$2.tmp" "$2"; }
 TASK="$P/docs/tasks/T-001.md"
-# move AGENT FROM TO EXPECT : an Edit of T-001's status; on allow it lands and is committed
+# move AGENT FROM TO EXPECT [STAGE] : an Edit of T-001's status (and, with STAGE, of the
+# `stage:` line below it, in the same edit); on allow it lands and is committed
 move() {
-  local agent="$1" from="$2" to="$3" expect="$4" name="$1"
+  local agent="$1" from="$2" to="$3" expect="$4" stage="${5:-}" name="$1" cur
   [ "$agent" = main ] && name=orchestrator
-  act "$name: T-001 $from -> $to"
-  if call "$expect" "$agent" Edit "file_path=$TASK" "old_string=status: $from" "new_string=status: $to"; then
+  act "$name: T-001 $from -> $to${stage:+, stage: $stage}"
+  cur="$(sed -n 's/^stage: //p' "$TASK")"
+  if [ -n "$stage" ]; then
+    set -- "old_string=status: $from
+stage: $cur" "new_string=status: $to
+stage: $stage"
+  else
+    set -- "old_string=status: $from" "new_string=status: $to"
+  fi
+  if call "$expect" "$agent" Edit "file_path=$TASK" "$@"; then
     sedi "s/^status: $from\$/status: $to/" "$TASK"
+    [ -n "$stage" ] && sedi "s/^stage: .*/stage: $stage/" "$TASK"
     landed "$agent" Edit "$TASK"
     git -C "$P" add docs/tasks
     commit "chore(task): T-001 ${from}→${to}"
+  fi
+}
+# record AGENT OLD NEW : an Edit of T-001's record that is not a status move; on allow it lands
+record() {
+  local agent="$1" old="$2" new="$3"
+  if call allow "$agent" Edit "file_path=$TASK" "old_string=$old" "new_string=$new"; then
+    python3 -c 'import sys; p,o,n=sys.argv[1:4]; s=open(p).read(); open(p,"w").write(s.replace(o,n,1))' "$TASK" "$old" "$new"
+    landed "$agent" Edit "$TASK"
   fi
 }
 
@@ -222,6 +240,7 @@ id: T-001
 title: slugs of titles with trailing spaces do not end with a dash
 type: bug
 status: TODO
+stage: ""
 sprint: 1
 priority: P2
 depends_on: []
@@ -271,7 +290,7 @@ if call allow problem-investigator Edit "file_path=$TASK" 'old_string=root_cause
   landed problem-investigator Edit "$TASK"
   git add docs/tasks && commit "docs(task): T-001 analysis"
 fi
-move developer ANALYSIS IN_PROGRESS allow
+move developer ANALYSIS IN_PROGRESS allow red-tests
 say "  active task: $(cat "$P/.teamwright/current-task" 2>/dev/null || echo none)"
 
 # --------------------------------------------------------------------------------------
@@ -288,6 +307,15 @@ act "sh test/slug_test.sh        # must fail before the fix"
 if sh test/slug_test.sh > "$WORK/red.log" 2>&1; then say "  !! test passed before the fix"; FAILED=1; fi
 sed 's/^/  /' "$WORK/red.log"
 git add test && commit "test(slug): T-001 trailing and leading spaces leave no dash" co
+act "test-writer records the red test; the stage moves to implement"
+LAST_ACC='- [ ] Failure branch: trailing and leading spaces -> no leading or trailing dash, checked by test/slug_test.sh'
+record test-writer "$LAST_ACC" "$LAST_ACC
+
+## Tests
+
+- trailing and leading spaces: test/slug_test.sh \`Release notes \` (red: release-notes-)"
+record test-writer 'stage: red-tests' 'stage: implement'
+git add docs/tasks && commit "chore(task): T-001 red tests recorded, stage implement"
 act "developer fixes src/slug.sh"
 if call allow developer Edit "file_path=$P/src/slug.sh" \
     "old_string=tr -cs 'a-z0-9' '-'" "new_string=tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*\$//'"; then
@@ -298,6 +326,17 @@ act "sh test/slug_test.sh"
 if ! sh test/slug_test.sh > "$WORK/green.log" 2>&1; then say "  !! test still fails"; FAILED=1; fi
 sed 's/^/  /' "$WORK/green.log"
 git add src && commit "fix(slug): T-001 strip leading and trailing dashes" co
+act "developer hands over before the failure-branch bite"
+move developer IN_PROGRESS NEEDS_REVIEW analysis-gate
+act "test-writer breaks the failure branch once (bite) and records it"
+record test-writer '(red: release-notes-)' '(red: release-notes-)
+
+### Failure branches
+
+| Branch | Broken by | Caught by |
+|---|---|---|
+| leading and trailing spaces | the dash-stripping sed removed | test/slug_test.sh |'
+git add docs/tasks && commit "chore(task): T-001 failure branches recorded"
 move developer IN_PROGRESS NEEDS_REVIEW allow
 
 # --------------------------------------------------------------------------------------
