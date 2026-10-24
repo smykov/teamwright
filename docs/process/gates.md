@@ -829,7 +829,7 @@ guard's variables. Unset means the default.
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
-| `TEAMWRIGHT_PLUGIN_DIR` | session check | the directory a plugin was loaded from (`--plugin-dir`, Agent SDK): taken as installed (unset) |
+| `TEAMWRIGHT_PLUGIN_DIR` | session check | the directory a plugin was loaded from (`--plugin-dir`, Agent SDK): taken as installed, its version (`plugin.json`, else the directory's git commit) compared with the recorded one (unset) |
 | `TW_TEST_GUARD` | test guard | `block`, `warn` or `off`, set by the person who starts Claude Code; wins over `process.test_guard` |
 | `TEAMWRIGHT_ROOT`, `TEAMWRIGHT_CONFIG` | `scripts/tw-run`, `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | another project root or config file |
 | `TW_WAIT_SECONDS`, `TW_POLL_SECONDS` | `scripts/tw-gate`, `scripts/tw-test`, `scripts/tw-mutants` | how long a call waits for the detached run (default 540; `0` = start or attach and return 75 at once) and how often it looks (default 0.2 s, then 1 s) |

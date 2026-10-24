@@ -62,5 +62,17 @@ mkdir -p "$TMP/plugdir/.claude-plugin"; echo '{"name": "teamwright"}' > "$TMP/pl
 expect_allow "TEAMWRIGHT_PLUGIN_DIR with the plugin: not reported missing" "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")"
 echo '{"name": "other"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
 case "$(msg "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")")" in *"not installed"*) ok "TEAMWRIGHT_PLUGIN_DIR with another plugin: still reported" ;; *) bad "other plugin dir" ;; esac
+echo '{"name": "teamwright", "version": "0.4.3"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "0.4.5"}}\n' > .teamwright/installed.json
+case "$(msg "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")")" in *"loaded from TEAMWRIGHT_PLUGIN_DIR"*"0.4.3, older than the 0.4.5"*) ok "TEAMWRIGHT_PLUGIN_DIR: an older plugin.json version is reported" ;; *) bad "dir version drift" ;; esac
+echo '{"name": "teamwright", "version": "0.4.5"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
+expect_allow "TEAMWRIGHT_PLUGIN_DIR at the recorded version: silent" "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")"
+echo '{"name": "teamwright"}' > "$TMP/plugdir/.claude-plugin/plugin.json"
+git -C "$TMP/plugdir" init -q -b next . && git -C "$TMP/plugdir" add -A && git -C "$TMP/plugdir" commit -qm channel
+sha="$(git -C "$TMP/plugdir" rev-parse HEAD | cut -c1-12)"
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "%s"}}\n' "$sha" > .teamwright/installed.json
+expect_allow "TEAMWRIGHT_PLUGIN_DIR, a channel checkout at the recorded commit: silent" "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")"
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "0123456789ab"}}\n' > .teamwright/installed.json
+case "$(msg "$(echo '{}' | TEAMWRIGHT_PLUGIN_DIR="$TMP/plugdir" bash "$S")")" in *"is $sha, the project was set up with 0123456789ab"*) ok "TEAMWRIGHT_PLUGIN_DIR, a channel checkout at another commit: reported" ;; *) bad "dir sha drift" ;; esac
 expect_allow "TEAMWRIGHT_SESSION_CHECK=0 turns it off" "$(echo '{}' | TEAMWRIGHT_SESSION_CHECK=0 bash "$S")"
 finish
