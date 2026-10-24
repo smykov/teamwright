@@ -207,7 +207,8 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    task. The hook records every agent (`session_id:agent_id`) that starts
    (`→ IN_PROGRESS`) or submits (`→ NEEDS_REVIEW`) a task in
    `.teamwright/sessions/<ID>.dev`, and every review round it lets through, with its
-   author and verdict, in `.teamwright/sessions/<ID>.reviews.jsonl`. A send-back
+   author and verdict, in `.teamwright/sessions/<ID>.reviews.jsonl`. The record's
+   `task:` must be the task whose `.reviews/` directory it is written to. A send-back
    (`NEEDS_REVIEW → IN_PROGRESS`) is not recorded as development.
 2. `→ CODE_COMPLETE` unless the latest round says `APPROVE` and
    - its ledger entry shows it was written by a `code-reviewer` agent that did not
@@ -220,6 +221,8 @@ rca_task: T-050             # required with REJECT_RECURRENCE
      session — an autonomous job on a fresh checkout), the round's committed stamp
      `docs/tasks/<ID>.reviews/<n>.gate.json` (*Gate stamps* below) stands in for the
      ledger entry and the journaled spawn, as long as it matches the record;
+   - the record's `task:` names this task (a review copied from another task's
+     directory does not count), and the stamp names this task, record and round;
    - `reviewer` differs from the task's `implemented_by` (when set).
    Who moves the status (normally the orchestrator) does not matter; who wrote the
    approval does.
@@ -850,7 +853,10 @@ So when the review gate lets a review record through, and the verify gate a veri
 validation record, the gate also writes `<n>.gate.json` next to it: the writer's
 `session_id`, `agent_id` and `agent_type`, the round, the verdict (verify: kind, result,
 commit; validation: verdict, commit), for a review whether the reviewer's spawn was
-journaled, and the sha256 of the record as written. The stage commits it with the record.
+journaled, the record it belongs to (`task`, `path`, `round`) and the sha256 of the
+record as written. A stamp counts only for the record it names: copied with its record
+into another task's directory or another round it does not count, and the gates also
+check that a review or acceptance record's `task:` is the task it is counted for. The stage commits it with the record.
 A status move whose ledger has no entry for the round uses the stamp instead, when it
 matches the record on disk.
 

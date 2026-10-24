@@ -426,6 +426,10 @@ def acceptance_check():
     if later:
         deny("validation round %d of %s was written but its file is gone; records are "
              "append-only. %s." % (max(later), tid, how))
+    if (rec.get("task") or "").strip() != tid:
+        deny("validation round %d in docs/tasks/%s.validation/ names task %r, not %s - an "
+             "acceptance verdict copied from another task does not count. %s."
+             % (n, tid, (rec.get("task") or "").strip(), tid, how))
     if w(rec, "verdict") != "PASS":
         deny("%s cannot become DONE: latest acceptance verdict (round %d) is %s. %s."
              % (tid, n, w(rec, "verdict") or "missing", how))

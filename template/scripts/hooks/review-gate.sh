@@ -13,7 +13,7 @@
 #
 # REVIEW RECORD: docs/tasks/<ID>.reviews/<n>.md (n = round, 1, 2, ...):
 #   ---
-#   task: T-042
+#   task: T-042                 # must be the task of the .reviews/ directory
 #   round: 1
 #   reviewer: code-reviewer
 #   verdict: APPROVE            # APPROVE | REQUEST_CHANGES | REJECT_RECURRENCE | ESCALATE
@@ -65,7 +65,8 @@
 #       except a NEEDS_REVIEW -> IN_PROGRESS send-back) or submitted (-> NEEDS_REVIEW)
 #   .teamwright/sessions/<ID>.reviews.jsonl  who wrote which review round, verdict
 # STAMP (committed with the record): docs/tasks/<ID>.reviews/<n>.gate.json - the same
-#   ledger line plus whether the reviewer's spawn was journaled and the record's sha256.
+#   ledger line plus whether the reviewer's spawn was journaled, the record it belongs to
+#   (task, path, round: a copy into another task or round does not count) and its sha256.
 #   Check 2 uses it when the local ledger has no entry (a status move in a later session,
 #   e.g. a CI job on a fresh checkout). Only the gate writes it; an edited record no longer
 #   matches its hash.
@@ -216,6 +217,10 @@ if m and rel.startswith("docs/tasks/"):
                 "`reviewer: human:<name>` and commits it."
                 % (REVIEWER, who["agent_type"] or "<main session>", REVIEWER, tid),
                 "review-gate")
+    if (rv.get("task") or "").strip() != tid:
+        io.deny("REVIEW GATE: review record docs/tasks/%s.reviews/%d.md needs `task: %s` in its "
+                "front matter (got %r): a review counts only for the task it names."
+                % (tid, n, tid, (rv.get("task") or "").strip()), "review-gate")
     if verdict not in VERDICTS:
         io.deny("REVIEW GATE: review record needs front matter with `verdict:` one of "
                 "%s (got %r)." % (" | ".join(VERDICTS), verdict), "review-gate")
@@ -405,6 +410,10 @@ if verdict != "APPROVE":
             "so far: %d, REQUEST_CHANGES in a row: %d (counted from docs/tasks/%s.reviews/, "
             "not from the task's review_rounds field); %s."
             % (n, tid, verdict, computed, changes, tid, nxt), "review-gate")
+if (rv.get("task") or "").strip() != tid:
+    io.deny("REVIEW GATE: review round %d in docs/tasks/%s.reviews/ names task %r, not %s - a "
+            "review copied from another task does not count. Spawn a fresh %s subagent for %s."
+            % (n, tid, (rv.get("task") or "").strip(), tid, REVIEWER, tid), "review-gate")
 reviewer = (rv.get("reviewer") or "").strip()
 impl = (ra.get("implemented_by") or "").strip()
 if not reviewer:

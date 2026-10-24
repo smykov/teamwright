@@ -303,5 +303,22 @@ rm -f "$(xd T-60)/1.gate.json" "$(xd T-60)/1.md"; validate T-60 PASS "${VAL[@]}"
 echo "changed" >> "$(vd T-60)/1.md"
 out="$(to T-60 DEPLOYED DONE)"; expect_deny "a verify record edited after its stamp does not count" "$out" "not written through the gate"
 rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
+# N1: a verify / acceptance record copied from another task does not count there
+grep -q '"task": "T-60"' "$(xd T-60)/1.gate.json" && grep -q '"path": "docs/tasks/T-60.validation/1.md"' "$(xd T-60)/1.gate.json" \
+  && ok "validation stamps name their task and record" || bad "validation stamps name their task and record"
+vtask T-61 DEPLOYED none false
+mkdir -p "$(xd T-61)"; cp "$(xd T-60)/1.md" "$(xd T-60)/1.gate.json" "$(xd T-61)/"
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "with the ledger: T-60's acceptance copied to T-61 does not count" "$out" "copied from another task"
+mv "$P/.teamwright" "$TMP/vg-state"
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "fresh checkout: T-60's acceptance copied to T-61 does not count" "$out" "copied from another task"
+sed 's/^task: T-60$/task: T-61/' "$(xd T-60)/1.md" > "$(xd T-61)/1.md"
+python3 - "$(xd T-61)/1.gate.json" "$(xd T-61)/1.md" <<'PY'
+import hashlib, json, sys
+st = json.load(open(sys.argv[1])); text = open(sys.argv[2]).read()
+st["sha256"] = hashlib.sha256((text.rstrip("\n") + "\n").encode()).hexdigest()
+json.dump(st, open(sys.argv[1], "w"))
+PY
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "fresh checkout: a re-hashed copy still names T-60's record" "$out" "not written by task-validator"
+rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

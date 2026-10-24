@@ -281,6 +281,34 @@ out="$(run Edit "$S9-next" "file_path=$(tf T-90)" "old_string=status: NEEDS_REVI
 expect_deny "a stamp without the journaled spawn, journal gone: still denied" "$out" "journaled spawn"
 rm -rf "$P/.teamwright"; mv "$TMP/tw-state" "$P/.teamwright"
 
+# ---- N1: an approval copied to another task does not count there ----------------------
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["spawned"]=True; json.dump(d,open(p,"w"))' "$(rd T-90)/1.gate.json"
+grep -q '"task": "T-90"' "$(rd T-90)/1.gate.json" && grep -q '"path": "docs/tasks/T-90.reviews/1.md"' "$(rd T-90)/1.gate.json" \
+  && ok "the stamp names its task and record" || bad "the stamp names its task and record" "$(cat "$(rd T-90)/1.gate.json")"
+task_file "$(tf T-91)" T-91 NEEDS_REVIEW bug full
+mkdir -p "$(rd T-91)"; cp "$(rd T-90)/1.md" "$(rd T-90)/1.gate.json" "$(rd T-91)/"
+out="$(run Edit "$S9-next" "file_path=$(tf T-91)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "with the local ledger: T-90's approval copied to T-91 does not count" "$out" "copied from another task"
+mv "$P/.teamwright" "$TMP/tw-state"
+out="$(run Edit "$S9-next" "file_path=$(tf T-91)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "fresh checkout: T-90's approval copied to T-91 does not count" "$out" "copied from another task"
+sed 's/^task: T-90$/task: T-91/' "$(rd T-90)/1.md" > "$(rd T-91)/1.md"
+out="$(run Edit "$S9-next" "file_path=$(tf T-91)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "fresh checkout: the copy renamed to T-91 no longer matches the stamp" "$out" "not written by a code-reviewer"
+python3 - "$(rd T-91)/1.gate.json" "$(rd T-91)/1.md" <<'PY'
+import hashlib, json, sys
+st = json.load(open(sys.argv[1])); text = open(sys.argv[2]).read()
+st["sha256"] = hashlib.sha256((text.rstrip("\n") + "\n").encode()).hexdigest()
+json.dump(st, open(sys.argv[1], "w"))
+PY
+out="$(run Edit "$S9-next" "file_path=$(tf T-91)" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "fresh checkout: a stamp re-hashed for T-91 still names T-90" "$out" "not written by a code-reviewer"
+rm -rf "$P/.teamwright"; mv "$TMP/tw-state" "$P/.teamwright"
+task_file "$(tf T-92)" T-92 NEEDS_REVIEW bug full
+hook_json Agent "$S9" "subagent_type=code-reviewer" "description=T-92 code-reviewer" "prompt=go" @hook_event_name=PreToolUse | bash "$JOURNAL"
+out="$(run Write "$S9" "file_path=$(rd T-92)/1.md" "content=$(review_text T-90 APPROVE)" "${REV[@]}")"
+expect_deny "a review record naming another task is refused when written" "$out" "task: T-92"
+
 # ---- m3: records created outside Edit/Write still count, at the reviewed task's status move ----
 G="$TMP/gproj"; mkdir -p "$G/docs/tasks"; git -C "$G" init -q -b main .
 task_file "$G/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; git -C "$G" add -A; git -C "$G" commit -qm "chore(task): T-1"

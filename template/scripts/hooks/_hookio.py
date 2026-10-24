@@ -49,13 +49,26 @@ def stamp_path(root, rel):
     return os.path.join(root, re.sub(r"\.md$", ".gate.json", rel))
 
 
+_RECORD_RE = re.compile(r"(?:^|/)(docs/tasks/(%s)\.(?:reviews|verify|validation)/(\d+)\.md)$" % TASK_ID)
+
+
+def _record_id(rel):
+    """docs/tasks/<ID>.<kind>/<n>.md -> (normalised path, ID, n), else (None, None, None)."""
+    m = _RECORD_RE.search((rel or "").replace(os.sep, "/"))
+    return (m.group(1), m.group(2), int(m.group(3))) if m else (None, None, None)
+
+
 def write_stamp(root, rel, entry, text):
-    """Write the committed stamp of a record the gate let through (best effort)."""
+    """Write the committed stamp of a record the gate let through (best effort). The stamp
+    names the record it belongs to - task, path, round - so a copy into another task's
+    directory (or another round) does not count there."""
     path = stamp_path(root, rel)
+    norm, tid, n = _record_id(rel)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(dict(entry, sha256=_digest(text)), fh, ensure_ascii=False, sort_keys=True, indent=1)
+            json.dump(dict(entry, task=tid, path=norm, round=n, sha256=_digest(text)), fh,
+                      ensure_ascii=False, sort_keys=True, indent=1)
             fh.write("\n")
     except OSError:
         pass
@@ -72,6 +85,9 @@ def read_stamp(root, rel):
         return None
     if not isinstance(st, dict) or st.get("sha256") != _digest(text):
         return None
+    norm, tid, n = _record_id(rel)
+    if norm is None or (st.get("task"), st.get("path"), st.get("round")) != (tid, norm, n):
+        return None          # a stamp copied from another task or round, or one without its name
     return st
 
 
