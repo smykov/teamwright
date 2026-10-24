@@ -23,7 +23,9 @@ Decision order (first match wins):
                  test-writer for red-tests, developer for implement)
   3. review      NEEDS_REVIEW -> spawn the reviewer (APPROVE recorded -> continue to
                  CODE_COMPLETE; ESCALATE -> decide; REJECT_RECURRENCE -> continue: defer)
-  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record; then the
+  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record (a task that deploys:
+                 only once its code is on the delivery branch - origin/HEAD, origin/main or
+                 origin/master - i.e. after DRAIN; before that the push decision names it); then the
                  acceptance verdict in ## Validation (PASS -> continue: close; FAIL ->
                  continue: back to IN_PROGRESS; NEEDS_OWNER -> decide; none -> verify:
                  task-validator). deploys: false + surface none needs no verify record,
@@ -37,7 +39,9 @@ Decision order (first match wins):
                  docs/open-questions.md. Order: effective priority (a task inherits
                  the highest priority of the open tasks that depend on it, directly or
                  not), then the number of open tasks it unblocks, then id.
-  7. decide      unpushed commits (push is the owner's call), else idle
+  7. decide      unpushed commits - not on the delivery branch: against its upstream on that
+                 branch, against the delivery branch on any other (a wip/ or task branch) -
+                 push is the owner's call; else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
   Parallel work: a task on a linked worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
   or `task/<ID>`, any suffix after the id allowed; $TEAMWRIGHT_TASK_BRANCH_RE overrides
@@ -211,6 +215,27 @@ def last_code_commit(project, tid):
         if any(f and not RECORD_RE.search(f) for f in files.splitlines()):
             return sha
     return ""
+
+
+def default_ref(project):
+    """The delivery branch as a remote-tracking ref: origin/HEAD, else origin/main, else
+    origin/master; None without a remote (nothing is ever pushed, so nothing waits for it)."""
+    rc, out = git(project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD")
+    if rc == 0 and out.strip():
+        return out.strip()
+    for ref in ("refs/remotes/origin/main", "refs/remotes/origin/master"):
+        if git(project, "rev-parse", "--verify", "-q", ref)[0] == 0:
+            return ref
+    return None
+
+
+def delivered(project, tid, ref):
+    """True when the task's code is on the delivery branch (its last code commit is reachable
+    from `ref`), or when there is no delivery branch to wait for."""
+    if not ref:
+        return True
+    code = last_code_commit(project, tid)
+    return not code or git(project, "merge-base", "--is-ancestor", code, ref)[0] == 0
 
 
 def acceptance(project, tid, rec):
@@ -406,6 +431,7 @@ def state_of(project, config):
     rc, out = git(project, "rev-parse", "--is-inside-work-tree")
     st["git"] = rc == 0 and out.strip() == "true"
     st["dirty_files"], st["untracked"], st["unpushed"], st["branch"] = [], 0, 0, None
+    st["delivery_ref"] = None
     if st["git"]:
         _, out = git(project, "status", "--porcelain")
         rows = [(l[:2], l[3:]) for l in out.splitlines()
@@ -415,7 +441,15 @@ def state_of(project, config):
         st["dirty_files"] = [p for s_, p in rows if s_ != "??"]
         st["untracked"] = len([p for s_, p in rows if s_ == "??"])
         st["branch"] = git(project, "rev-parse", "--abbrev-ref", "HEAD")[1].strip() or None
+        # Unpushed = not yet delivered. On the delivery branch that is its upstream; on any
+        # other branch (a wip/ branch of an autonomous run, a task branch) the commits not on
+        # the delivery branch - the wip branch's own upstream is always even after its push.
+        ref = default_ref(project)
+        st["delivery_ref"] = ref[len("refs/remotes/"):] if ref else None
+        on_delivery = bool(ref) and st["branch"] == ref.rsplit("/", 1)[-1]
         rc, out = git(project, "rev-list", "--count", "@{u}..HEAD")
+        if (rc != 0 or not on_delivery) and ref:
+            rc, out = git(project, "rev-list", "--count", "%s..HEAD" % ref)
         if rc == 0 and out.strip().isdigit():
             st["unpushed"] = int(out.strip())
     st["dirty"] = bool(st["dirty_files"])
@@ -552,6 +586,8 @@ def candidates(tasks, st, oqs=None, after="verified"):
                                   "or NEEDS_OWNER, not another sample" % t["validation_fail_streak"]
                                   if t.get("validation_fail_streak", 0) >= 2 else ""),
                               role="task-validator"))
+        elif t["status"] == "CODE_COMPLETE" and t["deploys"] and not t.get("delivered", True):
+            continue  # verified after DRAIN: the push decision below names it
         else:
             out.append(_d("verify", t["id"], "%s is %s without a PASS verify record"
                           % (t["id"], t["status"]), role="task-validator"))
@@ -578,7 +614,14 @@ def candidates(tasks, st, oqs=None, after="verified"):
 
     # 7. push or idle
     if st["unpushed"]:
-        out.append(_d("decide", None, "%d unpushed commit(s): push?" % st["unpushed"], ask=True))
+        waiting = [t["id"] for t in by("CODE_COMPLETE") if t["deploys"] and not t.get("delivered", True)
+                   and t["verify"] != "PASS"]
+        out.append(_d("decide", None, "%d unpushed commit(s)%s: push?%s" % (
+            st["unpushed"], " (not on %s)" % st["delivery_ref"] if st.get("delivery_ref") and
+            st["branch"] != st["delivery_ref"].rsplit("/", 1)[-1] else "",
+            " %s deploy%s and %s verified after the push (DRAIN)" % (
+                ", ".join(waiting), "s" if len(waiting) == 1 else "", "is" if len(waiting) == 1 else "are")
+            if waiting else ""), ask=True))
     for c in out:
         t = tasks.get(c["task"]) if c["task"] else None
         c["stage"] = stage_of(t)[0] if t and c["action"] in WORK else None
@@ -931,6 +974,10 @@ def decide(project, taken=None, stage=None, ids=None):
         res["candidates"], res["batch_cap"] = [], 0
         return res
     oqs = open_questions(project)
+    ref = default_ref(project) if st["git"] else None
+    for t in tasks.values():
+        if t["status"] == "CODE_COMPLETE" and t["deploys"]:
+            t["delivered"] = delivered(project, t["id"], ref)
     own, wts = with_worktrees(project, task, tasks)
     elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
     cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])

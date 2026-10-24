@@ -15,7 +15,7 @@ You are the **orchestrator** of one stage session (`AGENTS.md`); the common prot
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --stage verify [--task <ids, comma-separated>]
 ```
 
-`request.ok` false → show `request.hint`, end (`Stage: verify`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). A task that deploys is verified after DRAIN (the push is the owner's decision — the router asks it as `decide`); a task with `deploys: false` is verified against a locally started system.
+`request.ok` false → show `request.hint`, end (`Stage: verify`, `Outcome: idle`). Otherwise choose the batch from `request.candidates` (§8). A task that deploys is verified after DRAIN (the push is the owner's decision — the router asks it as `decide`, and offers verify for such a task only once its code is on the delivery branch); a task with `deploys: false` is verified against a locally started system.
 
 ## Work — per task, one after another
 

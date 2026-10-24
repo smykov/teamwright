@@ -427,4 +427,21 @@ expect_rc "main checkout on task/T-2-run18: verify sees both tasks" "True T-2,T-
   "$(python3 "$NEXT" --project . --json --stage verify --task T-2,T-3 | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], ",".join(c.get("id") or c.get("task") for c in r["candidates"]))')"
 git checkout -q main
 
+# ---- M3: a task that deploys is verified after DRAIN; unpushed is counted against the delivery branch ----
+fresh drain
+git init -q --bare "$TMP/drain.git"; git remote add origin "$TMP/drain.git"; git push -q -u origin main 2>/dev/null
+mk T-1 CODE_COMPLETE; mk T-2 CODE_COMPLETE "deploys: false" "surface: none"; git add -A; git commit -qm "chore(task): tasks"
+echo code > a.txt; git add a.txt; git commit -qm "feat(core): T-1 the change"
+dr() { j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"], " ".join("%s:%s" % (a["action"], a["task"]) for a in d["alternatives"]))'; }
+expect_rc "deploys: true, code not pushed: no verify yet; deploys: false verifies locally; the push names T-1" "verify T-2 decide:None" "$(dr)"
+j | grep -q "T-1 deploys and is verified after the push (DRAIN)" && ok "the push decision says T-1 waits for DRAIN" || bad "the push decision says T-1 waits for DRAIN" "$(j | grep unpushed)"
+git push -q origin main 2>/dev/null
+expect_rc "after the push: T-1 is verified" "verify T-1 verify:T-2" "$(dr)"
+git checkout -q -b wip/teamwright; echo more > b.txt; git add b.txt; git commit -qm "feat(core): T-3 more"
+git push -q -u origin wip/teamwright 2>/dev/null
+expect_rc "on a wip branch pushed to its own upstream: unpushed counts against origin/main" "1 origin/main" \
+  "$(field '["state"]["unpushed"], d["state"]["delivery_ref"]' | tr -d "(),'")"
+j | grep -q "1 unpushed commit(s) (not on origin/main): push?" && ok "the push reason names the delivery branch" || bad "the push reason names the delivery branch" "$(j | grep unpushed)"
+git checkout -q main
+
 finish
