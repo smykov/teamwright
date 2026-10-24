@@ -447,11 +447,13 @@ def guard_state(data):
              "the gates rely on), never by an agent." % rel, gate, data)
 
 
-def deny(reason, gate, data=None, hard=False):
-    """Block (enforce) or warn (gate-first). hard=True blocks in every mode."""
-    mode = "enforce" if hard else gate_mode(data)
+def deny(reason, gate, data=None, hard=False, mode=None, warn_note=None):
+    """Block (enforce) or warn (gate-first). hard=True blocks in every mode; mode
+    ('enforce' | 'warn') overrides the project's gate mode for a gate with its own switch
+    (the test guard), warn_note then replaces the gate-first prefix of a warning."""
+    mode = "enforce" if hard else (mode or gate_mode(data))
     if mode == "warn":
-        msg = "teamwright gate-first (warn only, run `tw-install.py enforce` to block): " + reason
+        msg = (warn_note or "teamwright gate-first (warn only, run `tw-install.py enforce` to block): ") + reason
         print(json.dumps({
             "systemMessage": msg,
             "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg},

@@ -192,13 +192,15 @@ def acceptance(project, tid, rec):
     return verdict if rc == 0 and all(RECORD_RE.search(f) for f in changed.splitlines() if f) else ""
 
 
-def _fail_streak(vals):
-    """FAIL rounds at the end of a task's validation records."""
+def _fail_streak(vals, sweeps=False):
+    """FAIL rounds at the end of a task's validation records (with sweeps=True, only
+    those with `method: sweep`)."""
     n = 0
     for _, rec in reversed(vals):
         if str(rec.get("verdict") or "").split()[:1] != ["FAIL"]:
             break
-        n += 1
+        if not sweeps or str(rec.get("method") or "").strip().lower() == "sweep":
+            n += 1
     return n
 
 
@@ -282,6 +284,7 @@ def load_tasks(project, task, only=None):
             "verify": task.first_word(verifies[-1][1].get("result", "")).upper() if verifies else "",
             "validation": acceptance(project, tid, vals[-1][1]) if vals else "",
             "validation_fail_streak": _fail_streak(vals),
+            "validation_sweep_fails": _fail_streak(vals, sweeps=True),
             # a line marked `non-blocking` (e.g. "non-blocking: OQ-04 - default chosen") is a
             # deliberate mention: the task does not wait for it, so no warning
             "mentions_oq": sorted(set(q for line in body.splitlines()
@@ -482,6 +485,10 @@ def candidates(tasks, st, oqs=None, after="verified"):
                 out.append(_d("verify", t["id"], "%s, no acceptance verdict for the current code: task-validator "
                               "checks Acceptance against evidence%s%s" % (
                                   what, " (no verify record needed)" if no_record else "",
+                                  "; acceptance failed in two sweep rounds: this round is NEEDS_OWNER "
+                                  "(the survivors, the guarantee each breaks; the owner accepts the rest "
+                                  "as follow-ups or rethinks the task), not a third sweep"
+                                  if t.get("validation_sweep_fails", 0) >= 2 else
                                   "; acceptance failed %d times in a row: this round is `method: sweep` "
                                   "or NEEDS_OWNER, not another sample" % t["validation_fail_streak"]
                                   if t.get("validation_fail_streak", 0) >= 2 else ""),

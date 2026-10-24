@@ -204,6 +204,7 @@ PROCESS_DEFAULTS = {
     "batch": {"max_tasks": 1, "by_priority": {"P0": 1, "P1": 1, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "ask", "continue": False},
     "ready": {"after": "verified"},
+    "test_guard": "block",
 }
 # Recommended for new projects (offered by adopt, init and /teamwright:settings).
 PROCESS_RECOMMENDED = {
@@ -216,11 +217,14 @@ PROCESS_RECOMMENDED = {
 # CODE_COMPLETE/DEPLOYED (`code_complete`: the dependent starts while the dependency's
 # pipeline, deploy and verification still run; a VERIFY_FAIL there reopens the dependent).
 READY_AFTER = ("verified", "code_complete")
+# The test guard (scripts/hooks/test-guard.sh) has its own switch, independent of `mode`:
+# gate-first projects block direct test runs too unless they say otherwise.
+TEST_GUARD = ("block", "warn", "off")
 # Findings that block whatever the threshold: the threshold saves rounds on style and
 # small drift, never on what is dangerous.
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
 MAX_BATCH = 5
-MAX_PARALLEL = 4
+MAX_PARALLEL = 10
 
 
 def _bool(v):
@@ -238,10 +242,14 @@ def process_errors(cfg):
         return ["process must be a mapping"]
     errs = []
     allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
-               "autonomy": ("start", "continue"), "ready": ("after",)}
+               "autonomy": ("start", "continue"), "ready": ("after",), "test_guard": None}
     for k, v in p.items():
         if k not in allowed:
             errs.append("process.%s: unknown key (known: %s)" % (k, ", ".join(allowed)))
+            continue
+        if allowed[k] is None:
+            if str(v).strip().lower() not in TEST_GUARD:
+                errs.append("process.%s must be one of %s" % (k, ", ".join(TEST_GUARD)))
             continue
         if not isinstance(v, dict):
             errs.append("process.%s must be a mapping" % k)
@@ -308,6 +316,10 @@ def process_of(cfg):
     if str(rd.get("after", "")).lower() in READY_AFTER:
         out["ready"]["after"] = str(rd["after"]).lower()
         explicit.append("ready.after")
+    tg = str(p.get("test_guard", "")).strip().lower()
+    if tg in TEST_GUARD:
+        out["test_guard"] = tg
+        explicit.append("test_guard")
     out["explicit"] = explicit
     return out
 

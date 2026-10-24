@@ -17,12 +17,14 @@ The pipeline — statuses, roles, gates, records, "two send-backs → ESCALATE",
 | `review.blocking` | `low` · `medium` · `high` | `low` | `medium` | From which severity a review finding returns the task. Below it, findings are follow-ups (one task per sprint). Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` block always. The review gate checks that the verdict matches the findings table |
 | `batch.max_tasks` | 1–5 | 1 | 3 | How many tasks one `/teamwright:flow` pass takes, one after another |
 | `batch.by_priority.P0`…`P3` | 1–5 | P0 1, P1 1, P2 3, P3 3 | P0 1, P1 2, P2 3, P3 3 | Cap for a pass that holds a task of that priority; the lowest cap in the pass wins. The router checks it (`tw-next.py --pass`) |
-| `batch.parallel` | 1–4 | 1 (off) | 1 | Tasks worked at the same time, each in its own worktree and session, when their seams do not overlap (`/teamwright:parallel`). Worth it when tasks are independent and each runs long; every extra session costs the owner's attention and the merges |
+| `batch.parallel` | 1–10 | 1 (off) | 1 | Tasks worked at the same time, each in its own worktree and session, when their seams do not overlap (`/teamwright:parallel`). Worth it when tasks are independent and each runs long; every extra session costs the owner's attention and the merges |
 | `autonomy.start` | `ask` · `auto` | `ask` | `auto` | Start the router's ready task without asking which one |
 | `autonomy.continue` | `true` · `false` | `false` | `true` | After a barrier, take the next task in the same pass instead of ending the session. Push stays the owner's decision: asked once at the end of the pass |
 | `ready.after` | `verified` · `code_complete` | `verified` | `verified` | When a `depends_on` counts as finished: at `VERIFIED`/`DONE`, or already at `CODE_COMPLETE`/`DEPLOYED` — the dependent starts while the dependency's pipeline, deploy and verification run. A `VERIFY_FAIL` on the dependency can then reopen work already done on the dependent |
 
-Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself.
+| `test_guard` | `block` · `warn` · `off` | `block` | `block` | The test guard: tests only through `scripts/tw-test`, gates through `scripts/tw-gate` — a direct test runner or gate script, and test output piped into `tail`/`grep`, are refused (`block`) or only warned about. Its own switch, not `mode`: it blocks in `gate-first` too |
+
+Defaults are the behaviour before settings existed, so a plugin update changes nothing by itself — except `test_guard`, which blocks from 0.11.0 on.
 
 ## 1. Show
 

@@ -10,7 +10,13 @@ Entry point for any AI coding agent working in this repository (Claude Code, Ope
 {{GATE_COMMAND}}
 ```
 
-A task never leaves `IN_PROGRESS` with a red gate. The gate is run again by the reviewer and the validator; nobody's report is taken on trust.
+Run it as `scripts/tw-gate <area>`: `generate_command` first, then the gate, full output to a log under `.teamwright/logs/gate/` (read that log; never cut the output with `tail` or `head`), PASS/FAIL and the log path on screen. A PASS is recorded for the content of the area's files (its source and test dirs, manifests, config, the gate scripts); the next `scripts/tw-gate <area>` on the same content answers `PASS (cached: …)` instead of running the gate again — a commit of docs or task records keeps it — a FAIL is always rerun, `--fresh` forces a run. Which gates a task needs: `scripts/tw-gate --for-task <ID>` prints its areas (and `--top` for files outside every area); a change of only records, docs or CI configuration needs none.
+
+**Tests only through `scripts/tw-test`, gates through `scripts/tw-gate`, mutants through `scripts/tw-mutants`.** `scripts/tw-test <area> [<test files, node ids or filters>]` runs the area's configured test command (`test_select_command` with the tests you name, else `test_command`; its workers and runner come from the config), writes the whole output to `.teamwright/logs/test/`, and prints PASS/FAIL, the counts, the failed tests with their first error line and the log path. Read that log (`grep`, `sed -n` on the file) instead of running the tests again: the same call answers from its cache — a FAIL too — until the area's files change (`--fresh` forces a run). The `test-guard` hook refuses a test runner or a gate script called directly (`pytest`, `flutter test`, `cargo test`, `npm test`, the gate command …, also inside `scripts/tw-run` or `sh -c`) and test or gate output piped into `grep`/`tail`/`head`/`sed`/`awk`; lint, build and code generation still go through `scripts/tw-run <area> -- <cmd>`.
+
+**Long commands and the 10-minute limit.** A Bash call is stopped after 10 minutes. tw-gate, tw-test and `scripts/tw-mutants` run detached and wait up to ~9 minutes; when the run is not finished they print `RUNNING: … run the same command again to keep waiting` and exit 75. Then call **the same command again**: it attaches to the same run and waits again, and prints the normal result when it ends. Never wrap them in `sleep`/`until` loops, never start them as a background tool call, never kill their containers to start over. A long suite goes through `scripts/tw-gate`, a part of it through `scripts/tw-test`.
+
+A task never leaves `IN_PROGRESS` with a red gate. The gate is checked again by the reviewer and the validator through `scripts/tw-gate` — a recorded run of the tool, never anyone's report.
 
 Commands run exactly as rendered, through `scripts/tw-run <area> -- <cmd>`: on the host, or for an area with `runner: docker` in the same image as CI — never with the bare tool instead. Code generation (`generate_command`) runs before the gate, separately; the gate itself must leave `git status` unchanged.
 
@@ -24,7 +30,7 @@ Commands run exactly as rendered, through `scripts/tw-run <area> -- <cmd>`: on t
 | developer | implements in the seam until tests are green | starts without `analysis`; weakens tests | `.claude/agents/developer.md` |
 | technical-writer | syncs `docs/`, appends decisions / failures | changes code | `.claude/agents/technical-writer.md` |
 | code-reviewer | fresh-context review, recurrence detection; writes the review record | runs as a fork of the author; edits code; changes statuses | `.claude/agents/code-reviewer.md` |
-| task-validator | VERIFY session: runs API tests / end-to-end UI tests / deploy smoke against the running system, writes the verify record; DoD vs reality, gate, targeted mutations on a throwaway copy | edits code or tests; mutates the working tree; counts an interactive exploration as evidence | `.claude/agents/task-validator.md` |
+| task-validator | VERIFY session: runs API tests / end-to-end UI tests / deploy smoke against the running system, writes the verify record; DoD vs reality, gate, the task's mutant catalog plus targeted mutations on a throwaway copy (`scripts/tw-mutants`) | edits code or tests; mutates the working tree; counts an interactive exploration as evidence | `.claude/agents/task-validator.md` |
 | Owner (human) | decides escalations, architecture reviews (`/arch-review`), amendments to `PRINCIPLES.md` | reviews every diff | — |
 
 Tools without subagents: run each role as a **separate session** with its file as the prompt. The reviewer must never share context with the author.
@@ -62,7 +68,7 @@ One file per task in `docs/tasks/<id>.md` (template: `docs/tasks/_task-template.
 
 Verification: every task declares `surface: api | ui | both | none`. `VERIFIED` and `DONE` require a `PASS` verify record for the current code — `api` → API tests against the running service; `ui` → an end-to-end UI test run with the configured UI runner (Tools › ui_verify); `both` → both; `none` → a deploy smoke, or nothing when `deploys: false`. The record (`task`, `round`, `kind`, `tool`, `command`, `environment`, `commit`, `result`, `evidence`, `verifier`, plus a `Failure branch:` line) is append-only, written with Edit/Write, and cites a test run, not an interactive session. `kind: manual` only with an explicit `verify_exception`, checked by someone other than the implementer. Details: `docs/process/lifecycle.md` §7.
 
-Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-written commits carry a `Co-Authored-By:` trailer.
+Status change commit: `chore(task): T-042 NEEDS_REVIEW→CODE_COMPLETE`. Agent-written commits carry a `Co-Authored-By:` trailer. Never put `[skip ci]` (or `[ci skip]`, `[no ci]`) in a commit message: CI decides by the pushed tip's message, and the tip of a delivery or of a pull request is usually a status commit — with the marker, the code under it goes unchecked (pre-push warns). Record-only pushes are skipped by the CI configuration (`paths-ignore`, `scripts/tw-ci-changes`), not by the message.
 
 ## Rules
 

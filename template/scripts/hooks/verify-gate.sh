@@ -46,8 +46,11 @@
 #      (verdict PASS|FAIL|NEEDS_OWNER, commit, validator) - written by anyone but
 #      task-validator, by a shell command, out of round order, or over an existing round.
 #      After two FAIL rounds in a row, the next round must be `method: sweep` (every
-#      condition, guard, return and write of the changed code mutated) or NEEDS_OWNER:
-#      sampled mutations find one survivor per round and the loop does not end.
+#      condition, guard, return and write on the task's changed lines mutated) or
+#      NEEDS_OWNER: sampled mutations find one survivor per round and the loop does not
+#      end. After two sweep rounds with FAIL (since the last PASS or NEEDS_OWNER round)
+#      the next verdict must be NEEDS_OWNER: each sweep finds new survivors, a third
+#      would too (Google runs mutants on the diff as review hints, not as a gate).
 #      Entering DONE needs the latest round PASS, written through this gate (ledger),
 #      fresh for the task's code - for every surface, including `deploys: false` +
 #      `surface: none`, where it is the only check.
@@ -316,15 +319,31 @@ if m and rel.startswith("docs/tasks/"):
     if p:
         deny("validation record %s round %d is incomplete: %s. Template: "
              "docs/tasks/_validation-template.md." % (tid, n, "; ".join(p)))
-    prev = [w(r, "verdict") for _, r in task.validation_rounds(root, tid)][-2:]
+    rounds = [r for _, r in task.validation_rounds(root, tid)]
+    prev = [w(r, "verdict") for r in rounds][-2:]
+    # failing sweeps in the current run of FAIL rounds (a PASS or NEEDS_OWNER resets it)
+    swept = 0
+    for r in rounds:
+        if w(r, "verdict") != "FAIL":
+            swept = 0
+        elif w(r, "method").lower() == "sweep":
+            swept += 1
+    if swept >= 2 and w(rec, "verdict") != "NEEDS_OWNER":
+        # each sweep found new survivors on the same task: a third finds more. The
+        # owner decides - accept the rest as follow-ups or rethink the task.
+        deny("validation of %s has had two sweep rounds with FAIL; round %d is not a third "
+             "sweep or another verdict: write `verdict: NEEDS_OWNER` with the surviving "
+             "mutants, the guarantee each breaks, and what the owner must decide (accept "
+             "the rest as follow-ups or rethink the task). See docs/process/gates.md "
+             "(Mutation checks)." % (tid, n))
     if prev == ["FAIL", "FAIL"] and method != "sweep" and w(rec, "verdict") != "NEEDS_OWNER":
         # two sampling rounds in a row each found a different survivor: a third sample
         # would find a third. Like two REQUEST_CHANGES in review: stop sampling.
-        deny("validation of %s failed twice in a row; round %d is not another sample of 3-6 "
-             "mutations: either `method: sweep` - mutate every condition, guard, return and "
-             "write in the task's changed code, re-run the test-writer's wrong implementations "
-             "and every mutation of earlier rounds, record killed / survived / equivalent - or "
-             "`verdict: NEEDS_OWNER` to escalate." % (tid, n))
+        deny("validation of %s failed twice in a row; round %d is not another sample: "
+             "either `method: sweep` - re-run the catalog docs/tasks/%s.mutants/, then "
+             "mutate every condition, guard, return and write on the task's changed lines, "
+             "record killed / survived / equivalent - or `verdict: NEEDS_OWNER` to "
+             "escalate." % (tid, n, tid))
     if resolve(w(rec, "commit")) == "":
         deny("commit %s does not resolve in this repository; check a committed revision "
              "and record its sha." % w(rec, "commit"))

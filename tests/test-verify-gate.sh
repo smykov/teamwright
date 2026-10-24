@@ -220,6 +220,19 @@ out="$(VMETHOD=sweep validate T-32 PASS "${VAL[@]}")"; expect_allow "a sweep aft
 vtask T-33 CODE_COMPLETE none false
 validate T-33 FAIL "${VAL[@]}" >/dev/null; validate T-33 PASS "${VAL[@]}" >/dev/null; validate T-33 FAIL "${VAL[@]}" >/dev/null
 out="$(validate T-33 PASS "${VAL[@]}")"; expect_allow "FAIL, PASS, FAIL is not two in a row: a sample is fine" "$out"
+# two sweep rounds with FAIL: the next verdict is NEEDS_OWNER, not a third sweep (#5)
+vtask T-34 CODE_COMPLETE none false
+validate T-34 FAIL "${VAL[@]}" >/dev/null; validate T-34 FAIL "${VAL[@]}" >/dev/null
+VMETHOD=sweep validate T-34 FAIL "${VAL[@]}" >/dev/null
+out="$(VMETHOD=sweep validate T-34 FAIL "${VAL[@]}")"; expect_allow "a second failing sweep is recorded" "$out"
+out="$(VMETHOD=sweep validate T-34 FAIL "${VAL[@]}")"; expect_deny "a third sweep after two failing sweeps is refused" "$out" "verdict: NEEDS_OWNER"
+out="$(VMETHOD=sweep validate T-34 PASS "${VAL[@]}")"; expect_deny "a PASS after two failing sweeps is refused too" "$out" "two sweep rounds with FAIL"
+out="$(VMETHOD=sweep validate T-34 NEEDS_OWNER "${VAL[@]}")"; expect_allow "NEEDS_OWNER after two failing sweeps is accepted" "$out"
+out="$(validate T-34 PASS "${VAL[@]}")"; expect_allow "after the owner's decision the count starts again" "$out"
+vtask T-35 CODE_COMPLETE none false
+VMETHOD=sweep validate T-35 FAIL "${VAL[@]}" >/dev/null; validate T-35 PASS "${VAL[@]}" >/dev/null
+VMETHOD=sweep validate T-35 FAIL "${VAL[@]}" >/dev/null
+out="$(VMETHOD=sweep validate T-35 FAIL "${VAL[@]}")"; expect_allow "a PASS between failing sweeps resets the count" "$out"
 vtask T-17 CODE_COMPLETE none false
 mkdir -p "$(xd T-17)"; printf -- '---\ntask: T-17\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\n' "$(git -C "$P" rev-parse HEAD)" > "$(xd T-17)/1.md"
 out="$(to T-17 CODE_COMPLETE DONE)"; expect_deny "a PASS verdict not written through the gate does not count" "$out" "validation.jsonl"
