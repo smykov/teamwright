@@ -1384,7 +1384,7 @@ def brief(res):
     out["headless"] = res.get("headless")
     out["budget"] = res.get("budget")
     out["state"] = {k: st.get(k) for k in ("mode", "branch", "dirty", "unpushed", "delivery_ref", "pause",
-                                           "current_task", "interrupted_task")}
+                                           "current_task", "interrupted_task", "wip_waiting")}
     out["alternatives"] = [dict(a, reason=(a.get("reason") or "")[:90]) for a in (res.get("alternatives") or [])[:3]]
     out["settings"] = {k: v for k, v in (res.get("settings") or {}).items() if k != "explicit"}
     return out

@@ -576,6 +576,8 @@ mk T-3 ANALYSIS; commit_all
 expect_rc "an analysed task waits while another is IN_PROGRESS; an unfinished analysis is still analyze work" "T-3" \
   "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(sys.stdin)["request"]["candidates"]))')"
 expect_rc "the state says what it waits for" "{'T-2': 'T-1'}" "$(field '["state"]["wip_waiting"]')"
+expect_rc "--brief carries it too (the analyze skill reads it there)" "{'T-2': 'T-1'}" \
+  "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"].get("wip_waiting"))')"
 python3 "$NEXT" --project . --brief --stage analyze --task T-2 | grep -q "enters IN_PROGRESS when T-1 leaves it" \
   && ok "naming it explicitly: refused with the reason" || bad "naming it explicitly: refused with the reason"
 mk T-1 NEEDS_REVIEW "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_all
