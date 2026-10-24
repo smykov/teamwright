@@ -453,6 +453,11 @@ if not os.path.exists(review_ledger(tid)):
     st = io.read_stamp(root, "docs/tasks/%s.reviews/%d.md" % (tid, n)) if hasattr(io, "read_stamp") else None
     if st is not None and st.get("gate") == "review" and st.get("round") == n:
         entry = stamp = st
+    elif st is None and hasattr(io, "legacy_record") and \
+            io.legacy_record(root, "docs/tasks/%s.reviews/%d.md" % (tid, n)):
+        # written before the kit wrote stamps (pre-0.12), committed before the upgrade and
+        # unchanged since: the 0.11 gate checked it in the session that wrote it
+        sys.exit(0)
 if is_human(reviewer):
     if entry is not None:
         io.deny("REVIEW GATE: round %d of %s says `reviewer: human` but was written by an "

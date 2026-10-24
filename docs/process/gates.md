@@ -915,6 +915,12 @@ What it keeps, what it does not:
   round, so a copy does not count elsewhere; and stamps are in git — a forged one is a
   reviewable file in a diff, and `git log` says which commit brought it. On a fresh
   checkout (CI) the stamp is all the gate has: review what the jobs commit.
+- **Records from before stamps.** A review, verify or acceptance record written by a kit
+  before 0.12 has no stamp. On a checkout without the task's ledger it still counts when
+  git shows it was last changed in a commit *before* the commit that moved
+  `.teamwright/installed.json` from a pre-0.12 kit to a stamping one, and the working copy
+  is that committed version (`_hookio.legacy_record`): the 0.11 gate checked it in the
+  session that wrote it. A project installed at 0.12 or later has no such records.
 - **The implementer check stays at write time.** The status move in a later session has no
   `.dev` ledger; whether the reviewer implemented the task was checked when the review was
   written. One stage per job also means the reviewer's session is never the implementer's.
@@ -937,7 +943,10 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
   on a fresh checkout, where no local ledger can contradict them (*Gate stamps*).
 - Ledgers and the journal are local (`.teamwright/`, gitignored). The gate stamps committed
   with review, verify and validation records carry what a later status move needs
-  (*Gate stamps*); a review written before 0.12 (no stamp) by an agent on another machine
+  (*Gate stamps*). A review, verify or acceptance record written before 0.12 has no stamp;
+  on a checkout without its ledger it counts when it was last changed in a commit before
+  the one that moved `installed.json` from a pre-0.12 kit to a stamping one, and the tree
+  holds that version (*Gate stamps*). A record without a stamp committed after the upgrade
   is not recognised — record it as `reviewer: human:<name>` after a person checked it, or
   run the review where the work was done.
 - One `.teamwright/current-task` per working tree; parallel sessions need worktrees.

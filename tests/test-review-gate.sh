@@ -359,6 +359,32 @@ S="$S9" landed "$(rd T-95)/1.md" "${REV[@]}"
 [ ! -e "$(rd T-95)/1.gate.json" ] && ok "a landed file that differs from what the gate checked gets no stamp" \
   || bad "a landed file that differs from what the gate checked gets no stamp"
 
+# minor: a review approved before 0.12 (no stamp) is recognised on a fresh checkout
+L="$TMP/legacy"; mkdir -p "$L/docs/tasks/T-1.reviews" "$L/.teamwright"; git -C "$L" init -q -b main .
+lg() { CLAUDE_PROJECT_DIR="$L" run "$@"; }
+kitv() { printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "%s"}}\n' "$1" > "$L/.teamwright/installed.json"; git -C "$L" add -A; git -C "$L" commit -qm "chore: kit $1"; }
+kitv 0.11.0
+task_file "$L/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; task_file "$L/docs/tasks/T-2.md" T-2 NEEDS_REVIEW bug full
+review_text T-1 APPROVE > "$L/docs/tasks/T-1.reviews/1.md"; git -C "$L" add -A; git -C "$L" commit -qm "docs(review): T-1 APPROVE"
+kitv 0.12.0
+out="$(lg Edit s-l "file_path=$L/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_allow "a review committed before the upgrade to 0.12, no stamp, fresh checkout: recognised" "$out"
+mkdir -p "$L/docs/tasks/T-2.reviews"; review_text T-2 APPROVE > "$L/docs/tasks/T-2.reviews/1.md"; git -C "$L" add -A; git -C "$L" commit -qm "docs(review): T-2"
+out="$(lg Edit s-l "file_path=$L/docs/tasks/T-2.md" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a review without a stamp committed after the upgrade: not recognised" "$out" "not written by a code-reviewer"
+echo "edited" >> "$L/docs/tasks/T-1.reviews/1.md"
+out="$(lg Edit s-l "file_path=$L/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a legacy review edited in the tree: not recognised" "$out" "not written by a code-reviewer"
+git -C "$L" add -A; git -C "$L" commit -qm "docs: T-1 edit"
+out="$(lg Edit s-l "file_path=$L/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "a legacy review changed after the upgrade: not recognised" "$out" "not written by a code-reviewer"
+N="$TMP/new012"; mkdir -p "$N/docs/tasks/T-1.reviews" "$N/.teamwright"; git -C "$N" init -q -b main .
+task_file "$N/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; review_text T-1 APPROVE > "$N/docs/tasks/T-1.reviews/1.md"
+git -C "$N" add -A; git -C "$N" commit -qm "pre-existing review"
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "0.12.0"}}\n' > "$N/.teamwright/installed.json"; git -C "$N" add -A; git -C "$N" commit -qm "chore: install 0.12.0"
+out="$(CLAUDE_PROJECT_DIR="$N" run Edit s-l "file_path=$N/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: CODE_COMPLETE")"
+expect_deny "installed at 0.12 from the start: a record without a stamp is never legacy" "$out" "not written by a code-reviewer"
+
 # ---- m3: records created outside Edit/Write still count, at the reviewed task's status move ----
 G="$TMP/gproj"; mkdir -p "$G/docs/tasks"; git -C "$G" init -q -b main .
 task_file "$G/docs/tasks/T-1.md" T-1 NEEDS_REVIEW bug full; git -C "$G" add -A; git -C "$G" commit -qm "chore(task): T-1"

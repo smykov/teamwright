@@ -191,7 +191,14 @@ def stamp_of(tid, kind, n, gate):
     else None: where the ledger exists it alone decides."""
     if os.path.exists(ledger(tid) if kind == "verify" else validation_ledger(tid)):
         return None
-    st = io.read_stamp(root, "docs/tasks/%s.%s/%d.md" % (tid, kind, n)) if hasattr(io, "read_stamp") else None
+    rel = "docs/tasks/%s.%s/%d.md" % (tid, kind, n)
+    st = io.read_stamp(root, rel) if hasattr(io, "read_stamp") else None
+    if st is None and hasattr(io, "legacy_record") and io.legacy_record(root, rel):
+        # written before the kit wrote stamps (pre-0.12), committed before the upgrade and
+        # unchanged since: the record's own fields stand in (the 0.11 gate checked them then)
+        rec = task.parse(open(os.path.join(root, rel), encoding="utf-8", errors="replace").read())
+        return {"gate": gate, "round": n, "legacy": True, "kind": w(rec, "kind"),
+                "result": w(rec, "result"), "verdict": w(rec, "verdict"), "commit": w(rec, "commit")}
     return st if st is not None and st.get("gate") == gate and st.get("round") == n else None
 
 def ledger_entry(tid, n):

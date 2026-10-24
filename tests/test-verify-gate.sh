@@ -344,5 +344,20 @@ out="$(to T-63 DEPLOYED DONE)"; expect_allow "a cancelled write neither blocks D
 cp "$(xd T-63)/1.gate.json" "$(xd T-63)/3.gate.json"
 out="$(to T-63 DEPLOYED DONE)"; expect_allow "an orphan stamp (no record) is ignored" "$out"
 [ ! -f "$(xd T-63)/3.gate.json" ] && ok "and removed by the gate" || bad "and removed by the gate"
+# minor: an acceptance verdict written before 0.12 (no stamp) counts on a fresh checkout
+V="$TMP/vlegacy"; mkdir -p "$V/docs/tasks/T-1.validation" "$V/.teamwright" "$V/src"; git -C "$V" init -q -b main .
+vkit() { printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "%s"}}\n' "$1" > "$V/.teamwright/installed.json"; git -C "$V" add -A; git -C "$V" commit -qm "chore: kit $1"; }
+vkit 0.11.0
+echo x > "$V/src/a.txt"; git -C "$V" add -A; git -C "$V" commit -qm "feat(core): T-1 the change"
+VC="$(git -C "$V" rev-parse HEAD)"
+P_SAVE="$P"; P="$V"; vtask T-1 DEPLOYED none false; P="$P_SAVE"
+printf -- '---\ntask: T-1\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\nok\n' "$VC" > "$V/docs/tasks/T-1.validation/1.md"
+git -C "$V" add -A; git -C "$V" commit -qm "docs(task): T-1 acceptance PASS"
+vkit 0.12.0
+out="$(CLAUDE_PROJECT_DIR="$V" run Edit "$S" "file_path=$V/docs/tasks/T-1.md" "old_string=status: DEPLOYED" "new_string=status: DONE")"
+expect_allow "an acceptance PASS committed before the upgrade to 0.12, no stamp: recognised" "$out"
+echo "later" >> "$V/docs/tasks/T-1.validation/1.md"
+out="$(CLAUDE_PROJECT_DIR="$V" run Edit "$S" "file_path=$V/docs/tasks/T-1.md" "old_string=status: DEPLOYED" "new_string=status: DONE")"
+expect_deny "the legacy verdict edited in the tree: not recognised" "$out" "not written by task-validator"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

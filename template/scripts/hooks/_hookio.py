@@ -75,6 +75,57 @@ def write_stamp(root, rel, entry, text):
         pass
 
 
+def _git_out(root, *args):
+    import subprocess
+    try:
+        p = subprocess.run(("git",) + args, cwd=root, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def _stamped_kit(version):
+    """Does a kit version write stamps (0.12.0 and later, or a channel build - a commit)?"""
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", str(version or "").strip())
+    if not m:
+        return bool(str(version or "").strip())
+    return tuple(int(x) for x in m.groups()) >= (0, 12, 0)
+
+
+def legacy_record(root, rel):
+    """True for a review / verify / validation record written before the project's kit wrote
+    stamps (before 0.12): the record was last changed in a commit that precedes the commit
+    which moved .teamwright/installed.json to a stamping kit, and the working copy is that
+    committed version. On a fresh checkout such a record has no stamp and no ledger; the
+    0.11 gates checked it in the session that wrote it."""
+    if not _RECORD_RE.search((rel or "").replace(os.sep, "/")):
+        return False
+    hist = _git_out(root, "log", "--format=%H", "--", ".teamwright/installed.json")
+    if not hist:
+        return False
+    upgrade, older = None, False
+    for c in hist.split():      # newest first: the oldest stamping commit after a pre-0.12 one
+        try:
+            man = json.loads(_git_out(root, "show", "%s:.teamwright/installed.json" % c) or "{}")
+        except ValueError:
+            man = {}
+        kit = man.get("@kit") if isinstance(man, dict) else None
+        ver = kit.get("version") if isinstance(kit, dict) else ""
+        if _stamped_kit(ver):
+            upgrade = c
+        else:
+            older = True        # an install before stamps (a 0.11 version, or no @kit record)
+            break
+    if upgrade is None or not older:
+        return False            # never upgraded from a kit without stamps: nothing is legacy
+    parent = (_git_out(root, "rev-parse", "-q", "--verify", upgrade + "~1") or "").strip()
+    last = (_git_out(root, "log", "-1", "--format=%H", "--", rel) or "").strip()
+    if not parent or not last or _git_out(root, "merge-base", "--is-ancestor", last, parent) is None:
+        return False
+    # the working copy is the committed version (not edited since)
+    return _git_out(root, "diff", "--quiet", "HEAD", "--", rel) is not None
+
+
 def _pending_path(root, rel):
     norm, tid, n = _record_id(rel)
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", norm or rel)
