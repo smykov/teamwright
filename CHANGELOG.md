@@ -2,6 +2,14 @@
 
 All notable changes to teamwright. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.13.0] - 2026-10-24
+
+### Added
+- **`/teamwright:parallel auto`: the orchestrator runs tasks in parallel itself.** Until now parallel work meant the owner opened a session per worktree; the orchestrator could not even call `/teamwright:parallel` (it was owner-only), and red-tests or implement held one task `IN_PROGRESS` per tree while nine analysed tasks waited. Now `parallel` is open to the model, and `auto` analyses the next batch in the main tree, plans disjoint seams, starts the worktrees, prepares their index, launches their stages headless, watches, merges each approved task (rebase, gate in the worktree, fast-forward) and starts the next — owner decisions are collected, not asked. A stage session that leaves analysed tasks waiting with `batch.parallel` above 1 goes to `parallel auto` (`stage-protocol.md` §3).
+- **`tw-parallel.py prepare <ids>`** — the context tool's index per worktree: Serena's `.serena/cache` copied from the main tree, then `serena project index` refreshes what differs (`TW_CONTEXT_INDEX_CMD` overrides the command). A worktree that cannot index is reported and not launched.
+- **`tw-parallel.py launch <ids>` / `run <id>`** — in the worktree, ask the router; while `headless.run`, run `claude -p <headless.prompt>` (one stage per session, a fresh context) and ask again; stop at `CODE_COMPLETE`, an owner decision (`escalate` with the reason), `TEAMWRIGHT_PAUSE`, two stages that moved nothing (`stuck`) or `TW_PARALLEL_MAX_STAGES` (12). At most `batch.parallel` at once. State and log: `.teamwright/parallel/<ID>.json`, `.log`; `status` shows them. Command: `TW_CLAUDE` (default `claude`) with `TEAMWRIGHT_CLAUDE_ARGS` (default `acceptEdits`, the tools a stage needs, the autonomous-run note). Tests in `tests/test-tw-parallel.sh`.
+- `.teamwright/parallel/`, `.serena/cache/` and `.serena/logs/` are gitignored by the installer, so a worktree's copied index does not look like uncommitted work.
+
 ## [0.12.2] - 2026-10-24
 
 ### Fixed

@@ -1,9 +1,8 @@
 ---
 name: parallel
 description: Work several tasks at the same time — each in its own git worktree and Claude Code session — when their seams do not overlap. Analyses the ready tasks in the main tree, groups the disjoint ones (up to process.batch.parallel), creates the worktrees, and later merges each approved branch back (rebased, gate green) before one push. Use when the owner wants parallel work, or the router offers `merge`.
-argument-hint: "[plan | start | status | merge [T-NNN]]"
-disable-model-invocation: true
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-parallel.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(git status *) Bash(git log *) Bash(git worktree *) Bash(git merge --ff-only *) Bash(git branch -d *) Bash(git -C *)
+argument-hint: "[auto | plan | start | status | merge [T-NNN]]"
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-parallel.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(git status *) Bash(git log *) Bash(git worktree *) Bash(git merge --ff-only *) Bash(git rebase *) Bash(git worktree *) Bash(git branch -d *) Bash(scripts/tw-gate *) Bash(sleep *) Bash(git branch -d *) Bash(git -C *)
 ---
 
 # /teamwright:parallel — one task per worktree, merged back in order
@@ -13,6 +12,22 @@ Arguments: `$ARGUMENTS` (empty → `status`, then whatever is next).
 **Why worktrees and separate sessions.** The gates keep one active task per working tree (`.teamwright/current-task`), and each session journals what its agents did. Parallel work therefore runs as separate sessions in separate worktrees — each with its own hooks, journal and active task — and this main session only coordinates: analysis, grouping, merging, the push. The pipeline per task is unchanged.
 
 Limit: `process.batch.parallel` (`/teamwright:settings`; 1 = off). Script: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-parallel.py" <plan|start|status|logs> …`.
+
+## 0. Auto — the orchestrator runs the tasks itself
+
+`/teamwright:parallel auto` (also what a stage session starts when analysed tasks wait in `wip_waiting` and `process.batch.parallel` is above 1): the orchestrator does §1–§4 without handing commands to the owner, and keeps the worktrees full until no task is left or a pause.
+
+1. **Context tool first** — `docs/process/stage-protocol.md` §0 in the main tree.
+2. **Analyse** the next ready tasks in the main tree — the analyze stage, its batch up to `stages.analyze.batch` (raise it to the parallel limit for a night run).
+3. **Plan and start**: `tw-parallel.py plan`, then `start <ids>` for the group (no question in auto: the settings are the owner's answer).
+4. **Prepare the index**: `tw-parallel.py prepare <ids>` — the context tool's index copied from the main tree and refreshed in each worktree. An error → that worktree is not launched (its stage sessions would stop at §0 anyway); say which and why.
+5. **Launch**: `tw-parallel.py launch <ids>` — in each worktree a background loop asks the router and runs one stage per `claude -p` session (fresh context each time) until the task is `CODE_COMPLETE`, needs the owner, is paused (`TEAMWRIGHT_PAUSE`) or stops moving. At most `batch.parallel` at once; the rest report `waiting`.
+6. **Watch**: `tw-parallel.py status` every few minutes (`sleep 300` between checks). Per worktree: `run.running`, `run.stage`, `run.outcome` (`done`, `escalate` with the reason, `idle`, `stuck`, `paused`, `limit`, `error`), the log at `.teamwright/parallel/<ID>.log`.
+7. **Merge** each `ready_to_merge` one by §4 (rebase, gate in the worktree, fast-forward, logs, remove). A slot is free → back to step 2 for the next tasks.
+8. **Owner decisions** (`escalate`) are collected, not answered: the worktree stays, its question is in the task record; the others go on. At the end list them with `/teamwright:blockers`.
+9. **Verify** the merged tasks in the main tree (`/teamwright:verify`, its batch), then the usual DRAIN question — or, headless, leave the push for the owner.
+
+The limit is the machine as much as the setting: each worktree runs its own gates and its own context-tool server. Start with what the machine carries (a build-heavy project: two or three) and raise `batch.parallel` when the gates stay fast.
 
 ## 1. Plan — in the main tree
 
