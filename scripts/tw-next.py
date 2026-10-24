@@ -224,12 +224,65 @@ def _load_helpers(project):
     return _task, _config
 
 
-def helper_warnings():
-    if not HELPER_DRIFT:
+def _public_names(path):
+    """Top-level functions and constants of a Python file, read without importing it."""
+    import ast
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out = set()
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.ClassDef)):
+            out.add(n.name)
+        elif isinstance(n, ast.Assign):
+            out.update(t.id for t in n.targets if isinstance(t, ast.Name))
+    return {x for x in out if not x.startswith("_")}
+
+
+def _semver(v):
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", str(v or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def install_drift(project):
+    """Why the project's installed hooks are older than the plugin: [(kind, text)]. The
+    router fills missing _task helpers from the kit, but the gates run the project's files
+    - an autonomous job on them would run without the gates the plugin documents (a 0.11
+    install has no stage gate and writes no stamps)."""
+    out = []
+    if HELPER_DRIFT:
+        out.append(("helpers", "scripts/hooks/_task.py predates the plugin (missing: %s)" % ", ".join(HELPER_DRIFT)))
+    proj = os.path.join(project, "scripts", "hooks", "_hookio.py")
+    if os.path.isfile(proj):
+        mine = _public_names(proj)
+        kits = _public_names(os.path.join(KIT, "template", "scripts", "hooks", "_hookio.py"))
+        if mine is not None and kits:
+            miss = sorted(kits - mine)
+            if miss:
+                out.append(("hooks", "scripts/hooks/_hookio.py predates the plugin (missing: %s)" % ", ".join(miss)))
+    try:
+        man = json.load(open(os.path.join(project, ".teamwright", "installed.json"), encoding="utf-8"))
+        rec = man.get("@kit") if isinstance(man, dict) else None
+        plug = json.load(open(os.path.join(KIT, ".claude-plugin", "plugin.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        rec, plug = None, {}
+    have = _semver(rec.get("version")) if isinstance(rec, dict) else None
+    want = _semver(plug.get("version")) if isinstance(plug, dict) else None
+    if have and want and have < want:
+        out.append(("version", "the project was installed with kit %s, the plugin is %s"
+                    % (rec.get("version"), plug.get("version"))))
+    return out
+
+
+def helper_warnings(project=None):
+    drift = install_drift(project) if project else ([("helpers", "scripts/hooks/_task.py predates the plugin "
+                                                      "(missing: %s)" % ", ".join(HELPER_DRIFT))] if HELPER_DRIFT else [])
+    if not drift:
         return []
-    return ["install drift: scripts/hooks/_task.py predates the plugin (missing: %s) - the router uses "
-            "the plugin's copies, the gates still run the old file: run `tw-install.py apply` "
-            "(/teamwright:reconfigure) to update the project's hooks" % ", ".join(HELPER_DRIFT)]
+    return ["install drift: %s - the router uses the plugin's copies, the gates still run the old files: "
+            "run `tw-install.py apply` (/teamwright:reconfigure) to update the project's hooks; autonomous "
+            "jobs do not run until then" % "; ".join(t for _, t in drift)]
 
 
 def git(project, *args):
@@ -948,6 +1001,10 @@ def headless_for(first, cands, info):
                 "note": note, "reason": reason or note, "decisions": decisions_of(cands)}
     if first["action"] == "paused":
         return off("paused: no job runs until TEAMWRIGHT_PAUSE is removed")
+    if first.get("install_drift"):
+        return off("install drift: no job runs on hooks older than the plugin - the gates it documents "
+                   "(stage gate, stamps) would not run; a person runs `tw-install.py apply` "
+                   "(/teamwright:reconfigure) and commits the result", "install drift: " + "; ".join(first["install_drift"]))
     if first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
         return off("owner decision: no job runs; tell the owner the reason", first["reason"])
     if first["action"] == "stop":
@@ -1172,7 +1229,8 @@ def decide(project, taken=None, stage=None, ids=None):
     first["counts"] = {}
     for t in tasks.values():
         first["counts"][t["status"]] = first["counts"].get(t["status"], 0) + 1
-    first["warnings"] = helper_warnings() + warnings_for(tasks, oqs) + drift_warnings(project)
+    first["warnings"] = helper_warnings(project) + warnings_for(tasks, oqs) + drift_warnings(project)
+    first["install_drift"] = [t for _, t in install_drift(project)]
     first["settings"] = proc
     first["recommended"] = getattr(kc, "PROCESS_RECOMMENDED", {})
     first["parallel"] = {"own": own, "elsewhere": elsewhere, "worktrees": wts}

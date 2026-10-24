@@ -55,7 +55,7 @@ Python 3 stdlib only. Every subcommand takes `--project PATH` (default: current 
    - identical → nothing;
    - written by the installer and unchanged since (hash in `.teamwright/installed.json`) → **update**;
    - contains both markers → only the block between them is re-rendered (**tools**), the rest of the file is left as it is; markers out of order (end before begin) → **conflict**, the file is not touched;
-   - written by the installer, then edited → **kept-local**;
+   - written by the installer, then edited → **kept-local**; a process document (`docs/process/*.md`) edited locally that lacks a section (heading) the kit's version has → **conflict** with the missing headings named: the project would run the new gates with the old instructions. Merge by hand, then `apply --accept <path>` (or once every heading is there it is kept-local again);
    - a project document that existed before install (`docs/requirements.md`, `open-questions.md`, `plan.md`, `architecture.md`, `decisions.md` — e.g. written by `/teamwright:requirements` during init) → **kept-project**: the template only seeds these, the project's own content is never a conflict;
    - anything else → **conflict**: not touched, listed for the `adopt` command to merge with the owner. After the merge, `apply --accept <path>` records it (**accepted**) so later runs stop reporting it; editing the file or a template change makes it a conflict again.
 
@@ -199,7 +199,11 @@ and deterministic. It reads `docs/tasks/*.md` (status, priority, `depends_on`, `
 commits). It parses records with the project's installed `scripts/hooks/_task.py` (the
 gates run the same code); a helper that copy lacks — the plugin was updated without
 `tw-install.py apply` — is taken from the plugin's own copy, and `warnings` says
-`install drift: … (missing: …)` with the command that updates the project. First match wins:
+`install drift: … (missing: …)` with the command that updates the project. The same
+warning names a `scripts/hooks/_hookio.py` without helpers the plugin's has (an install
+before stamps) and an `@kit` version in `installed.json` older than the plugin's; any of
+the three sets `install_drift` and **`headless.run` false**: an autonomous job on hooks
+older than the plugin would run without the gates it documents. First match wins:
 
 | # | Situation | `action` |
 |---|---|---|

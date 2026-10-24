@@ -486,6 +486,35 @@ j | grep -q "install drift: scripts/hooks/_task.py predates the plugin (missing:
   && ok "the drift is a warning naming the missing helpers and tw-install.py apply" || bad "the drift is a warning naming the missing helpers and tw-install.py apply" "$(j | grep -A3 warnings)"
 cp "$HOOKS/_task.py" scripts/hooks/_task.py; commit_all
 j | grep -q "install drift: scripts/hooks/_task.py" && bad "an up-to-date _task.py: no drift warning" || ok "an up-to-date _task.py: no drift warning"
+# N3: install drift stops autonomous jobs (hooks older than the plugin, an older @kit)
+cp "$HOOKS/_task.py" scripts/hooks/_task.py.new
+python3 - "$HOOKS/_task.py" scripts/hooks/_task.py <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+src = re.sub(r"(?ms)^def task_stage\(.*?(?=^def |^[A-Z_]+ = |\Z)", "", src)
+open(sys.argv[2], "w").write(src)
+PY
+hl() { j | python3 -c 'import json,sys; h=json.load(sys.stdin)["headless"]; print(h["run"], h["reason"])'; }
+case "$(hl)" in "False install drift: scripts/hooks/_task.py predates the plugin"*) ok "an old _task.py: no autonomous job (headless.run false)" ;;
+  *) bad "an old _task.py: no autonomous job (headless.run false)" "$(hl)" ;; esac
+mv scripts/hooks/_task.py.new scripts/hooks/_task.py
+python3 - "$HOOKS/_hookio.py" scripts/hooks/_hookio.py <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+for name in ("write_stamp", "read_stamp", "shell_writes_records"):
+    src = re.sub(r"(?ms)^def %s\(.*?(?=^def |^[A-Z_]+ = |\Z)" % name, "", src)
+open(sys.argv[2], "w").write(src)
+PY
+case "$(hl)" in "False install drift: scripts/hooks/_hookio.py predates the plugin (missing: read_stamp, shell_writes_records, write_stamp)"*)
+  ok "0.11 hooks (no stamps): no autonomous job" ;; *) bad "0.11 hooks (no stamps): no autonomous job" "$(hl)" ;; esac
+j | grep -q "autonomous jobs do not run until then" && ok "the warning says why jobs stop" || bad "the warning says why jobs stop"
+cp "$HOOKS/_hookio.py" scripts/hooks/_hookio.py
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "0.11.0"}}\n' > .teamwright/installed.json
+case "$(hl)" in "False install drift: the project was installed with kit 0.11.0"*) ok "an older @kit version: no autonomous job" ;;
+  *) bad "an older @kit version: no autonomous job" "$(hl)" ;; esac
+KV="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$KIT/.claude-plugin/plugin.json")"
+printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "%s"}}\n' "$KV" > .teamwright/installed.json
+case "$(hl)" in True*) ok "hooks and @kit up to date: the job runs" ;; *) bad "hooks and @kit up to date: the job runs" "$(hl)" ;; esac
 
 # ---- M6: explicit --task ids: capped by the stage's batch, dependencies first, overlaps named ----
 fresh explicit

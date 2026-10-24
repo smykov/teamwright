@@ -232,6 +232,24 @@ def load_config(path):
     return cfg, text
 
 
+def _headings(text):
+    out, fence = [], False
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", line)
+        if m and not fence:
+            out.append(m.group(2).strip())
+    return out
+
+
+def missing_sections(disk, template):
+    """Headings of the kit's version of a document that the project's copy lacks."""
+    have = set(_headings(disk))
+    return [h for h in _headings(template) if h not in have]
+
+
 # Documents whose content belongs to the project: the template only seeds them. An
 # existing one (filled by /teamwright:requirements before install, or the project's own)
 # is kept as is, not reported as a conflict.
@@ -912,6 +930,16 @@ def plan(project, kit, cfg, cfg_text, cfg_src, providers_dir):
             elif dest in manifest:
                 a.update(op="kept-local", change=False)
                 a.pop("unresolved", None)
+                miss = missing_sections(disk, content) if dest.startswith("docs/process/") else []
+                acc = accepted.get(dest) or {}
+                if miss and not (acc.get("disk") == sha(disk) and acc.get("template") == sha(content)):
+                    # a process document edited locally that lacks sections the kit added: kept
+                    # silently, the project would run the new gates with the old instructions
+                    a.update(op="conflict", template_sha=sha(content),
+                             reason="edited locally and missing the kit's section(s) %s - merge them "
+                                    "by hand, then `apply --accept %s`" % (
+                                        ", ".join("\"%s\"" % m for m in miss[:5]) +
+                                        (" and %d more" % (len(miss) - 5) if len(miss) > 5 else ""), dest))
             elif dest in PROJECT_DOCS:
                 # the project's own document (written before install, e.g. by
                 # /teamwright:requirements, or the project's existing doc): never a conflict

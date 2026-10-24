@@ -196,6 +196,18 @@ has "update reported" "$TMP/out" "update          docs/failures.md"
 hasnt "locally edited file not overwritten" "$G/docs/plan.md" "kit v2 line"
 has "locally edited file reported kept-local" "$TMP/out" "kept-local      docs/plan.md"
 cp -R "$KIT/template/docs/." "$K/template/docs/"     # restore the kit copy
+# N3: a locally edited process document that lacks a section the kit added is a conflict
+printf '\nlocal note\n' >> "$G/docs/process/sessions.md"
+printf '\n## 99. A section the kit added\n\ntext\n' >> "$K/docs/process/sessions.md"
+tw apply --project "$G" > "$TMP/out" 2>&1
+has "a process doc kept locally without the kit's new section is a conflict" "$TMP/out" "conflict        docs/process/sessions.md"
+has "the conflict names the missing section" "$TMP/out" '"99. A section the kit added"'
+has "apply does not report 0 conflicts then" "$TMP/out" "1 conflict(s)"
+hasnt "the local copy is not overwritten" "$G/docs/process/sessions.md" "99. A section the kit added"
+printf '\n## 99. A section the kit added\n\nmerged by hand\n' >> "$G/docs/process/sessions.md"
+tw apply --project "$G" > "$TMP/out" 2>&1
+has "once merged, it is kept-local again" "$TMP/out" "kept-local      docs/process/sessions.md"
+cp "$KIT/docs/process/sessions.md" "$K/docs/process/sessions.md"
 
 # ---- existing project ---------------------------------------------------------
 E="$TMP/existing"; mkdir -p "$E/.claude/agents" "$E/.git/hooks"; git -C "$E" init -q -b main
