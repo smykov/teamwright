@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
       - name: Lint
@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Hook regression tests
         run: make test
 
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Tests under bash 3.2
         run: |
           docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c '
@@ -49,14 +49,28 @@ jobs:
     timeout-minutes: 10
     env:
       GITLEAKS_VERSION: "8.21.2"
+      GITLEAKS_SHA256: "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0   # scan the whole history, not just the tip
       - name: Install gitleaks
         run: |
           curl -sSfL -o gitleaks.tgz \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
           tar -xzf gitleaks.tgz gitleaks && sudo mv gitleaks /usr/local/bin/ && rm gitleaks.tgz
       - name: Scan the kit repository
         run: make scan
+      # The kit is public; the projects it is tried on are not. PRIVATE_NAMES_RE (a repository
+      # secret, so the list itself stays private) must not appear in the tree or in the recent
+      # commit messages - a squash merge copies the branch's commit bodies into main.
+      - name: No private project names
+        env:
+          PRIVATE_NAMES_RE: ${{ secrets.PRIVATE_NAMES_RE }}
+        run: |
+          [ -n "$PRIVATE_NAMES_RE" ] || { echo "PRIVATE_NAMES_RE is not set: skipped"; exit 0; }
+          found=0
+          git grep -nIiE "$PRIVATE_NAMES_RE" -- . >/dev/null && { echo "::error::a private name in the tree"; found=1; }
+          git log -n 30 --format=%B | grep -qiE "$PRIVATE_NAMES_RE" && { echo "::error::a private name in a recent commit message"; found=1; }
+          exit $found

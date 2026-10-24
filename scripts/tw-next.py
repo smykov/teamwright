@@ -284,7 +284,7 @@ def helper_warnings(project=None):
     if not drift:
         return []
     return ["install drift: %s - the router uses the plugin's copies, the gates still run the old files: "
-            "run `tw-install.py apply` (/teamwright:reconfigure) to update the project's hooks; autonomous "
+            "run `tw-install.py apply` (/teamwright:update) to update the project's hooks; autonomous "
             "jobs do not run until then" % "; ".join(t for _, t in drift)]
 
 
@@ -684,11 +684,16 @@ def drift_warnings(project):
                 d["file"], d["setting"], d["found"] or "<line rewritten>", d["expected"]) for d in drift]
 
 
-def candidates(tasks, st, oqs=None, after="verified"):
-    """Every applicable decision in router order (the first one is the answer)."""
+def candidates(tasks, st, oqs=None, after="verified", own=None):
+    """Every applicable decision in router order (the first one is the answer).
+
+    `own`: this tree is the per-task worktree of that task. Its branch carries the other
+    tasks' records as they were when it was cut - their IN_PROGRESS belongs to another
+    tree, so this tree's own work (the WIP rule, uncommitted changes) is `own` only."""
     oqs = oqs or {}
     ts = list(tasks.values())
     by = lambda *sts: _sorted([t for t in ts if t["status"] in sts])  # noqa: E731
+    here = lambda *sts: [t for t in by(*sts) if not own or t["id"] == own]  # noqa: E731
     out = []
 
     # 1. dirty tree / interrupted session. A current task on a clean tree is not a resume:
@@ -701,7 +706,7 @@ def candidates(tasks, st, oqs=None, after="verified"):
         out.append(_d("resume", hint, "%s: %s is %s" % (why, hint, tasks[hint]["status"]),
                       role=_role(tasks[hint])))
     elif st["dirty"]:
-        active = by(*ACTIVE)
+        active = here(*ACTIVE)
         if len(active) == 1:
             out.append(_d("resume", active[0]["id"], "uncommitted changes (%d file(s)); %s is %s"
                           % (len(st["dirty_files"]), active[0]["id"], active[0]["status"]),
@@ -714,7 +719,7 @@ def candidates(tasks, st, oqs=None, after="verified"):
     # 2. active work. One task IN_PROGRESS per working tree (one .teamwright/current-task):
     # an ANALYSIS task whose analysis is complete has only the move into IN_PROGRESS left,
     # and waits while another task of this tree is there - analyze may batch analyses, not WIP.
-    wip = [t["id"] for t in by("IN_PROGRESS")]
+    wip = [t["id"] for t in here("IN_PROGRESS")]
     st["wip_waiting"] = {}
     for t in by(*ACTIVE):
         if t["status"] == "ANALYSIS" and wip and (t.get("evidence") or {}).get("analysis") \
@@ -1069,7 +1074,7 @@ def headless_for(first, cands, info):
         return off("paused: no job runs until TEAMWRIGHT_PAUSE is removed")
     if first.get("install_drift"):
         return off("install drift: no job runs on hooks older than the plugin - the gates it documents "
-                   "(stage gate, stamps) would not run; a person runs `tw-install.py apply` "
+                   "(stage gate, stamps) would not run; a person runs `/teamwright:update` (or `tw-install.py apply`) "
                    "(/teamwright:reconfigure) and commits the result", "install drift: " + "; ".join(first["install_drift"]))
     if first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
         return off("owner decision: no job runs; tell the owner the reason", first["reason"])
@@ -1214,7 +1219,7 @@ def decide(project, taken=None, stage=None, ids=None):
     mark_delivered(project, tasks, st)
     own, wts = with_worktrees(project, task, tasks)
     elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
-    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])
+    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"], own)
     if own:
         # a worktree session works its own task only, and never pushes
         cands = [c for c in cands if c["task"] == own]
