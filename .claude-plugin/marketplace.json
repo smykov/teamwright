@@ -1,6 +1,6 @@
 {
-  "name": "teamwright",
-  "description": "teamwright: a team process for AI coding agents, installed into your project by /teamwright:adopt or /teamwright:init.",
+  "name": "teamwright-next",
+  "description": "teamwright, experimental channel (branch next): a team process for AI coding agents, installed into your project by /teamwright:adopt or /teamwright:init.",
   "owner": {
     "name": "Konstantin Smykov",
     "url": "https://github.com/smykov"
@@ -9,10 +9,14 @@
     {
       "name": "teamwright",
       "source": ".",
-      "version": "0.13.0",
       "description": "Adopt the teamwright process in a new or existing project: gates as hooks, role files, docs templates, metrics; tools chosen per capability.",
       "category": "development",
-      "tags": ["process", "agents", "review", "tdd"]
+      "tags": [
+        "process",
+        "agents",
+        "review",
+        "tdd"
+      ]
     }
   ]
 }

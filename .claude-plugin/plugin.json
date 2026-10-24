@@ -1,7 +1,6 @@
 {
   "name": "teamwright",
   "displayName": "teamwright",
-  "version": "0.13.0",
   "description": "A fixed team process for AI coding agents (task lifecycle, TDD, separate review with recurrence checks, recorded verification, metrics) with pluggable tools, installed per project as hooks, role files and docs.",
   "author": {
     "name": "Konstantin Smykov",
@@ -10,5 +9,12 @@
   "homepage": "https://github.com/smykov/teamwright",
   "repository": "https://github.com/smykov/teamwright",
   "license": "MIT",
-  "keywords": ["process", "agents", "code-review", "tdd", "hooks", "spec-kit"]
+  "keywords": [
+    "process",
+    "agents",
+    "code-review",
+    "tdd",
+    "hooks",
+    "spec-kit"
+  ]
 }
