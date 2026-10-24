@@ -13,6 +13,17 @@ for f in "$K/template/AGENTS.md" "$K/template/.claude/agents/code-reviewer.md"; 
   grep -q 'teamwright:tools:begin' "$f" ||
     printf '\n<!-- teamwright:tools:begin -->\n<!-- teamwright:tools:end -->\n' >> "$f"
 done
+# The copy is a stable-channel kit whatever branch runs the tests: on `next` the manifests
+# carry the marketplace teamwright-next and no version (the channel tests below make one).
+python3 - "$K" <<'PY'
+import json, sys
+p = sys.argv[1] + "/.claude-plugin/plugin.json"; d = json.load(open(p)); d.setdefault("version", "0.0.0-test"); v = d["version"]
+json.dump(d, open(p, "w"))
+p = sys.argv[1] + "/.claude-plugin/marketplace.json"; d = json.load(open(p)); d["name"] = "teamwright"
+for e in d["plugins"]:
+    e["version"] = v
+json.dump(d, open(p, "w"))
+PY
 tw() { python3 "$K/scripts/tw-install.py" --kit "$K" --providers "$FIX" "$@"; }
 snap() {  # digest of every file (path, mode, content) outside .git + core.hooksPath
   python3 - "$1" "$(git -C "$1" config --get core.hooksPath 2>/dev/null)" <<'PY'
