@@ -30,7 +30,7 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 
 ## Repository layout
 
-- `skills/` — plugin commands: `/teamwright:adopt`, `init`, `requirements`, `flow`, `status`, `reconfigure`.
+- `skills/` — plugin commands: `/teamwright:adopt`, `init`, `requirements`, `flow`, `router` and the stage commands (`analyze`, `red-tests`, `implement`, `review`, `verify`), `parallel`, `status`, `progress`, `blockers`, `settings`, `improve`, `feedback`, `reconfigure`.
 - `template/` — what gets installed into a project: `AGENTS.md`, role agents, hooks, docs templates, metrics CLI.
 - `docs/process/` — the process reference; copied into projects on install (except `plugin.md`) and linked from the role files.
 - `providers/<capability>/<provider>.md` — tool adapters rendered into `AGENTS.md` and the role files.
@@ -52,13 +52,27 @@ docker run --rm -v "$PWD":/src:ro bash:3.2 bash -c 'apk add -q git python3 make 
 - **Hooks fail open on internal errors** and stay silent on allow; a block always names its exit.
 - **bash 3.2 compatible**: no associative arrays, `mapfile`, `${var,,}`, or a heredoc inside `$(...)` (read it into a variable with `IFS= read -r -d '' var <<'EOF' || true`); under `set -u` expand a possibly empty array as `${arr[@]+"${arr[@]}"}`; write `${name}` before a non-ASCII character (`"${from}→${to}"`).
 
+## Branches and channels
+
+| Branch | Channel | Marketplace | Version |
+|---|---|---|---|
+| `main` | stable | `teamwright` | `x.y.z`, bumped per release, tagged `vx.y.z` |
+| `next` | experimental | `teamwright-next` | none: the commit SHA is the version |
+| `feat/*`, `fix/*` | — | — | the open version's number (`## [x.y.z] - unreleased`) |
+
+- Work happens on feature branches. A feature branch carries the version it will be released as.
+- **`next`** is the newest feature branch plus **one channel commit on top**: it renames the marketplace to `teamwright-next` and removes `version` from `plugin.json` and the marketplace entry. Nothing else goes into that commit. `next` is reset (or fast-forwarded) to the newest feature branch from time to time, and the channel commit is re-applied on top: `git checkout next && git reset --hard feat/<branch> && git cherry-pick <channel commit> && git push --force-with-lease origin next`. Never merge `next` anywhere: the channel commit must not reach `main`.
+- **A release** goes from the feature branch to `main` with the version bump, the changelog section dated, and the tag `vx.y.z`.
+- The checks know the channel by the **marketplace name**, not the branch (CI checks out a detached HEAD): `scripts/check-versions.py` (in `make lint`) requires, on `teamwright`, the same version in both manifests and a `CHANGELOG.md` section; on `teamwright-<channel>`, no version at all. `make release-check` keeps the bump rule on stable and passes a channel without a tag.
+- The installer records the kit as `teamwright@<marketplace>` with its version — on a channel, the first 12 hex digits of the commit (what Claude Code computes), from the git checkout or from `installed_plugins.json` for an installed copy.
+
 ## Versions and the changelog
 
-`/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so a change users do not get a version for never reaches them.
+`/plugin update` compares the computed version — `version` in `.claude-plugin/plugin.json`, else the marketplace entry's, else the commit SHA — so on the stable channel a change users do not get a version for never reaches them.
 
 - Any change to what the plugin ships (`skills/`, `scripts/`, `template/`, `providers/`, `docs/process/`) bumps `version` in `.claude-plugin/plugin.json` **and** `.claude-plugin/marketplace.json`, and gets an entry in a matching `## [x.y.z] - YYYY-MM-DD` section of `CHANGELOG.md`.
 - Other changes (README, `docs/usage.md`, `examples/`, tests, CI) go under `## [Unreleased]`, or into the open version's section.
-- Semantic versioning; while in 0.x a minor version may change behaviour. `make lint` checks that the three versions agree; `make release-check` checks the bump against the last tag.
+- Semantic versioning; while in 0.x a minor version may change behaviour. `make lint` checks that the three versions agree (`scripts/check-versions.py`; on a channel: that there is none); `make release-check` checks the bump against the last tag.
 
 ## Adding a tool adapter
 
@@ -85,6 +99,7 @@ Checked on 2026-09-30 against code.claude.com/docs/en/plugins (create-marketplac
 - Default component locations at the plugin root: `skills/<name>/SKILL.md` (preferred for new plugins), `commands/*.md`, `agents/*.md`, `hooks/hooks.json`, `.mcp.json`. Other files such as `scripts/` are allowed. Setting `commands` or `agents` in the manifest replaces the default scan; `skills` adds to it — so the manifest declares no component keys and relies on the defaults.
 - `${CLAUDE_PLUGIN_ROOT}` is the absolute path of the installed plugin and is substituted in skill, command and agent Markdown bodies; it is not in the environment of the Bash tool, so commands write `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" ...` in their body. Do not write state there: it changes on update.
 - A `CLAUDE.md` at the plugin root is not loaded as context (`claude plugin validate` warns).
+- Release channels (checked 2026-10-24 against code.claude.com/docs/en/plugins/host-marketplace, "Run release channels" and "Keep users up to date"): two marketplaces with different names pointing at different refs of one repository; a marketplace name is added once per user; the version is plugin.json `version`, else the marketplace entry's `version`, else, for git sources, the commit SHA, and `/plugin update` acts only when it changes. Verified with throwaway `HOME`s: a marketplace named `teamwright-next` installs as `teamwright@teamwright-next` next to `teamwright@teamwright`; without a version its version is the first 12 hex digits of the commit (`installed_plugins.json`: `version`, `gitCommitSha`), and the install lives under `plugins/cache/teamwright-next/teamwright/<sha12>/`, a copy without `.git`; a new commit on the branch is offered by `/plugin update` after `/plugin marketplace update teamwright-next`.
 - Marketplace names such as `claude-code-plugins`, `anthropic-*` variants, `github`, `npm` are reserved; `teamwright` is not.
 - PreToolUse hook output: `hookSpecificOutput.permissionDecision` is `allow | deny | ask | defer`; JSON **without** `permissionDecision` leaves the call to the normal permission flow, while top-level `systemMessage` (shown to the user) and `hookSpecificOutput.additionalContext` (given to the model) still apply. Gate-first mode uses exactly this: a warning without a decision.
 

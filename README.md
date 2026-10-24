@@ -50,14 +50,40 @@ Both ask before every install, download, rewrite or commit. `adopt` starts the g
 
 ![The demo: one task through the analysis, review and verify gates](docs/assets/demo.gif)
 
+## Channels
+
+Two release channels, two marketplaces from the same repository (Claude Code's release-channel pattern). The plugin's name is `teamwright` in both, so the commands stay `/teamwright:*`.
+
+| Channel | Branch | Add the marketplace | Install | Updates |
+|---|---|---|---|---|
+| **stable** | `main`, tagged releases | `/plugin marketplace add smykov/teamwright` | `/plugin install teamwright@teamwright` | when the version in `plugin.json` is bumped ([CHANGELOG](CHANGELOG.md)) |
+| **experimental** | `next`: the newest feature work, before release | `/plugin marketplace add smykov/teamwright#next` | `/plugin install teamwright@teamwright-next` | every pushed commit: `next` carries no version, so the commit is the version |
+
+**One channel per project.** Both marketplaces can be added on one machine and both plugins installed, but enable exactly one of them in a project — two enabled copies with the same name do not mix, and one copy's hooks silently do not run. Choose in the project's settings: `.claude/settings.json` for the whole team, `.claude/settings.local.json` for this machine only (it wins over the team file):
+
+```json
+{
+  "enabledPlugins": {
+    "teamwright@teamwright": false,
+    "teamwright@teamwright-next": true
+  }
+}
+```
+
+The installer (`/teamwright:adopt`, `tw-install.py apply`) enables its own channel in `.claude/settings.json` only when no other channel of teamwright is enabled there or in `settings.local.json`; otherwise it leaves `enabledPlugins` alone and says so.
+
+**Updates of the experimental channel.** Auto-update is off by default for marketplaces other than Anthropic's: pull the branch with `/plugin marketplace update teamwright-next`, then `/plugin update teamwright@teamwright-next` (or turn auto-update on for that marketplace in `/plugin`). Restart, or `/reload-plugins`, to load it. `/teamwright:status` then shows the new commit as a kit update; `tw-install.py apply` brings the project's installed files up to it.
+
+**A working copy.** To try a checkout of the kit without any marketplace: `claude --plugin-dir <path to the checkout>` for one session (disable the installed teamwright in that project first: same name).
+
 ## How a task moves
 
 ```mermaid
 flowchart TD
     SPEC["Large work: spec tool<br/>specify → plan → tasks"] -. "design_ref" .-> T
     T["TODO · task record"] --> A["ANALYSIS · problem-investigator<br/>root cause, evidence, seam, recurrence check"]
-    A -- "analysis gate" --> RED["IN_PROGRESS 1 · test-writer<br/>a test that fails (red)"]
-    RED --> GREEN["IN_PROGRESS 2 · developer<br/>smallest fix, tests green, local commit"]
+    A -- "analysis gate" --> RED["IN_PROGRESS · stage: red-tests · test-writer<br/>a test that fails (red)"]
+    RED -- "stage gate" --> GREEN["IN_PROGRESS · stage: implement · developer<br/>tests green, failure-branch bite, gate, docs, local commit"]
     GREEN --> NR["NEEDS_REVIEW · code-reviewer<br/>fresh agent: diff, principles, recurrence"]
     NR -- "changes requested, max 2 rounds" --> GREEN
     NR -- "approve · review gate" --> CC["CODE_COMPLETE"]
@@ -70,7 +96,7 @@ flowchart TD
     RCA -.-> T
 ```
 
-Every arrow marked *gate* is a hook that blocks the status change when its record is missing. Test first: the test-writer's tests are run and shown to fail for the right reason, and committed, before the developer touches the code; the reviewer checks that each guarantee has a test that fails without the change. A reviewer that sees the same class of bug patched again rejects the patch; the task waits for a root-cause task, which ends in a code invariant, an architecture decision or a process change. Full lifecycle with every status and exit: [docs/process/lifecycle.md](docs/process/lifecycle.md).
+Every arrow marked *gate* is a hook that blocks the status change when its record is missing. Test first: the test-writer's tests are run and shown to fail for the right reason, and committed, before the developer touches the code; the reviewer checks that each guarantee has a test that fails without the change. A reviewer that sees the same class of bug patched again rejects the patch; the task waits for a root-cause task, which ends in a code invariant, an architecture decision or a process change. Each box is also a **stage** — analyze, red-tests, implement, review, verify — that can run in a session of its own, with a fresh context and its own model: `/teamwright:router` asks the router which stage is due and runs that one (one stage per CI job in an autonomous run), and `/teamwright:flow` runs them in a loop in one session. The router script selects the tasks and counts them per stage, so a session reads no task file to find work; batches and thresholds per stage are settings ([sessions.md §8](docs/process/sessions.md#8-stages-one-stage-per-session)). Full lifecycle with every status and exit: [docs/process/lifecycle.md](docs/process/lifecycle.md).
 
 ## Practices
 
@@ -186,11 +212,13 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | [`/teamwright:adopt`](skills/adopt/SKILL.md) | existing project: inventory, tool choice, code areas and their commands, hooks in gate-first mode, secret scan, a first sprint |
 | [`/teamwright:init`](skills/init/SKILL.md) | new project: requirements first, then the stack they call for, a walking skeleton with a green gate and CI, `enforce`, specs and tasks from the requirements, sprint 1 |
 | [`/teamwright:requirements`](skills/requirements/SKILL.md) | builds `docs/requirements.md` from your brief or an interview; a fresh reviewer roasts it until it is ready; you approve it |
-| [`/teamwright:flow`](skills/flow/SKILL.md) | asks the router for the next action and drives the task through the lifecycle with fresh role agents |
+| [`/teamwright:flow`](skills/flow/SKILL.md) | asks the router for the next action and drives the task through the lifecycle with fresh role agents, stage after stage, in one session |
+| [`/teamwright:router`](skills/router/SKILL.md) | asks the router and runs exactly one stage on the batch it allows, then stops — one stage per session (or per CI job) |
+| [`/teamwright:analyze`](skills/analyze/SKILL.md) · [`red-tests`](skills/red-tests/SKILL.md) · [`implement`](skills/implement/SKILL.md) · [`review`](skills/review/SKILL.md) · [`verify`](skills/verify/SKILL.md) | one named stage on its waiting tasks; refuses, naming the right command, when the router says the task is at another stage |
 | [`/teamwright:status`](skills/status/SKILL.md) | read-only: mode, settings, whether the context tool indexes your languages and is used, install drift, hooks, tasks, the next action, whether the project is ready for `enforce` |
 | [`/teamwright:progress`](skills/progress/SKILL.md) | read-only report for you: done by sprint, plan stage, milestone and area in percent, what is next, what waits for you; `--adapt` fits it to how the repository already tracks work |
 | [`/teamwright:blockers`](skills/blockers/SKILL.md) | what waits for you — open questions, escalations, acceptance that needs you, blocked tasks — by class and by what each unblocks; then walks you through answering and records each answer so the flow picks the tasks up |
-| [`/teamwright:settings`](skills/settings/SKILL.md) | process settings: review blocking threshold, tasks per flow pass by priority, autonomy; the pipeline stays the same |
+| [`/teamwright:settings`](skills/settings/SKILL.md) | process settings: review blocking threshold, tasks per flow pass by priority, autonomy, batches and thresholds per stage, model per stage, task selection by the script or the agent; the pipeline stays the same |
 | [`/teamwright:parallel`](skills/parallel/SKILL.md) | several tasks at once, each in its own worktree and session, when their seams do not overlap; merges each approved branch back (rebased, gate green) before one push |
 | [`/teamwright:improve`](skills/improve/SKILL.md) | measures what the process costs here (send-backs, findings by severity, DRAIN exceptions, context-tool use, before/after a settings change) and proposes changes: a setting, a project rule, or feedback |
 | [`/teamwright:feedback`](skills/feedback/SKILL.md) | sends an improvement to this repository — an issue through the forms or a pull request from a fork — anonymised, after you read it |

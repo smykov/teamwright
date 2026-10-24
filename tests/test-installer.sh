@@ -13,6 +13,17 @@ for f in "$K/template/AGENTS.md" "$K/template/.claude/agents/code-reviewer.md"; 
   grep -q 'teamwright:tools:begin' "$f" ||
     printf '\n<!-- teamwright:tools:begin -->\n<!-- teamwright:tools:end -->\n' >> "$f"
 done
+# The copy is a stable-channel kit whatever branch runs the tests: on `next` the manifests
+# carry the marketplace teamwright-next and no version (the channel tests below make one).
+python3 - "$K" <<'PY'
+import json, sys
+p = sys.argv[1] + "/.claude-plugin/plugin.json"; d = json.load(open(p)); d.setdefault("version", "0.0.0-test"); v = d["version"]
+json.dump(d, open(p, "w"))
+p = sys.argv[1] + "/.claude-plugin/marketplace.json"; d = json.load(open(p)); d["name"] = "teamwright"
+for e in d["plugins"]:
+    e["version"] = v
+json.dump(d, open(p, "w"))
+PY
 tw() { python3 "$K/scripts/tw-install.py" --kit "$K" --providers "$FIX" "$@"; }
 snap() {  # digest of every file (path, mode, content) outside .git + core.hooksPath
   python3 - "$1" "$(git -C "$1" config --get core.hooksPath 2>/dev/null)" <<'PY'
@@ -185,6 +196,18 @@ has "update reported" "$TMP/out" "update          docs/failures.md"
 hasnt "locally edited file not overwritten" "$G/docs/plan.md" "kit v2 line"
 has "locally edited file reported kept-local" "$TMP/out" "kept-local      docs/plan.md"
 cp -R "$KIT/template/docs/." "$K/template/docs/"     # restore the kit copy
+# N3: a locally edited process document that lacks a section the kit added is a conflict
+printf '\nlocal note\n' >> "$G/docs/process/sessions.md"
+printf '\n## 99. A section the kit added\n\ntext\n' >> "$K/docs/process/sessions.md"
+tw apply --project "$G" > "$TMP/out" 2>&1
+has "a process doc kept locally without the kit's new section is a conflict" "$TMP/out" "conflict        docs/process/sessions.md"
+has "the conflict names the missing section" "$TMP/out" '"99. A section the kit added"'
+has "apply does not report 0 conflicts then" "$TMP/out" "1 conflict(s)"
+hasnt "the local copy is not overwritten" "$G/docs/process/sessions.md" "99. A section the kit added"
+printf '\n## 99. A section the kit added\n\nmerged by hand\n' >> "$G/docs/process/sessions.md"
+tw apply --project "$G" > "$TMP/out" 2>&1
+has "once merged, it is kept-local again" "$TMP/out" "kept-local      docs/process/sessions.md"
+cp "$KIT/docs/process/sessions.md" "$K/docs/process/sessions.md"
 
 # ---- existing project ---------------------------------------------------------
 E="$TMP/existing"; mkdir -p "$E/.claude/agents" "$E/.git/hooks"; git -C "$E" init -q -b main
@@ -693,7 +716,8 @@ git -C "$X" checkout -q -- outside.txt
 
 
 # ---- the plugin travels with the project --------------------------------------
-KV="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$KIT/.claude-plugin/plugin.json")"
+# the version the installer records: plugin.json's, or on a release channel (no version) the commit
+KV="$(python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("twi", sys.argv[1]+"/scripts/tw-install.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.kit_info(sys.argv[1])["version"])' "$K")"
 KM="$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"; mkdir -p "$(dirname "$KM")"
 P="$TMP/plug"; mkdir -p "$P"; git -C "$P" init -q -b main
 write_cfg "$TMP/plug.yml"
@@ -749,6 +773,51 @@ python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.jso
   && ok "no source: the plugin is still enabled" || bad "no source: plugin enabled"
 rm -f "$KM"
 
+# ---- release channels: a kit without a version, one channel per project ----------------
+KC="$TMP/kit-next"; cp -R "$K" "$KC"
+python3 - "$KC" <<'PY'
+import json, sys
+p = sys.argv[1] + "/.claude-plugin/plugin.json"; d = json.load(open(p)); d.pop("version", None); json.dump(d, open(p, "w"))
+p = sys.argv[1] + "/.claude-plugin/marketplace.json"; d = json.load(open(p)); d["name"] = "teamwright-next"
+for e in d["plugins"]:
+    e.pop("version", None)
+json.dump(d, open(p, "w"))
+PY
+twc() { python3 "$1/scripts/tw-install.py" --kit "$1" --providers "$FIX" "${@:2}"; }
+kitrec() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]+"/.teamwright/installed.json"))["@kit"], sort_keys=True))' "$1"; }
+git -C "$KC" init -q -b next && git -C "$KC" add -A && git -C "$KC" commit -qm channel
+SHA="$(git -C "$KC" rev-parse HEAD | cut -c1-12)"
+PC="$TMP/chan1"; mkdir -p "$PC"; git -C "$PC" init -q -b main
+twc "$KC" apply --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+expect_rc "channel kit from a git checkout: version = the commit (12 hex, as Claude Code computes it)" \
+  "{\"plugin\": \"teamwright@teamwright-next\", \"version\": \"$SHA\"}" "$(kitrec "$PC")"
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright-next": True}, s' "$PC" \
+  && ok "channel kit alone: its plugin id is enabled" || bad "channel kit alone: its plugin id is enabled"
+KCC="$TMP/cache/teamwright-next/teamwright/abcdef012345"; mkdir -p "$(dirname "$KCC")"; cp -R "$KC" "$KCC"; rm -rf "$KCC/.git"
+mkdir -p "$CLAUDE_CONFIG_DIR/plugins"
+printf '{"version": 2, "plugins": {"teamwright@teamwright-next": [{"scope": "user", "installPath": "%s", "version": "abcdef012345"}]}}\n' "$KCC" \
+  > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+twc "$KCC" apply --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+expect_rc "channel kit from the plugin cache (no .git): version from installed_plugins.json" \
+  '{"plugin": "teamwright@teamwright-next", "version": "abcdef012345"}' "$(kitrec "$PC")"
+rm -f "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+twc "$KCC" plan --project "$PC" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+has "a channel copy nobody recorded: version empty, re-recorded (no crash)" "$TMP/out" "kit-version"
+PS2="$TMP/chan2"; mkdir -p "$PS2/.claude"; git -C "$PS2" init -q -b main
+printf '{"enabledPlugins": {"teamwright@teamwright": true}}\n' > "$PS2/.claude/settings.json"
+twc "$KC" apply --project "$PS2" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert s["enabledPlugins"]=={"teamwright@teamwright": True}, s["enabledPlugins"]; assert "teamwright-next" not in (s.get("extraKnownMarketplaces") or {}), s' "$PS2" \
+  && ok "the project enables the stable channel: the channel kit does not enable a second copy" \
+  || bad "the project enables the stable channel: the channel kit does not enable a second copy"
+has "one channel per project: noted" "$TMP/out" "one channel per project"
+has "the rest of the settings are still merged (hooks)" "$PS2/.claude/settings.json" "session-check.sh"
+PS3="$TMP/chan3"; mkdir -p "$PS3/.claude"; git -C "$PS3" init -q -b main
+printf '{"enabledPlugins": {"teamwright@teamwright-next": true}}\n' > "$PS3/.claude/settings.local.json"
+tw apply --project "$PS3" --config "$TMP/plug.yml" > "$TMP/out" 2>&1
+python3 -c 'import json,sys; s=json.load(open(sys.argv[1]+"/.claude/settings.json")); assert "teamwright@teamwright" not in (s.get("enabledPlugins") or {}), s' "$PS3" \
+  && ok "next enabled in settings.local.json: the stable kit does not enable itself in settings.json" \
+  || bad "next enabled in settings.local.json: the stable kit does not enable itself in settings.json"
+
 # ---- process settings: validated, rendered, absent = defaults -------------------------
 PS="$TMP/procset"; mkdir -p "$PS"; git -C "$PS" init -q -b main
 write_cfg "$TMP/ps.yml" fake-spec one
@@ -795,6 +864,20 @@ has "test_select_command wrapped in tw-run is refused" "$TMP/out" "test_select_c
 awk '{print} /^  - name: backend$/{print "    test_select_command: \"pytest -q -n ${PYTEST_WORKERS:-4} {tests}\""}' "$TMP/ps.yml" > "$TMP/ps-ts3.yml"
 printf 'test_runner_patterns: ["^bin/specs"]\nprocess:\n  test_guard: warn\n' >> "$TMP/ps-ts3.yml"
 tw plan --project "$PS" --config "$TMP/ps-ts3.yml" > "$TMP/out" 2>&1; expect_rc "test guard keys accepted" 0 "$?"
+# stages, models and the selection mode (0.12)
+cp "$TMP/ps.yml" "$TMP/ps-st.yml"
+printf 'process:\n  stages:\n    review:\n      batch: 0\n      min: 3\n      linger: 2\n    deploy:\n      batch: 1\n    implement: 2\n  models:\n    review: gpt-9\n  router:\n    select: llm\n' >> "$TMP/ps-st.yml"
+tw plan --project "$PS" --config "$TMP/ps-st.yml" > "$TMP/out" 2>&1
+expect_rc "invalid stage settings: plan fails" 1 "$?"
+has "a stage batch out of range is refused" "$TMP/out" "process.stages.review.batch must be 1..10"
+has "an unknown stage key is refused" "$TMP/out" "process.stages.review.linger: unknown key"
+has "an unknown stage is refused" "$TMP/out" "process.stages.deploy: unknown key"
+has "a stage must be a mapping" "$TMP/out" "process.stages.implement must be a mapping"
+has "an unknown model is refused" "$TMP/out" "process.models.review must be a model alias"
+has "a bad selection mode is refused" "$TMP/out" "process.router.select must be one of script, agent"
+cp "$TMP/ps.yml" "$TMP/ps-st2.yml"
+printf 'process:\n  stages:\n    review:\n      batch: 3\n      min: 2\n      max_wait_hours: 4\n    red-tests:\n      batch: 2\n  models:\n    red-tests: sonnet\n    review: claude-opus-4-1\n  router:\n    select: agent\n' >> "$TMP/ps-st2.yml"
+tw plan --project "$PS" --config "$TMP/ps-st2.yml" > "$TMP/out" 2>&1; expect_rc "stages, models and router.select accepted" 0 "$?"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 # render drift (#6): a settings change does not reach a locally edited role file

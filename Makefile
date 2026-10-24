@@ -19,12 +19,12 @@ lint:            ## shellcheck + python syntax + Markdown links + JSON validity
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	  shellcheck -S warning $(SH_FILES) && echo "shellcheck: ok"; \
 	else echo "shellcheck: not installed, skipped"; fi
-	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-blockers.py scripts/tw-context.py scripts/tw-process.py scripts/tw-parallel.py template/scripts/tw-req template/scripts/tw-ci-changes scripts/check-links.py scripts/check-sh-names.py examples/make-cast.py && echo "python: ok"
+	@python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]" $(HOOKS)/_task.py $(HOOKS)/_hookio.py $(HOOKS)/_config.py $(METRICS) scripts/tw-install.py scripts/tw-next.py scripts/tw-progress.py scripts/tw-blockers.py scripts/tw-context.py scripts/tw-process.py scripts/tw-parallel.py template/scripts/tw-req template/scripts/tw-ci-changes scripts/check-links.py scripts/check-sh-names.py scripts/check-versions.py examples/make-cast.py tests/usage_example.py && echo "python: ok"
 	@python3 scripts/check-links.py && echo "markdown links and anchors: ok"
 	@python3 -m json.tool template/.claude/settings.json >/dev/null && echo "settings.json: ok"
 	@python3 -m json.tool template/scripts/metrics/metrics.example.json >/dev/null && echo "metrics.example.json: ok"
 	@for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do python3 -m json.tool $$f >/dev/null || exit 1; done; echo "plugin manifests: ok"
-	@python3 -c "import json,re,sys; v=json.load(open('.claude-plugin/plugin.json'))['version']; m=[p.get('version') for p in json.load(open('.claude-plugin/marketplace.json'))['plugins'] if p['name']=='teamwright'][0]; c=open('CHANGELOG.md').read(); sys.exit(0 if m==v and re.search(r'^## \['+re.escape(v)+r'\]', c, re.M) else 'version: plugin.json %s, marketplace.json %s, CHANGELOG section %s' % (v, m, 'found' if re.search(r'^## \['+re.escape(v)+r'\]', c, re.M) else 'missing'))" && echo "version consistent (plugin.json, marketplace.json, CHANGELOG.md)"
+	@python3 scripts/check-versions.py
 	@python3 scripts/tw-install.py --project . --kit . plan --config template/.teamwright/config.example.yml >/dev/null && echo "config.example.yml: ok"
 	@if command -v claude >/dev/null 2>&1; then claude plugin validate . >/dev/null && claude plugin validate .claude-plugin/plugin.json >/dev/null && echo "claude plugin validate: ok"; \
 	else echo "claude CLI not installed: plugin validate skipped"; fi
@@ -42,7 +42,7 @@ scan:            ## secret scan of the kit itself (gitleaks, else built-in fallb
 	  done | bash $(HOOKS)/pre-commit --scan-stdin && echo "scan: clean"; \
 	fi
 
-release-check:   ## before tagging: version bumped vs the last v* tag, manifests and CHANGELOG agree
+release-check:   ## before tagging: version bumped vs the last v* tag, manifests and CHANGELOG agree (a channel: no version)
 	@bash scripts/release-check.sh
 
 check: lint test scan

@@ -64,6 +64,11 @@
 #
 # LEDGER (local, gitignored): .teamwright/sessions/<ID>.verify.jsonl - who wrote which
 # round, kind, result, commit; <ID>.validation.jsonl - acceptance verdicts. Implementers: .teamwright/sessions/<ID>.dev (review gate).
+# STAMP (committed with the record): docs/tasks/<ID>.verify/<n>.gate.json and
+# <ID>.validation/<n>.gate.json - the same ledger line and the record's sha256; checks 3 and
+# 5 use it only when this checkout has no ledger of that kind for the task at all (a fresh
+# checkout, e.g. a CI job); where the ledger exists it alone decides. Only the gate writes
+# it; an edited record no longer matches.
 # SAFETY: fail-open on any internal error; silent on allow. Freshness is skipped when
 # git is unavailable.
 set -uo pipefail
@@ -92,6 +97,13 @@ SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
 FB_LINE = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:\[[ xX]\]\s*)?\**failure branch\**\s*[:\-]\s*(.*)$")
 
 data = io.load_input()
+if data and io.event(data) == "PostToolUse" and hasattr(io, "commit_record"):
+    # the record write landed: its pending ledger line and stamp become evidence
+    if (data.get("tool_name") or "") in ("Edit", "Write", "MultiEdit"):
+        _rel = io.rel_path(data, (data.get("tool_input") or {}).get("file_path") or "")
+        if (io.VERIFY_FILE_RE.search(_rel) or io.VALIDATION_FILE_RE.search(_rel)) and _rel.startswith("docs/tasks/"):
+            io.commit_record(io.project_root(data), _rel)
+    sys.exit(0)
 if not data or io.event(data) != "PreToolUse":
     sys.exit(0)
 tool = data.get("tool_name") or ""
@@ -102,8 +114,8 @@ ti = data.get("tool_input") or {}
 who = io.actor(data)
 key = io.actor_key(who)
 
-def deny(msg):
-    io.deny("VERIFY GATE: " + msg, "verify-gate")
+def deny(msg, hard=False):
+    io.deny("VERIFY GATE: " + msg, "verify-gate", hard=hard)
 
 # ---- 4. shell writes into verify records -----------------------------------------
 if tool == "Bash":
@@ -173,12 +185,28 @@ def ledger(tid):
 def validation_ledger(tid):
     return os.path.join(sessions_dir(), tid + ".validation.jsonl")
 
+def stamp_of(tid, kind, n, gate):
+    """The committed stamp docs/tasks/<ID>.<kind>/<n>.gate.json when it matches the record
+    and this checkout has no ledger of that kind for the task at all (a fresh checkout),
+    else None: where the ledger exists it alone decides."""
+    if os.path.exists(ledger(tid) if kind == "verify" else validation_ledger(tid)):
+        return None
+    rel = "docs/tasks/%s.%s/%d.md" % (tid, kind, n)
+    st = io.read_stamp(root, rel) if hasattr(io, "read_stamp") else None
+    if st is None and hasattr(io, "legacy_record") and io.legacy_record(root, rel):
+        # written before the kit wrote stamps (pre-0.12), committed before the upgrade and
+        # unchanged since: the record's own fields stand in (the 0.11 gate checked them then)
+        rec = task.parse(open(os.path.join(root, rel), encoding="utf-8", errors="replace").read())
+        return {"gate": gate, "round": n, "legacy": True, "kind": w(rec, "kind"),
+                "result": w(rec, "result"), "verdict": w(rec, "verdict"), "commit": w(rec, "commit")}
+    return st if st is not None and st.get("gate") == gate and st.get("round") == n else None
+
 def ledger_entry(tid, n):
     hit = None
     for r in io.read_jsonl(ledger(tid)):
         if r.get("round") == n:
             hit = r
-    return hit
+    return hit if hit is not None else stamp_of(tid, "verify", n, "verify")
 
 def filled(v):
     v = (v or "").strip() if isinstance(v, str) else ""
@@ -237,9 +265,11 @@ if m and rel.startswith("docs/tasks/"):
     tid, n = m.group(1), int(m.group(2))
     path = os.path.join(root, rel)
     if os.path.exists(path):
+        # hard in every mode: an edited record keeps no stamp and no ledger line, so on a fresh
+        # checkout nothing proves who wrote it (prove-it run 27, 24.10.2026)
         deny("docs/tasks/%s.verify/%d.md already exists. Verify records are append-only: "
              "a new run (or a correction) is a new round, %s.verify/%d.md."
-             % (tid, n, tid, max([r for r, _ in task.verify_rounds(root, tid)] + [n]) + 1))
+             % (tid, n, tid, max([r for r, _ in task.verify_rounds(root, tid)] + [n]) + 1), hard=True)
     existing = [r for r, _ in task.verify_rounds(root, tid)]
     nxt = (max(existing) + 1) if existing else 1
     if n != nxt:
@@ -278,8 +308,12 @@ if m and rel.startswith("docs/tasks/"):
              "api/ui test>\"` in docs/tasks/%s.md. Otherwise write an API test or a UI "
              "test (Playwright for web, an integration/e2e driver for mobile)." % tid)
     io.state_dir(data, "sessions")
-    io.append_jsonl(ledger(tid), dict(who, ts=io.now(), round=n, kind=kind,
-                                      result=w(rec, "result"), commit=commit))
+    line = dict(who, ts=io.now(), round=n, kind=kind, result=w(rec, "result"), commit=commit)
+    if hasattr(io, "stage_record"):   # ledger line and stamp once the write lands (PostToolUse)
+        io.stage_record(root, rel, ".teamwright/sessions/%s.verify.jsonl" % tid, line,
+                        dict(line, gate="verify"), after)
+    else:
+        io.append_jsonl(ledger(tid), line)
     sys.exit(0)
 
 # ---- 6. validation record (acceptance verdict) being written ---------------------------
@@ -290,7 +324,7 @@ if m and rel.startswith("docs/tasks/"):
     if os.path.exists(os.path.join(root, rel)):
         deny("docs/tasks/%s.validation/%d.md already exists. Acceptance verdicts are "
              "append-only: a new check is a new round, %s.validation/%d.md."
-             % (tid, n, tid, max(existing + [n]) + 1))
+             % (tid, n, tid, max(existing + [n]) + 1), hard=True)
     nxt = (max(existing) + 1) if existing else 1
     if n != nxt:
         deny("the next validation round of %s is %d, not %d (rounds are consecutive files)."
@@ -348,8 +382,12 @@ if m and rel.startswith("docs/tasks/"):
         deny("commit %s does not resolve in this repository; check a committed revision "
              "and record its sha." % w(rec, "commit"))
     io.state_dir(data, "sessions")
-    io.append_jsonl(validation_ledger(tid), dict(who, ts=io.now(), round=n,
-                                                 verdict=w(rec, "verdict"), commit=w(rec, "commit")))
+    line = dict(who, ts=io.now(), round=n, verdict=w(rec, "verdict"), commit=w(rec, "commit"))
+    if hasattr(io, "stage_record"):   # ledger line and stamp once the write lands (PostToolUse)
+        io.stage_record(root, rel, ".teamwright/sessions/%s.validation.jsonl" % tid, line,
+                        dict(line, gate="validation"), after)
+    else:
+        io.append_jsonl(validation_ledger(tid), line)
     sys.exit(0)
 
 # ---- 3. task record entering VERIFIED / DONE ---------------------------------------
@@ -397,6 +435,8 @@ def acceptance_check():
            "docs/tasks/%s.validation/<n>.md - with `deploys: false` and `surface: none` that "
            "is its whole job, no verify record needed" % (VALIDATOR, tid))
     written = [r.get("round") for r in io.read_jsonl(validation_ledger(tid))]
+    if hasattr(io, "remove_orphan_stamps"):
+        io.remove_orphan_stamps(root, tid, "validation")  # a stamp without its record proves nothing
     if not vrounds:
         deny("%s cannot become DONE without an acceptance verdict PASS (no validation "
              "record). %s." % (tid, how))
@@ -405,6 +445,10 @@ def acceptance_check():
     if later:
         deny("validation round %d of %s was written but its file is gone; records are "
              "append-only. %s." % (max(later), tid, how))
+    if (rec.get("task") or "").strip() != tid:
+        deny("validation round %d in docs/tasks/%s.validation/ names task %r, not %s - an "
+             "acceptance verdict copied from another task does not count. %s."
+             % (n, tid, (rec.get("task") or "").strip(), tid, how))
     if w(rec, "verdict") != "PASS":
         deny("%s cannot become DONE: latest acceptance verdict (round %d) is %s. %s."
              % (tid, n, w(rec, "verdict") or "missing", how))
@@ -412,6 +456,8 @@ def acceptance_check():
     for r in io.read_jsonl(validation_ledger(tid)):
         if r.get("round") == n:
             entry = r
+    if entry is None:
+        entry = stamp_of(tid, "validation", n, "validation")
     if entry is None or (entry.get("verdict"), entry.get("commit")) != ("PASS", w(rec, "commit")):
         deny("validation round %d of %s was not written by %s through this gate, or was "
              "changed after it was written (ledger .teamwright/sessions/%s.validation.jsonl). "

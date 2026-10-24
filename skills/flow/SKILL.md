@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Start or resume development on a teamwright project — computes the next action deterministically (resume an interrupted task, continue, review, verify, re-analyse, ask the owner, or start the next ready task), shows a one-screen status, and drives the task lifecycle (analysis → red tests → implement → gate → fresh reviewer → verify) with the project's role agents, asking the owner only at decision points. Use when asked "what next", to continue work, or to pick up after an interruption.
+description: Start or resume development on a teamwright project — a loop of router steps in one session. The router computes the next action and its stage deterministically (resume an interrupted task, analyze, red-tests, implement, review, verify, ask the owner, or start the next ready task); the flow shows a one-screen status, runs that stage as its stage command describes, and asks the router again, asking the owner only at decision points. Use when asked "what next", to continue work, or to pick up after an interruption. For one stage per session use /teamwright:router.
 argument-hint: "[T-NNN] [--tasks N] [--status]"
 allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(scripts/tw-run *)
 ---
@@ -8,6 +8,8 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 # /teamwright:flow — the next step, then the lifecycle
 
 You are the **orchestrator** (the main session in `AGENTS.md`): you pick the task, call the roles, change statuses and commit. You never review your own work and never write review or verify records yourself.
+
+The flow is a loop of router steps in one session: ask the router, run the stage it names (each stage is described once, in its own command), ask again. `/teamwright:router` runs exactly one step per session; the stage commands (`/teamwright:analyze`, `red-tests`, `implement`, `review`, `verify`) run one named stage. All three follow the same stages and the same short protocol (`docs/process/stage-protocol.md`; the long explanation is `docs/process/sessions.md` §8).
 
 Arguments: `$ARGUMENTS`
 - `T-NNN` — work on this task instead of the router's pick (still subject to readiness and the gates; say so if the router disagrees and why).
@@ -28,7 +30,7 @@ Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it nam
 ## 1. Ask the router
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --json --pass "<ids this run has started, comma-separated; empty at first>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --pass "<ids this run has started, comma-separated; empty at first>"
 ```
 
 `--pass` makes the router apply the project's process settings (`settings` in its output): the pass cap from `process.batch` (`budget`: taken, limit, left — lowered further by `--tasks`), and `autonomy.start` (`ask_owner: false` on `start` when it is `auto`). Count only tasks this run moved `TODO → ANALYSIS`.
@@ -43,8 +45,11 @@ It reads `docs/tasks/*.md` (with their `.reviews/` and `.verify/` records), the 
 | `alternatives` | other candidates in router order, each `{action, task, reason}` — shown to the owner when they want to pick something else |
 | `role` | who acts: `orchestrator` (status moves, records), a role agent (e.g. `code-reviewer`, `task-validator`), or `owner` |
 | `ask_owner` | `true` when this step is a decision point — ask before acting |
-| `state` / `tasks` | snapshot used for the status screen (gate mode, pause, git state, task list with statuses, `ready`, `blockers`, `effective_priority`) |
-| `warnings` | record problems the router sees but does not decide on — e.g. a task that mentions an unresolved `OQ-NN` with an empty `blocked_on` |
+| `state` / `counts` | snapshot used for the status screen (gate mode, pause, git state; tasks by status). `--brief` leaves out the task list; `--json` (full) has it, open tasks only, with `ready`, `blockers`, `effective_priority` |
+| `warnings` | record problems the router sees but does not decide on — e.g. a task that mentions an unresolved `OQ-NN` with an empty `blocked_on`, or a `stage:` field the evidence contradicts |
+| `stage` | the stage that does this action: `analyze`, `red-tests`, `implement`, `review`, `verify`, or `null` (decide, merge, idle) |
+| `candidates`, `batch`, `batch_cap` | the tasks waiting at that stage with the facts for choosing a batch (priority, unblocks, depends_on, seam paths, areas, overlaps, size); the router's default batch; the stage's cap |
+| `stages`, `work_available`, `model` | per stage: waiting tasks, whether it is due (`process.stages`); whether any work exists; the stage's model (`process.models`, `null` = the role files decide) |
 
 Notes on the helper's semantics: `paused` is checked before everything else; untracked files alone never trigger `resume`; `continue` with `role: orchestrator` also covers bookkeeping moves (APPROVE recorded → `CODE_COMPLETE`, REJECT_RECURRENCE → defer, PASS verify → advance, `deploys: false` + `surface: none` → close) — `reason` says which; `decide` also covers ESCALATE, uncommitted changes that belong to no single task, and unpushed commits (push needs the owner).
 
@@ -52,16 +57,18 @@ Router order (the helper applies it; you do not re-derive it):
 
 | Order | Situation | `action` | What you do |
 |---|---|---|---|
-| 1 | Dirty tree or an interrupted session on a task | `resume` | §4 Resume |
-| 2 | A task in `ANALYSIS` / `IN_PROGRESS` | `continue` | lifecycle from its current step (§3) |
-| 3 | `NEEDS_REVIEW` without a review record for the current code | `review` | §3 step 6 |
-| 4 | `CODE_COMPLETE` / `DEPLOYED` without a `PASS` verify record for the current code | `verify` | §3 step 8 (after DRAIN when it deploys) |
-| 4 | `VERIFY_FAIL` | `reanalyze` | back to `ANALYSIS` — §3 step 2, with the failed record as evidence |
+| 1 | Tracked changes in the tree, or the last session ended `interrupted` | `resume` | §4 Resume |
+| 2 | A task in `ANALYSIS` / `IN_PROGRESS` | `continue` | its stage (`analyze`, or `red-tests` / `implement` by the task's `stage:` field checked against the evidence) — §3 |
+| 3 | `NEEDS_REVIEW` without a review record for the current code | `review` | stage `review` — §3 |
+| 4 | `CODE_COMPLETE` / `DEPLOYED` without a `PASS` verify record for the current code | `verify` | stage `verify` — §3 (after DRAIN when it deploys) |
+| 4 | `VERIFY_FAIL` | `reanalyze` | stage `analyze`, with the failed record as evidence |
 | 5 | `BLOCKED` with an owner decision pending | `decide` | ask the owner the pending question (decision point) |
-| 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`, or also `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | `TODO → ANALYSIS`, §3 from step 2 |
-| 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3 step 7) |
-| — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3 step 9 |
+| 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`, or also `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | stage `analyze` — §3 |
+| 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3, Push) |
+| — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3, Next |
 | — | A task worked in its own worktree (`tw/<ID>`, or `task/<ID>` made by hand) is approved there | `merge` | `/teamwright:parallel merge <ID>` for `tw/`; otherwise merge the branch the reason names and remove that worktree |
+
+A stage held back by its threshold (`process.stages.<stage>.min`, `max_wait_hours`) moves behind the work that is due; its candidates say `(held: …)`. When nothing else is due, it runs.
 
 **In a parallel worktree** (this tree is on branch `tw/<ID>`, started by `/teamwright:parallel`, or `task/<ID>`) the router offers only that task and ends `idle` once it is `CODE_COMPLETE`: no push, no verification here — both follow the merge in the main tree.
 | — | Nothing ready | `idle` | report, outcome `idle` |
@@ -88,37 +95,34 @@ Warnings: <router warnings, or none>   Context tool: <provider — connected | n
 
 Then proceed **without asking** unless the next step is a decision point (§5). `--status` → stop here.
 
-## 3. The lifecycle, per `AGENTS.md`
+## 3. Run the stage the router names
 
-Spawn each role as a **fresh subagent by its role file name** (`problem-investigator`, `test-writer`, `developer` or `developer-<area>`, `technical-writer`, `code-reviewer`, `task-validator`), **in the foreground** (see the session rules above), passing the task id and only what the role needs. The spawn's short description names **only that task** (`T-NNN code-reviewer`): the journal takes the task from it, and the review gate checks that the reviewer was spawned for this task; other task ids belong in the prompt. Never run a role as a fork of yourself, and never let the implementing agent review. Every status change is its own commit: `chore(task): T-NNN FROM→TO`, staged by path, with a `Co-Authored-By:` trailer. A record a role wrote (analysis, tests, review, verify) is committed right after the role returns — together with the status change it allows, or alone (`chore(task): T-NNN analysis`) when the status does not change yet.
+Spawn each role as a **fresh subagent by its role file name** (`problem-investigator`, `test-writer`, `developer` or `developer-<area>`, `technical-writer`, `code-reviewer`, `task-validator`), **in the foreground** (session rules above), passing the task id and only what the role needs, and `model` = the router's `model` when it is set (`process.models`). The spawn's short description names **only that task** (`T-NNN code-reviewer`): the journal takes the task from it, and the review gate checks that the reviewer was spawned for this task. Never run a role as a fork of yourself, and never let the implementing agent review. Every status change is its own commit: `chore(task): T-NNN FROM→TO`, staged by path, with a `Co-Authored-By:` trailer.
 
-1. **Readiness** — `start`: confirm the task is ready (router said so); set `TODO → ANALYSIS`.
-2. **Analysis** — `problem-investigator` (bugs, rca tasks, anything non-trivial) fills the `analysis` block with evidence (`file:line`, log line, failing test), invariant, seam, approach, and the recurrence check against `docs/failures.md`. A `chore` with no degrees of freedom may use `analysis: skipped:trivial`. The analysis shows the work is **large** (more than one seam, unsettled behaviour) → stop: decision point "send through the spec tool?". Evidence missing → `BLOCKED` with `blocked_on`, report it, take the next ready task if budget remains. Filled → `ANALYSIS → IN_PROGRESS` (the analysis gate checks it).
-3. **Red tests** — `test-writer`, first spawn (it also runs the bite check: 2–3 deliberately wrong implementations in a throwaway worktree, each caught by a test, recorded under `## Tests`; mutations of existing code go into the catalog `docs/tasks/<ID>.mutants/`, which `scripts/tw-mutants` runs in one toolchain start — commit the catalog with the tests): one failing test per guarantee in Acceptance, a reproducing test for a bug, an end-to-end test for the **failure branch** when `surface` is `ui` / `api` / `both`. Run them through the area's command (`scripts/tw-run <area> -- <cmd>`) and confirm they fail for the right reason, not on a typo. Code without tests in the seam → characterization tests first, capturing current behaviour.
-4. **Implement** — `developer` for the task's area, inside the seam, until the tests are green. Tests are never weakened to pass.
-   **Failure-branch bite** — once green, spawn `test-writer` again with `mode: failure-branch bite`: it breaks each Acceptance failure branch once on a throwaway copy, runs the test that guards it (for `api` / `both` the end-to-end test verification will run) and writes the `### Failure branches` table under `## Tests`. A test it rewrote → run the tests again (the developer, if they go red). Only then step 5. A task that changes no code (an rca exit (b) or (c)) skips it.
-   **Tests that run only in CI** (the area has `ci_workflow` in the config — e.g. a platform the host cannot build): red, and later green, are confirmed by a CI run, before review. Commit the tests, then `git push origin HEAD:wip/<ID>` — a `wip/*` branch is not a delivery, so DRAIN does not apply and no status changes — and wait for the run (`gh run watch` on the workflow's run for that branch; no `gh` → ask the owner for the result). Record the run link and result in `## Tests`. Same after step 4 for green. When the task reaches `CODE_COMPLETE`, delete the branch: `git push origin --delete wip/<ID>`.
-5. **Gate** — `scripts/tw-gate --for-task <ID>` lists the gates the task's changes need (its areas, `--top` for files outside every area, nothing for records, docs or CI configuration only — a CI-only change runs no suite); then `scripts/tw-gate <area>` for each, one call each: it runs `generate_command` first when the area has one, then the gate (`gate_command`; per area through `scripts/tw-run`), keeps the full output in the log it prints and reuses the developer's PASS on the same content (`PASS (cached: …)`) instead of running it again. Never cut its output; on a failure read the log. A gate longer than the wait (~9 minutes) ends the call with `RUNNING: …` and exit 75: call the same command again — it attaches to the run — never a `sleep` loop, a background call or killing its containers. Compare `git status` before and after: the gate must not change tracked files (tw-gate warns when the tree changed). Red → back to the developer; a red gate fails the whole batch. Green → `technical-writer` syncs the docs the change touched, local commit (`<type>(<scope>): T-NNN <what>`), `IN_PROGRESS → NEEDS_REVIEW` with `implemented_by:` set in the same edit — the role file that implemented (`developer`, `developer-<area>`), or `human:<name>` when a person wrote the code. **No push.**
-6. **Review** — spawn a **fresh `code-reviewer`** subagent with the task id and the commit range. It writes `docs/tasks/T-NNN.reviews/<n>.md`; you read its verdict and change the status:
-   - `APPROVE` → `NEEDS_REVIEW → CODE_COMPLETE`. Findings left in the record's table are below the threshold (`process.review.blocking`): append each as an unchecked line to the sprint's follow-up task — `docs/tasks/<ID>.md` with `class: review-follow-up`, `type: chore`, `priority: P3`, `surface: none`, `deploys: false`, `sprint:` the active sprint, title `Review follow-ups — sprint <N>`; create it from the template if the sprint has none. Line format under `## Acceptance`: `- [ ] T-NNN r<round>#<n> <Severity> <category>: <finding> (<where>)`. Commit with the status change (`chore(task): T-NNN NEEDS_REVIEW→CODE_COMPLETE, follow-ups → T-MMM`). One task per sprint, not one per review. In a parallel worktree (`tw/<ID>`) write them under `## Follow-ups` in the task's own record instead — the shared task would conflict on merge; the merge moves them;
-   - `REQUEST_CHANGES` → `IN_PROGRESS`, back to step 4 with the findings (after two send-backs in a row the reviewer's third record is `ESCALATE` or `REJECT_RECURRENCE`; the review gate refuses an `APPROVE` there);
-   - `REJECT_RECURRENCE` → task `DEFERRED` with `absorbed_by: <rca id>`; the rca task enters the queue; the investigator's recommended exit (b) or (c) is a decision point;
-   - `ESCALATE` → `BLOCKED`, decision point.
-7. **Push (DRAIN)** — no commit message carries `[skip ci]` (`[ci skip]`, `[no ci]`): CI decides by the pushed tip, and the tip is a status commit, so the marker would leave the code under it — and the pull request opened from it — unchecked (pre-push warns). Every task in the unpushed tail is `CODE_COMPLETE` or later (or `tail_code: ratified`) → decision point "push now?". On "yes": `git push`; the pre-push hook re-checks; tasks that deploy → `DEPLOYED`. `TEAMWRIGHT_PAUSE` present → no push, say so. `deploys: false` → no push needed for verification; go to step 8 against a locally started system (with `surface: none`: step 8 checks acceptance only, no verify record).
-8. **Verify** — spawn a **fresh `task-validator`** with the task id, `surface`, environment and commit. It runs the committed tests against the running system, failure branch included, and writes `docs/tasks/T-NNN.verify/<n>.md`. It also writes the acceptance verdict as `docs/tasks/T-NNN.validation/<n>.md` (verdict + the commit it checked). Verify `PASS` for the current commit and acceptance `PASS` → `VERIFIED → DONE` (the verify gate checks the record). Verify `FAIL` → `VERIFY_FAIL` → next run routes to `reanalyze`. Verify `PASS` but acceptance `FAIL` (a surviving mutation that breaks a stated guarantee, docs drift, a claim without evidence) → back to `IN_PROGRESS` with the findings, then step 3 or 4 and a new review. Commit the validator's additions to `docs/tasks/T-NNN.mutants/` with its record. Survivors it lists under `Follow-ups` (they break no stated guarantee) go to the sprint's follow-up task like review findings below the threshold (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict. `NEEDS_OWNER` (device, real account, paid service, or two failing mutation sweeps) → decision point with the exact action needed. With `deploys: false` + `surface: none` the validator skips verification and gives only the acceptance verdict; `DONE` still needs it (the verify gate checks the latest validation record, which must be for the current code). Never write a verdict yourself: the gate accepts only one written by `task-validator`.
-9. **Next** — the task reached a barrier (`CODE_COMPLETE`, or `NEEDS_REVIEW` waiting for a reviewer you are about to spawn, or a decision point). Then:
-   - `process.autonomy.continue: true` and no stop condition → back to §1 with the task added to `--pass`. A push question that can wait is **not** asked now: the pass keeps going, and push is asked once when the pass ends, for every task it brought to `CODE_COMPLETE` (DRAIN still checks the whole tail). Verification of those tasks follows the push.
-   - `continue: false` (the default) → §7 after this task, as before.
-   - The router says `stop` (pass cap used) or `idle` → ask the pending push, if any, then §7.
+| `stage` | Do — read and follow its § Work (its Entry and end block are the flow's §1 and §7) |
+|---|---|
+| `analyze` | `${CLAUDE_PLUGIN_ROOT}/skills/analyze/SKILL.md` — `start` / `continue` (ANALYSIS) / `reanalyze` → IN_PROGRESS at `stage: red-tests` |
+| `red-tests` | `${CLAUDE_PLUGIN_ROOT}/skills/red-tests/SKILL.md` — failing tests, bite check, catalog → `stage: implement` |
+| `implement` | `${CLAUDE_PLUGIN_ROOT}/skills/implement/SKILL.md` — green, failure-branch bite, gate, docs → `NEEDS_REVIEW` |
+| `review` | `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md` — fresh reviewer, verdict → status, follow-ups |
+| `verify` | `${CLAUDE_PLUGIN_ROOT}/skills/verify/SKILL.md` — fresh validator, records → `DONE` / back / owner |
+
+Take the stage's batch from the router (`batch`, or your own choice from `candidates` within `batch_cap` — `docs/process/stage-protocol.md` §2), one task after another. Then:
+
+- **Push (DRAIN)** — the router's `decide` "unpushed commits": no commit message carries `[skip ci]` (`[ci skip]`, `[no ci]`): CI decides by the pushed tip, and the tip is a status commit, so the marker would leave the code under it — and the pull request opened from it — unchecked (pre-push warns). Every task in the unpushed tail is `CODE_COMPLETE` or later (or `tail_code: ratified`) → decision point "push now?". On "yes": `git push`; the pre-push hook re-checks; tasks that deploy → `DEPLOYED`. `TEAMWRIGHT_PAUSE` present → no push, say so. `deploys: false` → no push needed for verification. When the task reaches `CODE_COMPLETE`, delete a `wip/<ID>` branch it used: `git push origin --delete wip/<ID>`.
+- **Next** — the stage reached a barrier (its batch is done, or a decision point). Then:
+  - `process.autonomy.continue: true` and no stop condition → back to §1 (tasks this run started added to `--pass`). A push question that can wait is **not** asked now: the pass keeps going, and push is asked once when the pass ends, for every task it brought to `CODE_COMPLETE`. Verification of those tasks follows the push.
+  - `continue: false` (the default) → §1 again only while the same task moves on (its next stage); stop at `CODE_COMPLETE`, as before, then §7.
+  - The router says `stop` (pass cap used) or `idle` → ask the pending push, if any, then §7.
 
 Records are written only by their owners and only with Edit/Write: analysis by the investigator, review records by the reviewer, verify records by the validator. You never edit an earlier round.
 
 ## 4. Resume after an interruption
 
-`resume` means the previous session stopped mid-task (journal outcome `interrupted` or none, dirty tree, a task left in `ANALYSIS` / `IN_PROGRESS`). Start cold, from evidence, not memory:
+`resume` means unfinished work in the tree: tracked changes, or a session that ended `interrupted`. A task left at a stage on a clean tree is **not** a resume: its `stage:` is recorded and committed, and the router routes it to that stage (`continue`). The router has already decided the stage from facts (the `stage:` field checked against the evidence: analysis complete, `## Tests` filled); start cold, from evidence, not memory:
 
-1. Read the task record (status, analysis, `## Review`, `## Verification`), `git status`, `git diff --stat`, `git log` since the last `chore(task): T-NNN` commit.
-2. Decide the step from facts: analysis empty → step 2; tests missing or not red → step 3; diff present and tests red → step 4; tests green but no `### Failure branches` table under `## Tests` → the failure-branch bite (step 4); tests green, table present, not committed → step 5.
+1. Read the task record, `git status`, `git diff --stat`, `git log` since the last `chore(task): T-NNN` commit.
+2. Finish the router's `stage` for that task (§3), keeping the changes that belong to it.
 3. Uncommitted changes that do not belong to the task → do not touch them, do not stash or revert; tell the owner and stage only the task's paths.
 4. Say in one line where you resume and why, then continue.
 
@@ -154,13 +158,15 @@ Waiting is never a stop condition: a running role agent is waited for, not left 
 **Every** turn that ends this skill's work ends with this block — after a barrier, at a decision point you just asked about, on idle, on pause, and when interrupted. No exceptions: a turn without it is journaled as `outcome: none` and the next session cannot tell a clean stop from a crash. Before writing it, check that no role agent is still running (session rule 1) and that every record a role wrote is committed (`git status`).
 
 Done this session: <T-NNN FROM→TO, …>   Commits: <n> (pushed: <n>)
+Stage: flow
+Batch: <the tasks this run worked> - <one line: why these>
 Records: <reviews/<n>.md verdict · verify/<n>.md result>
 Stopped because: <budget | decision point: … | pause | escalation | idle | interrupted: …>
 Waiting for the owner: <question, or none>
 Next: <router's next action and task> — run /teamwright:flow to continue
 Outcome: <barrier | idle | escalate | interrupted>
 
-Write the `Outcome:` line as the **last line of your message**, as plain text (not inside a code block), with exactly one of the four words: the Stop hook (`scripts/hooks/journal.sh`) reads it into `.teamwright/logs/outcomes.jsonl`, and `tw-next.py` routes the next session on it.
+`Stage:` and `Batch:` are journaled with the outcome (`outcomes.jsonl`: `stage`, `batch`, `batch_reason`). Write the `Outcome:` line as the **last line of your message**, as plain text (not inside a code block), with exactly one of the four words: the Stop hook (`scripts/hooks/journal.sh`) reads it into `.teamwright/logs/outcomes.jsonl`, and `tw-next.py` routes the next session on it.
 
 - `barrier` — the work reached a safe point: budget used, a decision point asked, pause, or one task blocked while other work could continue.
 - `idle` — the router returned `idle` or `paused`.

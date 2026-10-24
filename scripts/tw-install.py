@@ -232,6 +232,24 @@ def load_config(path):
     return cfg, text
 
 
+def _headings(text):
+    out, fence = [], False
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", line)
+        if m and not fence:
+            out.append(m.group(2).strip())
+    return out
+
+
+def missing_sections(disk, template):
+    """Headings of the kit's version of a document that the project's copy lacks."""
+    have = set(_headings(disk))
+    return [h for h in _headings(template) if h not in have]
+
+
 # Documents whose content belongs to the project: the template only seeds them. An
 # existing one (filled by /teamwright:requirements before install, or the project's own)
 # is kept as is, not reported as a conflict.
@@ -666,12 +684,49 @@ def _json_file(path):
     return d if isinstance(d, dict) else {}
 
 
+def kit_version(kit, plugin_id):
+    """The kit's version when plugin.json names none (a release channel such as
+    `teamwright-next` leaves it out, so every commit is a new version for /plugin update).
+    Claude Code then versions the plugin by its commit: the first 12 hex digits of the
+    SHA. From a git checkout of the kit that is HEAD; from the plugin cache (a copy
+    without .git) it is the version Claude Code recorded for that install path in
+    plugins/installed_plugins.json. "" when neither says."""
+    rc, out = git(kit, "rev-parse", "HEAD")
+    rc2, top = git(kit, "rev-parse", "--show-toplevel")
+    if rc == 0 and rc2 == 0 and os.path.realpath(top.strip()) == os.path.realpath(kit) \
+            and re.match(r"^[0-9a-f]{40}$", out.strip()):
+        return out.strip()[:12]
+    reg = _json_file(os.path.join(claude_dir(), "plugins", "installed_plugins.json")).get("plugins")
+    here = os.path.realpath(kit)
+    for pid, entries in (reg.items() if isinstance(reg, dict) else []):
+        for e in entries if isinstance(entries, list) else []:
+            if isinstance(e, dict) and e.get("installPath") and \
+                    os.path.realpath(e["installPath"]) == here and (pid == plugin_id or not plugin_id):
+                return str(e.get("version") or "")
+    return ""
+
+
 def kit_info(kit):
     """The "@kit" record: which plugin set the project up, at which version."""
     pj = _json_file(os.path.join(kit, ".claude-plugin", "plugin.json"))
     mj = _json_file(os.path.join(kit, ".claude-plugin", "marketplace.json"))
     name = pj.get("name") or "teamwright"
-    return {"plugin": "%s@%s" % (name, mj.get("name") or name), "version": pj.get("version") or ""}
+    pid = "%s@%s" % (name, mj.get("name") or name)
+    return {"plugin": pid, "version": pj.get("version") or kit_version(kit, pid)}
+
+
+def other_channel(project, pid):
+    """An enabled install of the same plugin from another marketplace (another release
+    channel) in the project's settings.json or settings.local.json: (file, id) or None.
+    Two enabled copies with one name do not mix - one copy's hooks silently do not run -
+    so the installer does not enable a second one."""
+    name = pid.split("@", 1)[0]
+    for f in ("settings.json", "settings.local.json"):
+        ep = _json_file(os.path.join(project, ".claude", f)).get("enabledPlugins")
+        for k, v in (ep.items() if isinstance(ep, dict) else []):
+            if k != pid and k.split("@", 1)[0] == name and v is True:
+                return ".claude/" + f, k
+    return None
 
 
 def claude_dir():
@@ -875,6 +930,16 @@ def plan(project, kit, cfg, cfg_text, cfg_src, providers_dir):
             elif dest in manifest:
                 a.update(op="kept-local", change=False)
                 a.pop("unresolved", None)
+                miss = missing_sections(disk, content) if dest.startswith("docs/process/") else []
+                acc = accepted.get(dest) or {}
+                if miss and not (acc.get("disk") == sha(disk) and acc.get("template") == sha(content)):
+                    # a process document edited locally that lacks sections the kit added: kept
+                    # silently, the project would run the new gates with the old instructions
+                    a.update(op="conflict", template_sha=sha(content),
+                             reason="edited locally and missing the kit's section(s) %s - merge them "
+                                    "by hand, then `apply --accept %s`" % (
+                                        ", ".join("\"%s\"" % m for m in miss[:5]) +
+                                        (" and %d more" % (len(miss) - 5) if len(miss) > 5 else ""), dest))
             elif dest in PROJECT_DOCS:
                 # the project's own document (written before install, e.g. by
                 # /teamwright:requirements, or the project's existing doc): never a conflict
@@ -921,7 +986,14 @@ def plan(project, kit, cfg, cfg_text, cfg_src, providers_dir):
     else:
         info = kit_info(kit)
         mname, msrc = kit_marketplace(kit)
-        merged = merge_settings(existing, tpl, (info["plugin"], mname, msrc))
+        other = other_channel(project, info["plugin"])
+        if other and info["plugin"] not in (existing.get("enabledPlugins") or {}):
+            notes.append("%s enables %s; this kit is %s - one channel per project, so it is not "
+                         "enabled too (README, Channels: switch in %s)" % (
+                             other[0], other[1], info["plugin"], other[0]))
+            merged = merge_settings(existing, tpl, None)
+        else:
+            merged = merge_settings(existing, tpl, (info["plugin"], mname, msrc))
         if msrc is None and mname not in (merged.get("extraKnownMarketplaces") or {}):
             notes.append(".claude/settings.json: no shareable source for marketplace %r (a local copy "
                          "without a git remote) - a fresh clone is not offered the plugin; add "

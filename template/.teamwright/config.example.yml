@@ -52,8 +52,21 @@ process:                       # parameters of the fixed pipeline; absent keys =
     by_priority:               # cap for a pass holding a task of this priority; the lowest wins
       P0: 1
       P1: 2
-    parallel: 1                # tasks worked at once, each in its own worktree and session (1..4; /teamwright:parallel)
+    parallel: 1                # tasks worked at once, each in its own worktree and session (1..10; /teamwright:parallel)
   autonomy:
     start: auto                # ask | auto: start the router's ready task without asking
     continue: true             # after a barrier, take the next task; push is still asked
   test_guard: block            # block | warn | off: tests only via scripts/tw-test, gates via tw-gate (own switch, not mode)
+  stages:                      # one stage per session (/teamwright:router); absent = batch 1, min 1, no age rule
+    review:
+      batch: 3                 # tasks one review session takes, one after another (1..10)
+      min: 2                   # wait for this many while other work exists (1..10); P0/P1 and "nothing else" run at once
+      max_wait_hours: 4        # ...or until the oldest waiting task is this old (0 = no age rule, up to 168)
+  models:                      # model per stage, passed to the stage's role agents; absent = the role files' model:
+    analyze: opus              # opus | sonnet | haiku | fable | a full model id (claude-...)
+    red-tests: sonnet
+    implement: opus
+    review: opus
+    verify: opus
+  router:
+    select: script             # script: tw-next.py lists the candidates, the session picks the batch | agent: the session reads the task records itself

@@ -108,6 +108,57 @@ expect_rc "the flow's waiting line is journaled as waiting" "waiting waiting-lin
 hook_json "" s10 "@hook_event_name=Stop" "@last_assistant_message=we are waiting for the owner" | bash "$J"
 expect_rc "a sentence about waiting is not the waiting line" "none none" "$(last_out)"
 
+# tokens per agent (0.12): cumulative usage from the transcript, read incrementally
+TT="$TMP/tok.jsonl"; SA="$TMP/sub.jsonl"
+u() {  # u ID MODEL IN OUT CREAD CWRITE [sidechain]
+  printf '{"type":"assistant","isSidechain":%s,"message":{"id":"%s","model":"%s","role":"assistant","content":[{"type":"text","text":"x"}],"usage":{"input_tokens":%s,"output_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":%s}}}\n' \
+    "${7:-false}" "$1" "$2" "$3" "$4" "$5" "$6"
+}
+last_tok() { python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(json.dumps(r.get("tokens"), sort_keys=True))' "$L/outcomes.jsonl"; }
+{ u m1 claude-opus-x 10 5 100 20; u m1 claude-opus-x 10 5 100 20; u m2 claude-opus-x 1 2 3 4; u s1 claude-sonnet-x 7 7 7 7 true; } > "$TT"
+hook_json "" s12 "@hook_event_name=Stop" "@transcript_path=$TT" "@last_assistant_message=Outcome: barrier" | bash "$J"
+expect_rc "Stop sums the session's usage per model (a message repeated per content block once, sidechains out)" \
+  '{"claude-opus-x": {"cache_read": 103, "cache_write": 24, "input": 11, "output": 7}}' "$(last_tok)"
+u m3 claude-opus-x 100 0 0 0 >> "$TT"; printf '{"type":"assistant","message":{"id":"m4","usage":{"input_tok' >> "$TT"
+hook_json "" s12 "@hook_event_name=Stop" "@transcript_path=$TT" "@last_assistant_message=Outcome: barrier" | bash "$J"
+expect_rc "the next Stop adds only the new lines; a partly written line waits" \
+  '{"claude-opus-x": {"cache_read": 103, "cache_write": 24, "input": 111, "output": 7}}' "$(last_tok)"
+u s9 claude-sonnet-x 3 4 5 6 true > "$SA"
+hook_json "" s12 "@hook_event_name=SubagentStop" @agent_id=a12 @agent_type=test-writer "@agent_transcript_path=$SA" | bash "$J"
+expect_rc "SubagentStop takes the subagent's own transcript" \
+  '{"claude-sonnet-x": {"cache_read": 5, "cache_write": 6, "input": 3, "output": 4}}' "$(last_tok)"
+hook_json "" s12 "@hook_event_name=SubagentStop" @agent_id=a13 @agent_type=developer | bash "$J"
+expect_rc "no transcript path: tokens {}" '{}' "$(last_tok)"
+
+# the stage the session ran (0.12): `Stage: <stage>` in the end block
+last_stage() { python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["outcome"], r.get("stage", "?") or "-")' "$L/outcomes.jsonl"; }
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Done this session: T-12 red tests
+Stage: red-tests
+Outcome: barrier" | bash "$J"
+expect_rc "Stop records the stage the session ran" "barrier red-tests" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=**Stage:** flow
+Outcome: idle" | bash "$J"
+expect_rc "a flow run records stage flow" "idle flow" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Outcome: barrier" | bash "$J"
+expect_rc "no Stage line: empty stage" "barrier -" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Stage: deploy
+Outcome: barrier" | bash "$J"
+expect_rc "an unknown stage word is not recorded" "barrier -" "$(last_stage)"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=Stage: review
+Batch: T-3 T-7 - disjoint seams, both in the server area
+Outcome: barrier" | bash "$J"
+expect_rc "the chosen batch and its reason are recorded" "T-3,T-7|disjoint seams, both in the server area" \
+  "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
+hook_json "" s11 "@hook_event_name=Stop" "@last_assistant_message=The router said:
+Stage: analyze
+Batch: T-1 - quoted from the previous step
+Done.
+Stage: implement
+Batch: T-9 - the end block
+Outcome: barrier" | bash "$J"
+expect_rc "several Stage/Batch lines: the last (the end block) is recorded" "implement T-9|the end block" \
+  "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["stage"], ",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
+
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"
 expect_allow "unwritable log dir fails silently" "$out"

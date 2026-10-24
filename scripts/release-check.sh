@@ -12,10 +12,24 @@
 #   3. CHANGELOG.md has a `## [X.Y.Z]` section for it.
 #   4. The release is tagged `vX.Y.Z`; a later change to shipped paths without a new
 #      version fails this check.
+#
+# CHANNELS. A release channel (marketplace `teamwright-<channel>`, e.g. teamwright-next on
+# branch next) carries no version at all - the commit SHA is the version, so every pushed
+# commit reaches `/plugin update`; nothing is tagged from it. The channel is read from the
+# marketplace name (scripts/check-versions.py), not from the git branch: CI is detached.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 fail=0
 err() { echo "release-check: $1" >&2; fail=1; }
+
+channel="$(python3 scripts/check-versions.py --channel 2>/dev/null)"
+if [ -n "$channel" ] && [ "$channel" != stable ]; then
+  if python3 scripts/check-versions.py >&2; then
+    echo "release-check: ok (channel $channel: no version, no release tag from this branch)"
+    exit 0
+  fi
+  exit 1
+fi
 
 ver="$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])' 2>/dev/null)"
 [ -n "$ver" ] || { err "no version in .claude-plugin/plugin.json"; exit 1; }

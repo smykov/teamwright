@@ -7,14 +7,17 @@ P="$TMP/proj"; mkdir -p "$P/docs/tasks" "$P/src"
 export CLAUDE_PROJECT_DIR="$P"
 T="$P/docs/tasks/T-1.md"
 run() { hook_json "$@" | bash "$GATE"; }
-full_new() { task_file "$TMP/x.md" T-1 IN_PROGRESS bug full; cat "$TMP/x.md"; }
+full_new() { task_file "$TMP/x.md" T-1 IN_PROGRESS bug full; sedi 's/^status: IN_PROGRESS$/status: IN_PROGRESS\
+stage: red-tests/' "$TMP/x.md"; cat "$TMP/x.md"; }
 none_new() { task_file "$TMP/x.md" T-1 IN_PROGRESS bug none; cat "$TMP/x.md"; }
 
 task_file "$T" T-1 TODO bug none
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_deny "TODO->IN_PROGRESS without analysis is denied" "$out" "root_cause"
 
-out="$(run Edit s1 "file_path=docs/tasks/T-1.md" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=docs/tasks/T-1.md" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_deny "relative file path is recognised" "$out"
 
 out="$(run Write s1 "file_path=$T" "content=$(full_new)")"
@@ -24,21 +27,26 @@ out="$(run Write s1 "file_path=$T" "content=$(none_new)")"
 expect_deny "placeholder analysis (...) is denied" "$out" "evidence"
 
 task_file "$T" T-1 TODO bug trivial
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_allow "analysis: skipped:trivial is an accepted exit" "$out"
 
 task_file "$T" T-1 TODO rca none
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_deny "type: rca is not exempt: its analysis is required" "$out" "decision"
 expect_deny "no evidence yet: the exit is BLOCKED with blocked_on (lifecycle)" "$out" "BLOCKED with \`blocked_on"
 task_file "$T" T-1 TODO rca trivial
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_deny "type: rca cannot use analysis: skipped:trivial" "$out" "root_cause"
 task_file "$T" T-1 TODO rca rca
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_allow "type: rca with root_cause + evidence + decision is allowed" "$out"
 task_file "$T" T-1 TODO rca full
-out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 expect_deny "type: rca with a feature-style block (no decision) is denied" "$out" "decision"
 
 task_file "$T" T-1 IN_PROGRESS bug none
@@ -102,7 +110,8 @@ task_file "$P/docs/tasks/T-7.md" T-7 DEFERRED bug full
 post "$P/docs/tasks/T-7.md" >/dev/null
 [ -e "$CT" ] && bad "DEFERRED clears current-task" || ok "DEFERRED clears current-task"
 task_file "$P/docs/tasks/T-7.md" T-7 TODO bug none
-out="$(run Edit s1 "file_path=$P/docs/tasks/T-7.md" "old_string=status: TODO" "new_string=status: IN_PROGRESS")"
+out="$(run Edit s1 "file_path=$P/docs/tasks/T-7.md" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: red-tests")"
 [ -e "$CT" ] && bad "a denied PreToolUse transition does not set current-task" || ok "a denied PreToolUse transition does not set current-task"
 
 # shell rewrites of status
@@ -163,6 +172,7 @@ for i, block in enumerate(re.findall(r"```yaml\n(.*?)```", section, re.S)):
 for name, typ, text in cases:
     text = re.sub(r'(?m)^(  \w+: )(""|<[^>\n]*>)$', r"\1filled from the evidence", text)
     text = re.sub(r"(?m)^status: \w+", "status: ANALYSIS", text).replace("id: T-NNN", "id: T-9")
+    text = re.sub(r"(?m)^stage: .*\n", "", text)  # the move below sets it
     with open(os.path.join(out, name + "." + typ), "w") as fh:
         fh.write(text.rstrip("\n") + "\n---\nbody\n")
     print(name + "." + typ)
@@ -172,10 +182,136 @@ n=0
 for f in $(python3 -c "$_docs_py" "$KIT" "$TMP/docs-blocks"); do
   n=$((n + 1))
   cp "$TMP/docs-blocks/$f" "$P/docs/tasks/T-9.md"
-  out="$(run Edit s1 "file_path=$P/docs/tasks/T-9.md" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+  out="$(run Edit s1 "file_path=$P/docs/tasks/T-9.md" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS
+stage: red-tests")"
   expect_allow "documented analysis block ($f) filled as written passes the gate" "$out"
 done
 [ "$n" -ge 4 ] && ok "found the template and investigator blocks ($n)" || bad "found the template and investigator blocks" "only $n"
+
+# ---- 4. the stage field (0.12) ---------------------------------------------------------
+staged() {  # staged STATUS [STAGE] [tests|branches] -> T-1 with a full analysis, an optional stage
+  task_file "$T" T-1 "$1" bug full
+  if [ -n "${2:-}" ]; then awk -v s="$2" '{print} /^status: /{print "stage: " s}' "$T" > "$T.tmp" && mv "$T.tmp" "$T"; fi
+  case "${3:-}" in
+    tests) printf '\n## Tests\n\n- empty header: test_empty_header (red: 200 != 400)\n' >> "$T" ;;
+    branches) printf '\n## Tests\n\n- empty header: test_empty_header (red: 200 != 400)\n\n### Failure branches\n\n| Branch | Broken by | Caught by |\n|---|---|---|\n| empty header | guard removed | test_empty_header |\n' >> "$T" ;;
+  esac
+}
+staged ANALYSIS
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS
+stage: red-tests")"
+expect_allow "ANALYSIS -> IN_PROGRESS with stage: red-tests is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS
+stage: implement")"
+expect_deny "ANALYSIS -> IN_PROGRESS straight into stage: implement is denied" "$out" "red tests come before"
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+expect_deny "ANALYSIS -> IN_PROGRESS without a stage is denied (the gate is not opt-in)" "$out" "sets its stage"
+task_file "$T" T-1 TODO bug full
+out="$(run Edit s1 "file_path=$T" "old_string=status: TODO" "new_string=status: IN_PROGRESS
+stage: implement")"
+expect_deny "TODO -> IN_PROGRESS straight into stage: implement is denied" "$out" "red tests come before"
+staged ANALYSIS '""'
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+expect_deny "the template's empty stage is not a stage: entering IN_PROGRESS needs red-tests" "$out" "sets its stage"
+staged IN_PROGRESS red-tests
+grep -q "^stage: red-tests" "$T" && ok "fixture carries the stage line" || bad "fixture carries the stage line"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=stage: implement")"
+expect_deny "red-tests -> implement with ## Tests empty is denied" "$out" "Tests\` is empty"
+staged IN_PROGRESS red-tests tests
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=stage: implement")"
+expect_allow "red-tests -> implement with the tests written is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=stage: check")"
+expect_deny "an unknown stage value is denied" "$out" "not a stage"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: red-tests" "new_string=")"
+expect_deny "removing the stage of an IN_PROGRESS task is denied" "$out" "not removed"
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "IN_PROGRESS -> NEEDS_REVIEW at stage red-tests is denied" "$out" "only the implement stage"
+staged IN_PROGRESS implement
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "IN_PROGRESS -> NEEDS_REVIEW with ## Tests empty is denied" "$out" "Tests\` is empty"
+staged IN_PROGRESS implement tests
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "IN_PROGRESS -> NEEDS_REVIEW at stage implement, no code changed (not a git repo): no failure-branch table needed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=stage: implement" "new_string=stage: red-tests")"
+expect_allow "implement -> red-tests (back from implement) is allowed" "$out"
+staged IN_PROGRESS "" tests
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "IN_PROGRESS -> NEEDS_REVIEW without a stage field is denied" "$out" "sets \`stage: implement\` in this edit"
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW
+stage: implement")"
+expect_allow "a task started before stages sets stage: implement with the move to review" "$out"
+staged NEEDS_REVIEW implement tests
+out="$(run Edit s1 "file_path=$T" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_allow "review send-back to IN_PROGRESS keeps stage: implement" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=status: NEEDS_REVIEW
+stage: implement" "new_string=status: IN_PROGRESS
+stage: red-tests")"
+expect_allow "a send-back to red-tests (the findings are about the tests) is allowed" "$out"
+out="$(run Edit s1 "file_path=$T" "old_string=status: NEEDS_REVIEW
+stage: implement" "new_string=status: IN_PROGRESS")"
+expect_deny "a send-back that clears the stage is denied" "$out" "sets its stage"
+staged NEEDS_REVIEW implement
+out="$(run Edit s1 "file_path=$T" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
+expect_deny "a send-back at implement with ## Tests empty is denied" "$out" "Tests\` is empty"
+# code changed: a commit naming the task touches a code file -> the failure-branch table
+G="$TMP/gproj"; mkdir -p "$G/docs/tasks" "$G/src"; git -C "$G" init -q -b main .
+echo x > "$G/src/a.py"; git -C "$G" add -A; git -C "$G" commit -qm "fix(core): T-1 guard the header"
+cp "$T" "$G/docs/tasks/T-1.md"
+staged IN_PROGRESS implement tests; cp "$T" "$G/docs/tasks/T-1.md"
+out="$(CLAUDE_PROJECT_DIR="$G" run Edit s1 "file_path=$G/docs/tasks/T-1.md" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "the task changed code: NEEDS_REVIEW without a ### Failure branches table is denied" "$out" "Failure branches"
+staged IN_PROGRESS implement branches; cp "$T" "$G/docs/tasks/T-1.md"
+out="$(CLAUDE_PROJECT_DIR="$G" run Edit s1 "file_path=$G/docs/tasks/T-1.md" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "the task changed code and the failure-branch table is there: allowed" "$out"
+staged IN_PROGRESS implement tests; sedi 's/^type: bug$/type: chore/' "$T"
+awk '/^analysis:/{print "analysis: skipped:trivial"; skip=1; next} skip && /^  /{next} {skip=0; print}' "$T" > "$G/docs/tasks/T-1.md"
+out="$(CLAUDE_PROJECT_DIR="$G" run Edit s1 "file_path=$G/docs/tasks/T-1.md" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "analysis: skipped:trivial (a version bump touching code): no failure-branch table needed" "$out"
+sedi 's/^type: chore$/type: rca/' "$G/docs/tasks/T-1.md"
+out="$(CLAUDE_PROJECT_DIR="$G" run Edit s1 "file_path=$G/docs/tasks/T-1.md" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_deny "an rca task cannot skip the failure branches with skipped:trivial" "$out" "Failure branches"
+echo "docs" > "$G/docs/note.md"; git -C "$G" add -A; git -C "$G" commit -qm "docs: T-2 note"
+staged IN_PROGRESS implement tests; sedi 's/^id: T-1$/id: T-2/' "$T"; cp "$T" "$G/docs/tasks/T-2.md"
+out="$(CLAUDE_PROJECT_DIR="$G" run Edit s1 "file_path=$G/docs/tasks/T-2.md" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+expect_allow "a docs-only task (no code file in its commits) needs no failure-branch table" "$out"
+out="$(run Bash s1 "command=sed -i 's/stage: red-tests/stage: implement/' docs/tasks/T-1.md")"
+expect_deny "a shell rewrite of the stage is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=perl -pi -e 's/red-tests/implement/' docs/tasks/T-1.md")"
+expect_deny "a shell rewrite by the stage values alone is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=sed -i 's/ANALYSIS/IN_PROGRESS/' docs/tasks/T-1.md")"
+expect_deny "a shell rewrite by the status values alone is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=printf -- '---\\nid: T-8\\ntitle: x\\n---\\n' > docs/tasks/T-8.md")"
+expect_deny "creating a task record through the shell without a status is denied" "$out" "created"
+out="$(run Bash s1 "command=cp /tmp/draft.md docs/tasks/T-8.md")"
+expect_deny "copying a file onto a task record is denied" "$out" "Edit/Write"
+out="$(run Bash s1 "command=cp docs/tasks/T-1.md /tmp/backup.md")"
+expect_allow "copying a task record elsewhere passes" "$out"
+out="$(run Bash s1 "command=sed -i 's/typo/fixed/' docs/tasks/T-1.md")"
+expect_allow "an in-place fix that names no status or stage still passes" "$out"
+# N2: an old version, dd or a one-liner is a rewrite of the record too
+for c in "git checkout HEAD~1 -- docs/tasks/T-1.md" \
+         "git restore --source=HEAD~2 docs/tasks/T-1.md" \
+         "cd docs/tasks && git checkout HEAD~1 -- T-1.md" \
+         "dd if=/tmp/old.md of=docs/tasks/T-1.md" \
+         "python3 -c \"open('docs/tasks/T-1.md','w').write(open('/tmp/x').read())\"" \
+         "cd docs/tasks && node -e \"require('fs').writeFileSync('T-1.md', 'x')\""; do
+  out="$(run Bash s1 "command=$c")"
+  expect_deny "shell rewrite of a task record is denied: $c" "$out" "Edit/Write"
+done
+out="$(run Bash s1 "command=python3 -c \"print(open('docs/tasks/T-1.md').read())\"")"
+expect_allow "reading a task record in a one-liner passes" "$out"
+out="$(run Bash s1 "command=git log -p docs/tasks/T-1.md")"
+expect_allow "the history of a task record passes" "$out"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\n' > "$TMP/gf.yml"; mkdir -p "$P/.teamwright"; cp "$TMP/gf.yml" "$P/.teamwright/config.yml"
+staged IN_PROGRESS red-tests
+out="$(run Edit s1 "file_path=$T" "old_string=status: IN_PROGRESS" "new_string=status: NEEDS_REVIEW")"
+printf '%s' "$out" | grep -q "gate-first" && ok "gate-first: the stage gate warns" || bad "gate-first: the stage gate warns" "$out"
+staged ANALYSIS
+out="$(run Edit s1 "file_path=$T" "old_string=status: ANALYSIS" "new_string=status: IN_PROGRESS")"
+case "$out" in *'"deny"'*) bad "gate-first: entering IN_PROGRESS without a stage warns, does not block" "$out" ;;
+  *"sets its stage"*) ok "gate-first: entering IN_PROGRESS without a stage warns, does not block" ;;
+  *) bad "gate-first: entering IN_PROGRESS without a stage warns, does not block" "no warning: $out" ;; esac
+rm -f "$P/.teamwright/config.yml"
 
 # fail-open
 out="$(printf 'not json' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"

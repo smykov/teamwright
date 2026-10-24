@@ -52,9 +52,11 @@ validate() {
   content="$(printf -- '---\ntask: %s\nround: %s\nverdict: %s\ncommit: %s\nvalidator: %s\n%b---\n## Acceptance checked\n- every item against evidence\n' \
     "$id" "$n" "$v" "${VCOMMIT:-$(git -C "$P" rev-parse HEAD)}" "${VALIDATOR_FIELD:-task-validator}" "${VMETHOD:+method: $VMETHOD\n}")"
   out="$(run Write "$S" "file_path=$(xd "$id")/$n.md" "content=$content" "$@")"
-  if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; fi
+  if [ -z "$out" ]; then mkdir -p "$(xd "$id")"; printf '%s\n' "$content" > "$(xd "$id")/$n.md"; landed "$(xd "$id")/$n.md" "$@"; fi
   printf '%s' "$out"
 }
+# landed FILE WHO... : the Write ran - PostToolUse turns the gate's pending ledger line and stamp into evidence
+landed() { local f="$1"; shift; hook_json Write "$S" "file_path=$f" @hook_event_name=PostToolUse "$@" | bash "$GATE" >/dev/null; }
 # vtext ID N KIND RESULT COMMIT [VERIFIER] [TOOL] [EVIDENCE] [FAILURE-BRANCH-LINE]
 vtext() {
   printf -- '---\ntask: %s\nround: %s\nkind: %s\n%scommand: make e2e\nenvironment: staging\ncommit: %s\nresult: %s\nevidence: %s\nverifier: %s\n---\n## Scenarios checked\n- Happy path: valid header -> 200\n%s\n' \
@@ -70,7 +72,7 @@ wv() {
   local content out
   content="$(vtext "$id" "$n" "$kind" "$res" "$c" "$verifier" "$tool")"
   out="$(run Write "$S" "file_path=$(vd "$id")/$n.md" "content=$content" "$@")"
-  if [ -z "$out" ]; then mkdir -p "$(vd "$id")"; printf '%s\n' "$content" > "$(vd "$id")/$n.md"; fi
+  if [ -z "$out" ]; then mkdir -p "$(vd "$id")"; printf '%s\n' "$content" > "$(vd "$id")/$n.md"; landed "$(vd "$id")/$n.md" "$@"; fi
   printf '%s' "$out"
 }
 to() {  # to ID FROM TO
@@ -108,6 +110,13 @@ out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_s
 expect_deny "editing an existing round is denied" "$out" "append-only"
 out="$(run Write "$S" "file_path=$(vd T-2)/2.md" "content=$(vtext T-2 2 api PASS "$C2")" "${VAL[@]}")"
 expect_deny "overwriting an existing round is denied" "$out" "append-only"
+# gate-first too: an edited record keeps no stamp, nothing proves who wrote it (prove-it run 27)
+printf 'version: 1\nmode: gate-first\n' > "$P/.teamwright/config.yml"
+out="$(run Edit "$S" "file_path=$(vd T-2)/1.md" "old_string=result: FAIL" "new_string=result: PASS" "${VAL[@]}")"
+expect_deny "gate-first: editing an existing verify round is still denied" "$out" "append-only"
+out="$(run Write "$S" "file_path=$(xd T-1)/1.md" "content=x" "${VAL[@]}")"
+expect_deny "gate-first: rewriting an acceptance verdict is still denied" "$out" "append-only"
+rm -f "$P/.teamwright/config.yml"
 out="$(run Write "$S" "file_path=$(vd T-2)/5.md" "content=$(vtext T-2 5 api PASS "$C2")" "${VAL[@]}")"
 expect_deny "skipping rounds is denied" "$out" "next verify round"
 out="$(run Bash "$S" "command=printf 'result: PASS' > docs/tasks/T-2.verify/3.md")"
@@ -289,5 +298,73 @@ commit "docs: OQ-3 raised by T-24" docs/open-questions.md >/dev/null
 out="$(to T-24 CODE_COMPLETE DONE)"; expect_allow "a decision commit naming the task keeps the acceptance PASS fresh" "$out"
 commit "docs: T-24 user guide" docs/guide.md >/dev/null
 out="$(to T-24 CODE_COMPLETE DONE)"; expect_deny "other docs naming the task still count as a change" "$out" "stale"
+# ---- B2: committed stamps stand in for the ledgers on a fresh checkout ---------------
+C60="$(commit "fix(api): T-60 the stamp case" src/stamp.txt)"
+vtask T-60 DEPLOYED api
+wv T-60 1 api PASS "$C60" "" "${VAL[@]}" >/dev/null
+validate T-60 PASS "${VAL[@]}" >/dev/null
+[ -f "$(vd T-60)/1.gate.json" ] && [ -f "$(xd T-60)/1.gate.json" ] && ok "verify and validation records get a stamp" || bad "verify and validation records get a stamp"
+mv "$P/.teamwright" "$TMP/vg-state"
+out="$(to T-60 DEPLOYED DONE)"; expect_allow "fresh checkout: DONE is checked against the stamps" "$out"
+echo "edited" >> "$(xd T-60)/1.md"
+out="$(to T-60 DEPLOYED DONE)"; expect_deny "a validation record edited after its stamp does not count" "$out" "not written by task-validator"
+rm -f "$(xd T-60)/1.gate.json" "$(xd T-60)/1.md"; validate T-60 PASS "${VAL[@]}" >/dev/null
+echo "changed" >> "$(vd T-60)/1.md"
+out="$(to T-60 DEPLOYED DONE)"; expect_deny "a verify record edited after its stamp does not count" "$out" "not written through the gate"
+rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
+# N1: a verify / acceptance record copied from another task does not count there
+grep -q '"task": "T-60"' "$(xd T-60)/1.gate.json" && grep -q '"path": "docs/tasks/T-60.validation/1.md"' "$(xd T-60)/1.gate.json" \
+  && ok "validation stamps name their task and record" || bad "validation stamps name their task and record"
+vtask T-61 DEPLOYED none false
+mkdir -p "$(xd T-61)"; cp "$(xd T-60)/1.md" "$(xd T-60)/1.gate.json" "$(xd T-61)/"
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "with the ledger: T-60's acceptance copied to T-61 does not count" "$out" "copied from another task"
+mv "$P/.teamwright" "$TMP/vg-state"
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "fresh checkout: T-60's acceptance copied to T-61 does not count" "$out" "copied from another task"
+sed 's/^task: T-60$/task: T-61/' "$(xd T-60)/1.md" > "$(xd T-61)/1.md"
+python3 - "$(xd T-61)/1.gate.json" "$(xd T-61)/1.md" <<'PY'
+import hashlib, json, sys
+st = json.load(open(sys.argv[1])); text = open(sys.argv[2]).read()
+st["sha256"] = hashlib.sha256((text.rstrip("\n") + "\n").encode()).hexdigest()
+json.dump(st, open(sys.argv[1], "w"))
+PY
+out="$(to T-61 DEPLOYED DONE)"; expect_deny "fresh checkout: a re-hashed copy still names T-60's record" "$out" "not written by task-validator"
+rm -rf "$P/.teamwright"; mv "$TMP/vg-state" "$P/.teamwright"
+# N2: where the task's ledger exists it alone decides - a scripted stamp does not count
+vtask T-62 DEPLOYED none false
+validate T-62 FAIL "${VAL[@]}" >/dev/null
+printf -- '---\ntask: T-62\nround: 2\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\nok\n' "$(git -C "$P" rev-parse HEAD)" > "$(xd T-62)/2.md"
+python3 - "$HOOKS" "$P" "$(git -C "$P" rev-parse HEAD)" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1]); import _hookio as io
+rel = "docs/tasks/T-62.validation/2.md"; text = open(sys.argv[2] + "/" + rel).read()
+io.write_stamp(sys.argv[2], rel, dict(session_id="sess-1", agent_id="a-val", agent_type="task-validator",
+                                      gate="validation", verdict="PASS", commit=sys.argv[3]), text)
+PY
+out="$(to T-62 DEPLOYED DONE)"; expect_deny "a scripted stamp does not count where the validation ledger exists" "$out" "not written by task-validator"
+# minor: a record write the gate allowed but that never landed leaves no evidence behind
+vtask T-63 DEPLOYED none false
+validate T-63 PASS "${VAL[@]}" >/dev/null
+c63="$(printf -- '---\ntask: T-63\nround: 2\nverdict: FAIL\ncommit: %s\nvalidator: task-validator\n---\nx\n' "$(git -C "$P" rev-parse HEAD)")"
+out="$(run Write "$S" "file_path=$(xd T-63)/2.md" "content=$c63" "${VAL[@]}")"
+expect_allow "the gate lets round 2 through (then the write is cancelled)" "$out"
+[ ! -f "$(xd T-63)/2.gate.json" ] && ok "no stamp before the write lands" || bad "no stamp before the write lands"
+out="$(to T-63 DEPLOYED DONE)"; expect_allow "a cancelled write neither blocks DONE nor leaves a ledger line" "$out"
+cp "$(xd T-63)/1.gate.json" "$(xd T-63)/3.gate.json"
+out="$(to T-63 DEPLOYED DONE)"; expect_allow "an orphan stamp (no record) is ignored" "$out"
+[ ! -f "$(xd T-63)/3.gate.json" ] && ok "and removed by the gate" || bad "and removed by the gate"
+# minor: an acceptance verdict written before 0.12 (no stamp) counts on a fresh checkout
+V="$TMP/vlegacy"; mkdir -p "$V/docs/tasks/T-1.validation" "$V/.teamwright" "$V/src"; git -C "$V" init -q -b main .
+vkit() { printf '{"@kit": {"plugin": "teamwright@teamwright", "version": "%s"}}\n' "$1" > "$V/.teamwright/installed.json"; git -C "$V" add -A; git -C "$V" commit -qm "chore: kit $1"; }
+vkit 0.11.0
+echo x > "$V/src/a.txt"; git -C "$V" add -A; git -C "$V" commit -qm "feat(core): T-1 the change"
+VC="$(git -C "$V" rev-parse HEAD)"
+P_SAVE="$P"; P="$V"; vtask T-1 DEPLOYED none false; P="$P_SAVE"
+printf -- '---\ntask: T-1\nround: 1\nverdict: PASS\ncommit: %s\nvalidator: task-validator\n---\nok\n' "$VC" > "$V/docs/tasks/T-1.validation/1.md"
+git -C "$V" add -A; git -C "$V" commit -qm "docs(task): T-1 acceptance PASS"
+vkit 0.12.0
+out="$(CLAUDE_PROJECT_DIR="$V" run Edit "$S" "file_path=$V/docs/tasks/T-1.md" "old_string=status: DEPLOYED" "new_string=status: DONE")"
+expect_allow "an acceptance PASS committed before the upgrade to 0.12, no stamp: recognised" "$out"
+echo "later" >> "$V/docs/tasks/T-1.validation/1.md"
+out="$(CLAUDE_PROJECT_DIR="$V" run Edit "$S" "file_path=$V/docs/tasks/T-1.md" "old_string=status: DEPLOYED" "new_string=status: DONE")"
+expect_deny "the legacy verdict edited in the tree: not recognised" "$out" "not written by task-validator"
 out="$(printf '{bad' | bash "$GATE")"; expect_allow "garbage input fails open" "$out"
 finish

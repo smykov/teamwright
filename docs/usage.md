@@ -52,7 +52,7 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 
 `/teamwright:flow` is how work starts and resumes. A deterministic router (`scripts/tw-next.py`) picks the next action, in this order:
 
-1. Finish an interrupted task.
+1. Finish unfinished work in the tree (uncommitted changes, or a session that ended `interrupted`).
 2. Continue a task in `ANALYSIS` or `IN_PROGRESS`.
 3. Review a task in `NEEDS_REVIEW`.
 4. Verify a task in `CODE_COMPLETE` or `DEPLOYED`; re-analyse after a failed verification.
@@ -60,6 +60,81 @@ Lowering the mode back to gate-first is yours alone, outside Claude Code: the in
 6. Start the next ready task by priority and dependencies. A prerequisite inherits the priority of the task waiting on it; a task with `blocked_on: OQ-NN` waits for that open question.
 
 The skill then drives the lifecycle with fresh role agents run in the foreground, commits each role's result before the next step, and asks only at decision points: escalation, architecture review, push. It stops on a `TEAMWRIGHT_PAUSE` file or its budget, and always ends with a summary whose `Outcome:` line routes the next session. Router rules in full: [plugin.md](process/plugin.md#tw-nextpy-the-flow-router).
+
+## One stage per session: `/teamwright:router` and the stage commands
+
+Every decision of the router names a **stage** — analyze, red-tests, implement, review, verify. `/teamwright:router` asks the router and runs exactly that one stage on the batch it allows, then stops with `Stage:`, `Batch:` and `Outcome:` lines; the next stage is a new session with a fresh context. `/teamwright:analyze`, `/teamwright:red-tests`, `/teamwright:implement`, `/teamwright:review` and `/teamwright:verify` run a stage you name, and refuse, naming the right command, when the router says the task is elsewhere (`/teamwright:implement T-12` on a task without red tests → `/teamwright:red-tests T-12`). The script selects and counts; the session picks the batch from the candidates it lists. Per-stage batches, thresholds and models are settings (`/teamwright:settings`): for example `stages.review: {batch: 3, min: 2, max_wait_hours: 4}` and `models.red-tests: sonnet`. Details: [sessions.md §8](process/sessions.md#8-stages-one-stage-per-session).
+
+### Autonomous runs: one stage per job
+
+A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs under `headless`: `run`, `prompt` (`/teamwright:<stage>`, no ids — the stage session picks its batch from the router's candidates), `model`, and `decisions`. An owner decision on one task (an escalation, a blocked question) does not stop the chain while other work is available; it is listed in `decisions` for a person. Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — when nothing else is left, `run` is false and the chain stops. On the `wip/` branch the router counts unpushed commits against the delivery branch (`<remote>/HEAD`, `/main` or `/master` of the remote the branch is pushed to — the only remote, else `origin`), so the push decision comes up, and a task that deploys is verified only after that push. A merge, a rebase, a cherry-pick or a squash merge of the `wip/` branch all count as delivered: a commit whose changes are on the delivery branch (same patch, or every file it touches has there its content in the commit or at `HEAD`) is not unpushed. After a delivery, merge the delivery branch back into `wip/teamwright` or reset `wip/teamwright` to it (`git checkout -B wip/teamwright origin/main && git push --force-with-lease origin wip/teamwright`, by a person): a squashed `wip/` keeps its old commits, and the next squash would show them again in the pull request. Starting a new task needs `process.autonomy.start: auto`: with `ask` nobody answers the start question, and no job runs for it. No job runs on an install older than the kit either (`install drift`: hooks without the plugin's helpers, or an older `@kit` in `installed.json`): a person runs `tw-install.py apply` and commits the result first. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project and its path in `TEAMWRIGHT_KIT`, saved as `.github/workflows/teamwright-stage.yml` (adapt the names; the real workflow lives in your repository; `tests/test-usage-example.sh` checks that it parses and that the router fields and step outputs it reads exist):
+
+```yaml
+name: teamwright stage
+on:
+  workflow_dispatch:
+concurrency: teamwright          # one stage at a time per repository
+permissions: { contents: write, actions: write }   # push to wip/, dispatch the next stage
+jobs:
+  stage:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, clean: false }
+      - name: Work branch
+        run: |
+          if git fetch -q origin wip/teamwright; then git checkout -B wip/teamwright FETCH_HEAD
+          else git checkout -B wip/teamwright; git push -q origin HEAD:refs/heads/wip/teamwright; fi
+      - name: Journal from the previous job
+        uses: actions/cache@v4
+        with:
+          path: .teamwright/logs
+          key: teamwright-state-${{ github.run_id }}
+          restore-keys: teamwright-state-
+      - name: Ask the router
+        id: route
+        run: |
+          python3 "$TEAMWRIGHT_KIT/scripts/tw-next.py" --json > route.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, subprocess; r = json.load(open("route.json")); h = r["headless"]
+          print("run=%s" % ("true" if h["run"] else "false"))
+          print("prompt=%s" % (h["prompt"] or ""))
+          print("model=%s" % (h["model"] or "opus"))
+          print("reason=%s" % (h.get("reason") or r["reason"]).replace("\n", " "))
+          print("head=%s" % subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip())
+          PY
+      - name: One stage
+        if: steps.route.outputs.run == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ steps.route.outputs.prompt }}
+          claude_args: --model ${{ steps.route.outputs.model }}
+      - name: Keep the work, start the next stage
+        if: steps.route.outputs.run == 'true'
+        env: { GH_TOKEN: "${{ github.token }}", BEFORE: "${{ steps.route.outputs.head }}" }
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$BEFORE" ]; then
+            echo "the stage made no commit: stopping the chain - a person looks at the run"; exit 1
+          fi
+          git push origin HEAD:wip/teamwright
+          gh workflow run teamwright-stage.yml
+      - name: Nothing to run
+        if: steps.route.outputs.run != 'true'
+        env: { REASON: "${{ steps.route.outputs.reason }}" }
+        run: |
+          echo "router: $REASON"
+```
+
+`concurrency` keeps one stage running per repository (reviewers one at a time); when only owner decisions are left (push, an escalation, `NEEDS_OWNER`), `run` is false and the chain stops until a person acts.
+
+What survives between jobs, and why:
+
+- **The gates' evidence is committed.** When the review gate lets a review record through, and the verify gate a verify or acceptance record, each writes a stamp next to it (`docs/tasks/<ID>.reviews/<n>.gate.json`, `.verify/<n>.gate.json`, `.validation/<n>.gate.json`: who wrote it, the verdict, the record's hash). The stage commits it with the record, so a job cut after the reviewer's APPROVE was committed but before the status move does not loop: the next job's gate checks the stamp instead of the local ledger it does not have (`docs/process/gates.md`, *Gate stamps*).
+- **The journal is not.** `.teamwright/logs` (tool calls, outcomes, tokens per stage) is local and gitignored; `actions/checkout` cleans it. The cache step carries it from job to job (`clean: false` alone is enough on a self-hosted runner that keeps its workspace); without it the per-stage metrics of CI runs are lost and an `interrupted` outcome is not seen by the next job.
+- **The ledgers are not cached.** Where a task's ledger (`.teamwright/sessions/<ID>.reviews.jsonl`, `.verify.jsonl`, `.validation.jsonl`) exists, it alone decides and the stamps are not consulted — a stamp is never a way around a local ledger. A cache restored from an older job (the job that wrote the round was cut before its cache was saved) would hold the task's ledger without that round and refuse it; without the cache every job is a fresh checkout and the stamps decide. On a machine where a round was written elsewhere (a review in CI, the status move on your laptop with an older ledger for that task), move the status where the round was written, or remove that task's ledger file yourself.
+- **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
 
 ## `/teamwright:blockers`
 
@@ -155,7 +230,7 @@ python3 <kit>/scripts/tw-install.py apply --config .teamwright/config.next.yml  
 /plugin update teamwright@teamwright
 ```
 
-It compares the `version` in `.claude-plugin/plugin.json` with the installed one: from a git marketplace you get a change only when the version was bumped (see [CHANGELOG.md](../CHANGELOG.md)). A local marketplace (`/plugin marketplace add ./path/to/teamwright`) reads files directly from that checkout, so it may report "already at latest version" and still load the new skills after a reload. Run `/plugin` commands in a terminal session: they are not available over Remote Control.
+It compares the `version` in `.claude-plugin/plugin.json` with the installed one: from a git marketplace you get a change only when the version was bumped (see [CHANGELOG.md](../CHANGELOG.md)). The experimental channel (`teamwright@teamwright-next`, branch `next`) has no version: each commit is one, after `/plugin marketplace update teamwright-next` ([README, Channels](../README.md#channels)). A local marketplace (`/plugin marketplace add ./path/to/teamwright`) reads files directly from that checkout, so it may report "already at latest version" and still load the new skills after a reload. Run `/plugin` commands in a terminal session: they are not available over Remote Control.
 
 The plugin update does not touch your project. `/teamwright:status` reports kit updates for the installed files; `tw-install.py apply` (or `/teamwright:adopt` again) updates the files the installer wrote and you did not edit, and keeps and reports the ones you changed. Project documents (`docs/requirements.md`, `plan.md`, `architecture.md`, `decisions.md`, `open-questions.md`) are never replaced.
 
@@ -168,7 +243,7 @@ The process lives in two places. The repository carries the gates, roles, docume
 3. **The toolchain** the areas run on: the same host tools, or Docker for `runner: docker`. MCP servers from `.mcp.json` are approved once per machine.
 4. `/teamwright:status`, then `/teamwright:flow`.
 
-You do not have to remember this: a `SessionStart` hook (`scripts/hooks/session-check.sh`) compares the machine with the project and tells you what is missing — the plugin, a plugin older than the version recorded in `.teamwright/installed.json` (`@kit`), or git hooks that are off — with the commands to fix it. It never blocks; `TEAMWRIGHT_SESSION_CHECK=0` turns it off.
+You do not have to remember this: a `SessionStart` hook (`scripts/hooks/session-check.sh`) compares the machine with the project and tells you what is missing — the plugin, a plugin older than the version recorded in `.teamwright/installed.json` (`@kit`), or git hooks that are off — with the commands to fix it. It never blocks; `TEAMWRIGHT_SESSION_CHECK=0` turns it off. A plugin loaded from a directory instead of the registry (`claude --plugin-dir`, the Agent SDK in an autonomous run) is not in the registry: set `TEAMWRIGHT_PLUGIN_DIR` to that directory; its version (`plugin.json`, else the directory's git commit) is still compared with the one the project was set up with.
 
 Local state does not travel: journals and session ledgers (`.teamwright/logs/`, `.teamwright/sessions/`) belong to the machine. Finish a task through review on the machine where it was started — the review and verify ledgers that the gates check are there.
 

@@ -99,7 +99,8 @@ def records(project, task, only=None):
     if not os.path.isdir(d):
         return out
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
+        if not re.fullmatch(r"(?:%s)\.md" % getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"), f) \
+                or (only and f[:-3] != only):  # <ID>.md only: not T-089.history.md
             continue
         text = _read(os.path.join(d, f))
         rec = task.parse(text)
@@ -322,6 +323,8 @@ def report(project):
         extra_out, extra_error = run_extra(project, str(adapt["extra_command"]))
 
     oqs = tw.open_questions(project)
+    if hasattr(tw, "mark_delivered"):
+        tw.mark_delivered(project, base, st)  # the router's rule: deploying tasks wait for DRAIN
     cands = tw.candidates(base, st, oqs)
     nxt = cands[0] if cands else tw._d("idle", None, "nothing actionable - plan the next sprint")
     owner = [{"action": c["action"], "task": c["task"], "reason": c["reason"]}

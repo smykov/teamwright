@@ -206,7 +206,7 @@ def report(project, since=None, split=None):
     names = sorted(os.listdir(tdir)) if os.path.isdir(tdir) else []
     for f in names:
         p = os.path.join(tdir, f)
-        if f.endswith(".md") and not f.startswith("_") and os.path.isfile(p):
+        if re.fullmatch(r"(?:%s)\.md" % getattr(_task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"), f) and os.path.isfile(p):
             text = _read(p)
             rec = _task.parse(text)
             tid = rec.get("id") if isinstance(rec.get("id"), str) and rec.get("id") else f[:-3]

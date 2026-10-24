@@ -356,4 +356,46 @@ python3 "$M" --transition-regex '(?P<to>\w+)' >/dev/null 2>&1; rc=$?
 expect_rc "transition regex without an id group is rejected" 2 "$rc"
 python3 "$M" --split-date 2026/03/01 >/dev/null 2>&1; rc=$?
 expect_rc "bad date is rejected" 2 "$rc"
+
+# --- per stage (0.12): sessions, duration, tool calls, outcomes, tasks, tokens, cost
+R5="$TMP/stages"; mkdir -p "$R5/.teamwright/logs" && cd "$R5" || exit 1
+git init -q -b main . && git commit -q --allow-empty -m init
+L5="$R5/.teamwright/logs"
+cat > "$L5/tools.jsonl" <<'EOF'
+{"ts":"2026-04-01T10:00:00Z","event":"pre","session_id":"r1","agent_id":"","tool":"Agent","subagent_type":"code-reviewer","task_ids":["T-1"]}
+{"ts":"2026-04-01T10:01:00Z","event":"pre","session_id":"r1","agent_id":"a1","agent_type":"code-reviewer","tool":"Read","detail":"x"}
+{"ts":"2026-04-01T10:02:00Z","event":"pre","session_id":"r1","agent_id":"a1","agent_type":"code-reviewer","tool":"Read","detail":"y"}
+{"ts":"2026-04-02T10:00:00Z","event":"pre","session_id":"r2","agent_id":"","tool":"Agent","subagent_type":"code-reviewer","task_ids":["T-2"]}
+{"ts":"2026-04-03T09:00:00Z","event":"pre","session_id":"i1","agent_id":"","tool":"Edit","detail":"src/a.py"}
+{"ts":"2026-04-04T09:00:00Z","event":"pre","session_id":"old","agent_id":"","tool":"Edit","detail":"src/a.py"}
+EOF
+cat > "$L5/outcomes.jsonl" <<'EOF'
+{"ts":"2026-04-01T10:20:00Z","event":"SubagentStop","session_id":"r1","agent_id":"a1","agent_type":"code-reviewer","outcome":"none","tokens":{"claude-opus-x":{"input":100,"output":50,"cache_read":1000,"cache_write":0}}}
+{"ts":"2026-04-01T10:30:00Z","event":"Stop","session_id":"r1","agent_id":"","outcome":"barrier","stage":"review","batch":["T-1","T-3"],"tokens":{"claude-opus-x":{"input":10,"output":5,"cache_read":100,"cache_write":0}}}
+{"ts":"2026-04-02T10:10:00Z","event":"Stop","session_id":"r2","agent_id":"","outcome":"barrier","stage":"review","batch":["T-2"],"tokens":{}}
+{"ts":"2026-04-03T09:30:00Z","event":"Stop","session_id":"i1","agent_id":"","outcome":"idle","stage":"","batch":[],"tokens":{"claude-sonnet-x":{"input":1,"output":1,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-04-03T10:00:00Z","event":"Stop","session_id":"i1","agent_id":"","outcome":"barrier","stage":"implement","batch":["T-4"],"tokens":{"claude-sonnet-x":{"input":4,"output":2,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-04-04T09:10:00Z","event":"Stop","session_id":"old","agent_id":"","outcome":"none"}
+EOF
+printf '{"opus": {"input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75}}\n' > "$TMP/prices.json"
+J="$TMP/stages.json"
+python3 "$M" --json --prices "$TMP/prices.json" > "$J"; expect_rc "per stage: runs with --prices" 0 $?
+ST='r["journal"]["stages"]["rows"]'
+expect_rc "per stage: sessions by the last Stop's stage" '{"-": 1, "implement": 1, "review": 2}' "$(q "dict((k, v['sessions']) for k, v in ${ST}.items())")"
+expect_rc "per stage: duration from the first record to the last Stop (30 and 10 min)" "[20.0, 40.0]" "$(q "[${ST}['review']['duration_min_median'], ${ST}['review']['duration_min_total']]")"
+expect_rc "per stage: tool calls of every agent in the session" 4 "$(q "${ST}['review']['tool_calls']")"
+expect_rc "per stage: tasks from the batch" 3 "$(q "${ST}['review']['tasks']")"
+expect_rc "per stage: tokens = the session's last Stop + each subagent's last SubagentStop" \
+  '{"input": 110, "output": 55, "cache_read": 1100, "cache_write": 0}' "$(q "${ST}['review']['tokens']")"
+expect_rc "per stage: tokens counted in 1 of 2 sessions (the other sent none)" 1 "$(q "${ST}['review']['sessions_with_tokens']")"
+expect_rc "per stage: the stage of the session's last Stop that names one" '{"input": 4, "output": 2, "cache_read": 0, "cache_write": 0}' "$(q "${ST}['implement']['tokens']")"
+expect_rc "per stage: cost from --prices (opus priced, sonnet not)" "[0.01, null]" "$(q "[${ST}['review']['cost_usd'], ${ST}['implement']['cost_usd']]")"
+expect_rc "per stage: unpriced models named" true "$(q "'claude-sonnet-x' in r['journal']['stages']['cost']")"
+expect_rc "per stage: a session without tokens is no data, not 0" null "$(q "${ST}['-']['tokens_total']")"
+md="$(python3 "$M")"
+if printf '%s' "$md" | grep -q "### Per stage" && printf '%s' "$md" | grep -q "| review | 2 |"; then
+  ok "per stage: markdown table"; else bad "per stage: markdown table"; fi
+J="$TMP/stages2.json"; python3 "$M" --json > "$J"
+expect_rc "per stage: without --prices the cost is no data" true "$(q "r['journal']['stages']['cost'].startswith('no data') and ${ST}['review']['cost_usd'] is None")"
+
 finish

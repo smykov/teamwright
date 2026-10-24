@@ -10,6 +10,8 @@
 #    when present; otherwise a built-in regex fallback over ADDED lines.
 #
 # 3. CLAUDE.md size budget (P-014): warning only, see claude-md-budget.sh.
+# 4. Gate stamps (docs/tasks/<ID>.<kind>/<n>.gate.json): where the task's local ledger
+#    exists, a staged new or changed stamp must match one of its lines.
 #
 #    Fallback findings are classified: `secret-like` (high) blocks; `test-fixture`
 #    (test paths), `docs-example` (Markdown, docs/, examples/) and `config-placeholder`
@@ -171,6 +173,56 @@ elif command -v python3 >/dev/null 2>&1; then
   git diff --cached --unified=0 --no-color --no-ext-diff --diff-filter=ACMR | scan_diff || fail=1
 else
   echo "pre-commit: warning - neither gitleaks nor python3 found; secret scan skipped." >&2
+fi
+
+# ---- 4. gate stamps match this machine's ledger -------------------------------
+# A stamp (docs/tasks/<ID>.<kind>/<n>.gate.json) is written by the review / verify gate
+# next to the record it let through, together with a line in the local ledger. Where this
+# checkout has the task's ledger, a staged new or changed stamp must match one of its lines
+# (same round, writer, verdict): a stamp without one was not written by the gate here.
+# Without the ledger (a fresh clone) there is nothing to compare; the gates check the stamp.
+if command -v python3 >/dev/null 2>&1; then
+  IFS= read -r -d '' _tw_stamps <<'PY' || true
+import json, os, re, subprocess, sys
+rx = re.compile(r"^docs/tasks/([^/]+)\.(reviews|verify|validation)/(\d+)\.gate\.json$")
+LEDGER = {"reviews": "reviews", "verify": "verify", "validation": "validation"}
+KEYS = {"reviews": ("verdict",), "verify": ("kind", "result", "commit"), "validation": ("verdict", "commit")}
+names = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=AM"],
+                       capture_output=True, text=True).stdout.splitlines()
+bad = []
+for f in names:
+    m = rx.match(f)
+    if not m:
+        continue
+    tid, kind, n = m.group(1), m.group(2), int(m.group(3))
+    led = os.path.join(".teamwright", "sessions", "%s.%s.jsonl" % (tid, LEDGER[kind]))
+    if not os.path.exists(led):
+        continue
+    try:
+        st = json.loads(subprocess.run(["git", "show", ":" + f], capture_output=True, text=True).stdout)
+    except ValueError:
+        bad.append(f); continue
+    ok = False
+    for line in open(led, encoding="utf-8", errors="replace"):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("round") == n and all(e.get(k, "") == st.get(k, "") for k in
+                                       ("session_id", "agent_id", "agent_type") + KEYS[kind]):
+            ok = True
+    if not ok:
+        bad.append(f)
+for f in bad:
+    print("pre-commit: REFUSED - %s has no matching line in this checkout's ledger "
+          "(.teamwright/sessions/): it was not written by the gate here." % f, file=sys.stderr)
+if bad:
+    print("  Gate stamps are written only by the review / verify gate when it lets the record "
+          "through. Unstage it (git restore --staged <file>) and write the record again "
+          "through the gate.", file=sys.stderr)
+    sys.exit(1)
+PY
+  python3 -c "$_tw_stamps" || fail=1
 fi
 
 # ---- 3. CLAUDE.md budget (warning, never blocks) ----------------------------

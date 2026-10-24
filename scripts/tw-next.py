@@ -6,7 +6,14 @@ the journal (.teamwright/logs/outcomes.jsonl), the gate mode, TEAMWRIGHT_PAUSE a
 state, and prints the next action. The skill talks to the owner; this script only
 decides, so the same project state always gives the same answer.
 
-  python3 tw-next.py [--project PATH] [--json] [--pass T-1,T-2]
+  python3 tw-next.py [--project PATH] [--json [--brief]] [--pass T-1,T-2] [--stage STAGE [--task IDS]]
+
+--brief (implies --json) prints what a stage session needs and nothing else: `request`
+first, the action, stage, batch, model, command, candidates (at most max(8, 2 x the batch
+cap), compact, overlaps among the shown ones; `candidates_total` says how many wait; printed
+once, under `request`, when the request is for the router's stage), per-stage counts, task
+counts by status, decisions, warnings, headless, alternatives, settings, a compact state. The full JSON has `request` first too, and
+never lists closed tasks (DONE, DEFERRED) in `tasks` - `counts` counts every status.
 
 --pass names the tasks this flow run (a pass) has already taken. The router then applies
 `process.batch` from .teamwright/config.yml: when the pass is at its cap, `start` becomes
@@ -15,12 +22,19 @@ need no owner answer.
 
 Decision order (first match wins):
   0. paused      TEAMWRIGHT_PAUSE exists: the team is stopped, report only
-  1. resume      dirty tree or an interrupted session -> the task it belongs to
-                 (decide when a dirty tree belongs to no task)
-  2. continue    ANALYSIS / IN_PROGRESS task
+  1. resume      tracked changes in the tree, or the last session ended `interrupted` ->
+                 the task it belongs to (the current task, else the single active one;
+                 decide when a dirty tree belongs to no task). A current task on a clean
+                 tree is not a resume: its stage is recorded and committed.
+  2. continue    ANALYSIS / IN_PROGRESS task (role by stage: problem-investigator,
+                 test-writer for red-tests, developer for implement)
   3. review      NEEDS_REVIEW -> spawn the reviewer (APPROVE recorded -> continue to
                  CODE_COMPLETE; ESCALATE -> decide; REJECT_RECURRENCE -> continue: defer)
-  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record; then the
+  4. verify      CODE_COMPLETE / DEPLOYED without a PASS verify record (a task that deploys:
+                 only once its code is on the delivery branch - <remote>/HEAD, /main or /master,
+                 the remote of the branch's upstream (else the only remote, else origin) - merged,
+                 rebased, cherry-picked or squashed, i.e. after DRAIN; before that the push
+                 decision names it); then the
                  acceptance verdict in ## Validation (PASS -> continue: close; FAIL ->
                  continue: back to IN_PROGRESS; NEEDS_OWNER -> decide; none -> verify:
                  task-validator). deploys: false + surface none needs no verify record,
@@ -34,9 +48,12 @@ Decision order (first match wins):
                  docs/open-questions.md. Order: effective priority (a task inherits
                  the highest priority of the open tasks that depend on it, directly or
                  not), then the number of open tasks it unblocks, then id.
-  7. decide      unpushed commits (push is the owner's call), else idle
+  7. decide      unpushed commits - not on the delivery branch: against its upstream on that
+                 branch, against the delivery branch on any other (a wip/ or task branch; a
+                 commit whose changes are there - squash, rebase, cherry-pick - is not counted) -
+                 push is the owner's call; else idle
      stop        (with --pass) the pass took as many tasks as process.batch allows
-  Parallel work: a task on a worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
+  Parallel work: a task on a linked worktree whose branch names it - `tw/<ID>` (tw-parallel.py)
   or `task/<ID>`, any suffix after the id allowed; $TEAMWRIGHT_TASK_BRANCH_RE overrides
   the pattern, group 1 = the id - is worked in that worktree's session. Its state comes
   from the worktree's copy of the record (status, analysis, review and verify rounds),
@@ -44,10 +61,37 @@ Decision order (first match wins):
   CODE_COMPLETE or later. A session on such a branch sees only its own task and never
   pushes: delivery happens from the main tree after the merge.
 
+Stages. Every task-bound decision carries the stage that does it: analyze (TODO ->
+ANALYSIS -> IN_PROGRESS, VERIFY_FAIL re-analysis), red-tests and implement (inside
+IN_PROGRESS: the task's `stage:` field, checked against the evidence - `## Tests` filled
+means the red tests are written; the field wins when it is behind the evidence (red-tests
+with tests filled: a send-back to the tests), the evidence when the field is ahead of it
+(implement without tests), with a warning; a task without the field is routed by the
+evidence), review (NEEDS_REVIEW), verify (CODE_COMPLETE
+and later). `process.stages.<stage>` holds a stage back while other work exists: it runs
+when `min` tasks wait, a P0/P1 task waits, the oldest waiting task is older than
+`max_wait_hours`, or nothing else is to do (`work_available` is the one predicate for both
+"what runs" and "nothing to do"). `batch` = the tasks one stage session takes, in router
+order. `process.models.<stage>` is reported as `model`.
+
+`process.router.select: agent` leaves `candidates` and `batch` empty (also in `request`, unless
+--task names the tasks) and `command` without ids: the session reads the task records itself.
+
+--stage STAGE [--task IDS] answers a stage command (/teamwright:<stage>): `request` says
+whether the stage may run now (ok), on which tasks (batch), and if not, which command to run
+instead (hint). An explicit stage ignores `min`.
+
 JSON: {"action", "task", "reason", "role", "ask_owner", "alternatives": [...],
        "state": {...}, "tasks": [...], "warnings": [...]}; action is one of resume | continue | review |
 verify | reanalyze | decide | start | stop | merge | idle | paused, task is an id or null;
-"settings" carries the effective process settings and "budget" the pass budget.
+"settings" carries the effective process settings, "recommended" the values adopt, init,
+status and settings offer (_config.PROCESS_RECOMMENDED), and "budget" the pass budget;
+"stage", "batch", "model", "command", "work_available", "stages" (per stage: waiting
+tasks, due, why, settings) and "headless" (prompt and model for one stage per job) describe
+the stage to run. "decisions" lists every owner decision. "headless" is the autonomous answer:
+the first piece of work in router order (past owner decisions, skipping a start that asks the
+owner), a prompt without ids, and run=false only when no such work is left or a pause, a
+dirty tree of no task or a used pass stops everything.
 """
 import argparse
 import json
@@ -55,6 +99,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 sys.dont_write_bytecode = True
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +113,13 @@ PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 OQ_RE = re.compile(r"\bOQ-\d+\b")
 OQ_RESOLVED = ("answered", "closed", "resolved", "dropped", "done")
 OWNER_RE = re.compile(r"(?i)\b(owner|decision|decide|approv\w*|question|OQ-\d+|choose|confirm)\b")
+STAGES = ("analyze", "red-tests", "implement", "review", "verify")
+TASK_STAGES = ("red-tests", "implement")
+# Actions that are work a session can do (a stage, a merge); decide/stop/idle/paused are not.
+WORK = ("resume", "continue", "review", "verify", "reanalyze", "start", "merge")
+STAGE_ROLE = {"analyze": "problem-investigator", "red-tests": "test-writer", "implement": "developer",
+              "review": "code-reviewer", "verify": "task-validator"}
+URGENT = 1  # effective priority rank at or above which a waiting task runs its stage now (P0, P1)
 
 
 def kit_config():
@@ -93,7 +145,13 @@ def task_worktrees(project, task):
     rx = branch_re(task)
     _, cur = git(project, "rev-parse", "--abbrev-ref", "HEAD")
     m = rx.match(cur.strip())
-    own = m.group(1) if m else None
+    # Only a linked worktree is a per-task tree. The main checkout on a task branch (an
+    # autonomous run's `task/T-051-run18`) is the whole project: it verifies and reviews
+    # any task, and a branch name alone must not shrink it to one task.
+    _, gd = git(project, "rev-parse", "--absolute-git-dir")
+    _, cd = git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    linked = bool(gd.strip()) and os.path.realpath(gd.strip()) != os.path.realpath(cd.strip() or gd.strip())
+    own = m.group(1) if m and linked else None
     _, top = git(project, "rev-parse", "--show-toplevel")
     here = os.path.realpath(top.strip() or project)
     rc, out = git(project, "worktree", "list", "--porcelain")
@@ -134,15 +192,100 @@ def budget_of(proc, tasks, taken, candidate=None):
     return {"taken": len(taken), "limit": cap, "left": max(cap - len(taken), 0)}
 
 
+HELPER_DRIFT = []   # names the project's installed _task.py lacks (filled by _load_helpers)
+
+
 def _load_helpers(project):
-    for d in (os.path.join(project, "scripts", "hooks"),
-              os.path.join(KIT, "template", "scripts", "hooks")):
-        if os.path.isfile(os.path.join(d, "_task.py")) and os.path.isfile(os.path.join(d, "_config.py")):
-            sys.path.insert(0, d)
-            break
+    """The project's installed _task / _config (the gates run the same code), with every
+    helper the project's copy lacks taken from the kit's: a plugin updated without
+    `tw-install.py apply` must not route on missing helpers (an old _task.py without
+    tests_written / task_stage sent every IN_PROGRESS task to red-tests, silently).
+    HELPER_DRIFT names what was filled in; the router reports it as a warning."""
+    import importlib.util
+    import types
+    kit_dir = os.path.join(KIT, "template", "scripts", "hooks")
+    proj_dir = os.path.join(project, "scripts", "hooks")
+    d = proj_dir if all(os.path.isfile(os.path.join(proj_dir, f)) for f in ("_task.py", "_config.py")) \
+        else kit_dir
+    sys.path.insert(0, d)
     import _task
     import _config
+    del HELPER_DRIFT[:]
+    if os.path.realpath(os.path.dirname(os.path.abspath(_task.__file__))) != os.path.realpath(kit_dir):
+        try:
+            spec = importlib.util.spec_from_file_location("tw_kit_task", os.path.join(kit_dir, "_task.py"))
+            kt = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(kt)
+        except Exception:  # an unreadable kit copy only loses the fallback
+            kt = None
+        for name in sorted(vars(kt)) if kt else []:
+            v = getattr(kt, name)
+            if name.startswith("_") or isinstance(v, types.ModuleType) or hasattr(_task, name):
+                continue
+            setattr(_task, name, v)
+            HELPER_DRIFT.append(name)
     return _task, _config
+
+
+def _public_names(path):
+    """Top-level functions and constants of a Python file, read without importing it."""
+    import ast
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out = set()
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.ClassDef)):
+            out.add(n.name)
+        elif isinstance(n, ast.Assign):
+            out.update(t.id for t in n.targets if isinstance(t, ast.Name))
+    return {x for x in out if not x.startswith("_")}
+
+
+def _semver(v):
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", str(v or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def install_drift(project):
+    """Why the project's installed hooks are older than the plugin: [(kind, text)]. The
+    router fills missing _task helpers from the kit, but the gates run the project's files
+    - an autonomous job on them would run without the gates the plugin documents (a 0.11
+    install has no stage gate and writes no stamps)."""
+    out = []
+    if HELPER_DRIFT:
+        out.append(("helpers", "scripts/hooks/_task.py predates the plugin (missing: %s)" % ", ".join(HELPER_DRIFT)))
+    proj = os.path.join(project, "scripts", "hooks", "_hookio.py")
+    if os.path.isfile(proj):
+        mine = _public_names(proj)
+        kits = _public_names(os.path.join(KIT, "template", "scripts", "hooks", "_hookio.py"))
+        if mine is not None and kits:
+            miss = sorted(kits - mine)
+            if miss:
+                out.append(("hooks", "scripts/hooks/_hookio.py predates the plugin (missing: %s)" % ", ".join(miss)))
+    try:
+        man = json.load(open(os.path.join(project, ".teamwright", "installed.json"), encoding="utf-8"))
+        rec = man.get("@kit") if isinstance(man, dict) else None
+        plug = json.load(open(os.path.join(KIT, ".claude-plugin", "plugin.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        rec, plug = None, {}
+    have = _semver(rec.get("version")) if isinstance(rec, dict) else None
+    want = _semver(plug.get("version")) if isinstance(plug, dict) else None
+    if have and want and have < want:
+        out.append(("version", "the project was installed with kit %s, the plugin is %s"
+                    % (rec.get("version"), plug.get("version"))))
+    return out
+
+
+def helper_warnings(project=None):
+    drift = install_drift(project) if project else ([("helpers", "scripts/hooks/_task.py predates the plugin "
+                                                      "(missing: %s)" % ", ".join(HELPER_DRIFT))] if HELPER_DRIFT else [])
+    if not drift:
+        return []
+    return ["install drift: %s - the router uses the plugin's copies, the gates still run the old files: "
+            "run `tw-install.py apply` (/teamwright:reconfigure) to update the project's hooks; autonomous "
+            "jobs do not run until then" % "; ".join(t for _, t in drift)]
 
 
 def git(project, *args):
@@ -170,6 +313,97 @@ def last_code_commit(project, tid):
         if any(f and not RECORD_RE.search(f) for f in files.splitlines()):
             return sha
     return ""
+
+
+def delivery_remote(project):
+    """The remote deliveries go to: the current branch's upstream remote (a wip/ branch is
+    pushed where the delivery branch lives), else the only remote, else `origin`."""
+    rc, out = git(project, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if rc == 0 and "/" in out.strip():
+        rc2, rems = git(project, "remote")
+        for r in sorted(rems.split(), key=len, reverse=True):
+            if out.strip().startswith(r + "/"):
+                return r
+    rc, out = git(project, "remote")
+    names = out.split() if rc == 0 else []
+    if len(names) == 1:
+        return names[0]
+    return "origin"
+
+
+def default_ref(project):
+    """The delivery branch as a remote-tracking ref: <remote>/HEAD, else <remote>/main, else
+    <remote>/master (the remote: delivery_remote); None without one (nothing is ever pushed,
+    so nothing waits for it)."""
+    remote = delivery_remote(project)
+    rc, out = git(project, "symbolic-ref", "-q", "refs/remotes/%s/HEAD" % remote)
+    if rc == 0 and out.strip():
+        return out.strip()
+    for ref in ("refs/remotes/%s/main" % remote, "refs/remotes/%s/master" % remote):
+        if git(project, "rev-parse", "--verify", "-q", ref)[0] == 0:
+            return ref
+    return None
+
+
+def _blob(project, rev, path):
+    rc, out = git(project, "rev-parse", "-q", "--verify", "%s:%s" % (rev, path))
+    return out.strip() if rc == 0 else None
+
+
+def content_delivered(project, commit, ref):
+    """True when the changes of `commit` are on `ref` although the commit itself is not: a
+    rebase or cherry-pick (same patch id, `git cherry`), or a squash merge - every file the
+    commit touches has, on `ref`, the content it has in the commit or at HEAD (a later commit
+    of the same squash changed it again)."""
+    rc, out = git(project, "cherry", ref, commit, commit + "~1") if \
+        git(project, "rev-parse", "-q", "--verify", commit + "~1")[0] == 0 else (1, "")
+    if rc == 0 and out.strip().startswith("-"):
+        return True
+    return _files_on(project, commit, ref)
+
+
+def _files_on(project, commit, ref):
+    """Every file `commit` touches has, on `ref`, its content in the commit or at HEAD."""
+    rc, files = git(project, "show", "--name-only", "--format=", commit)
+    files = [f for f in files.splitlines() if f]
+    if rc != 0 or not files:
+        return False
+    for f in files:
+        on_ref = _blob(project, ref, f)
+        if on_ref != _blob(project, commit, f) and on_ref != _blob(project, "HEAD", f):
+            return False
+    return True
+
+
+def delivered(project, tid, ref):
+    """True when the task's code is on the delivery branch - its last code commit is reachable
+    from `ref` (a merge), or its changes are there (rebase, cherry-pick, squash merge) - or
+    when there is no delivery branch to wait for."""
+    if not ref:
+        return True
+    code = last_code_commit(project, tid)
+    return not code or git(project, "merge-base", "--is-ancestor", code, ref)[0] == 0 \
+        or content_delivered(project, code, ref)
+
+
+def undelivered_count(project, ref):
+    """Commits on HEAD not on `ref` whose changes are not there either (a squash, rebase or
+    cherry-pick of a wip/ branch delivered them)."""
+    rc, out = git(project, "cherry", ref, "HEAD")
+    if rc != 0:
+        return None
+    plus = [l[2:].strip() for l in out.splitlines() if l.startswith("+ ")]
+    if len(plus) > 200:            # a long branch: patch ids only, no per-file comparison
+        return len(plus)
+    return len([c for c in plus if not _files_on(project, c, ref)])
+
+
+def mark_delivered(project, tasks, st):
+    """Sets `delivered` on every CODE_COMPLETE task that deploys (step 4 waits for it)."""
+    ref = default_ref(project) if st.get("git") else None
+    for t in tasks.values():
+        if t["status"] == "CODE_COMPLETE" and t["deploys"]:
+            t["delivered"] = delivered(project, t["id"], ref)
 
 
 def acceptance(project, tid, rec):
@@ -251,13 +485,19 @@ def blockers(t, oqs):
     return [q for q in ids if not oq_resolved(oqs, q)]
 
 
+def is_task_file(task, name):
+    """Only <ID>.md is a task record: not a template, not T-089.history.md."""
+    tid = getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+")
+    return bool(re.fullmatch(r"(?:%s)\.md" % tid, name))
+
+
 def load_tasks(project, task, only=None):
     d = os.path.join(project, "docs", "tasks")
     out = {}
     if not os.path.isdir(d):
         return None
     for f in sorted(os.listdir(d)):
-        if not f.endswith(".md") or f.startswith("_") or (only and f[:-3] != only):
+        if not is_task_file(task, f) or (only and f[:-3] != only):
             continue
         try:
             with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
@@ -270,8 +510,19 @@ def load_tasks(project, task, only=None):
         reviews = task.review_rounds(project, tid)
         vals = task.validation_rounds(project, tid) if hasattr(task, "validation_rounds") else []
         verifies = task.verify_rounds(project, tid)
+        has = lambda name: getattr(task, name, None)  # noqa: E731 - an older installed _task.py
         out[tid] = {
+            "stage_field": task.task_stage(rec) if has("task_stage") else "",
+            "evidence": {
+                "analysis": not task.analysis_missing(rec),
+                "tests": bool(has("tests_written") and task.tests_written(text)),
+                "failure_branches": bool(has("failure_branches") and task.failure_branches(text)),
+            },
             "id": tid,
+            "type": (rec.get("type") or "").strip() if isinstance(rec.get("type"), str) else "",
+            "seam": str((rec.get("analysis") or {}).get("seam") or "") if isinstance(rec.get("analysis"), dict) else "",
+            "acceptance_items": len(re.findall(r"(?m)^\s*-\s*\[[ xX]\]", task.section(text, "Acceptance")))
+            if hasattr(task, "section") else 0,
             "title": rec.get("title") if isinstance(rec.get("title"), str) else "",
             "status": task.status(rec) or "TODO",
             "priority": (rec.get("priority") or "P2").strip() if isinstance(rec.get("priority"), str) else "P2",
@@ -354,6 +605,8 @@ def state_of(project, config):
     rc, out = git(project, "rev-parse", "--is-inside-work-tree")
     st["git"] = rc == 0 and out.strip() == "true"
     st["dirty_files"], st["untracked"], st["unpushed"], st["branch"] = [], 0, 0, None
+    st["delivery_ref"] = None
+    st["wip_waiting"] = {}   # {ANALYSIS task with its analysis done: the IN_PROGRESS task it waits for}
     if st["git"]:
         _, out = git(project, "status", "--porcelain")
         rows = [(l[:2], l[3:]) for l in out.splitlines()
@@ -363,7 +616,16 @@ def state_of(project, config):
         st["dirty_files"] = [p for s_, p in rows if s_ != "??"]
         st["untracked"] = len([p for s_, p in rows if s_ == "??"])
         st["branch"] = git(project, "rev-parse", "--abbrev-ref", "HEAD")[1].strip() or None
+        # Unpushed = not yet delivered. On the delivery branch that is its upstream; on any
+        # other branch (a wip/ branch of an autonomous run, a task branch) the commits not on
+        # the delivery branch - the wip branch's own upstream is always even after its push.
+        ref = default_ref(project)
+        st["delivery_ref"] = ref[len("refs/remotes/"):] if ref else None
+        on_delivery = bool(ref) and st["branch"] == ref.rsplit("/", 1)[-1]
         rc, out = git(project, "rev-list", "--count", "@{u}..HEAD")
+        if (rc != 0 or not on_delivery) and ref:
+            n = undelivered_count(project, ref)
+            rc, out = (0, str(n)) if n is not None else (1, "")
         if rc == 0 and out.strip().isdigit():
             st["unpushed"] = int(out.strip())
     st["dirty"] = bool(st["dirty_files"])
@@ -371,7 +633,8 @@ def state_of(project, config):
 
 
 def _d(action, task=None, reason="", role=None, ask=False):
-    return {"action": action, "task": task, "reason": reason, "role": role, "ask_owner": ask}
+    return {"action": action, "task": task, "reason": reason, "role": role, "ask_owner": ask,
+            "stage": None}
 
 
 def deps_done(t, tasks, after="verified"):
@@ -389,6 +652,9 @@ def warnings_for(tasks, oqs):
     for t in _sorted(tasks.values()):
         if t["status"] in CLOSED + ("VERIFIED",):
             continue
+        w = stage_of(t)[1] if "evidence" in t else None
+        if w:
+            out.append(w)
         named = OQ_RE.findall(t["blocked_on"])
         if t["blocked_on"] and named and not blockers(t, oqs):
             out.append("%s: blocked_on names %s, already %s in docs/open-questions.md - clear "
@@ -425,8 +691,9 @@ def candidates(tasks, st, oqs=None, after="verified"):
     by = lambda *sts: _sorted([t for t in ts if t["status"] in sts])  # noqa: E731
     out = []
 
-    # 1. dirty tree / interrupted session
-    hint = st["interrupted_task"] or st["current_task"]
+    # 1. dirty tree / interrupted session. A current task on a clean tree is not a resume:
+    # its stage is recorded and committed, the next stage picks it up (step 2).
+    hint = st["interrupted_task"] or (st["current_task"] if st["dirty"] else None)
     if hint and hint in tasks and tasks[hint]["status"] not in CLOSED + ("VERIFIED",):
         why = "interrupted session" if st["interrupted_task"] == hint else "current task"
         if st["dirty"]:
@@ -444,9 +711,19 @@ def candidates(tasks, st, oqs=None, after="verified"):
                           "single active task: commit, assign to a task or leave them"
                           % len(st["dirty_files"]), ask=True))
 
-    # 2. active work
+    # 2. active work. One task IN_PROGRESS per working tree (one .teamwright/current-task):
+    # an ANALYSIS task whose analysis is complete has only the move into IN_PROGRESS left,
+    # and waits while another task of this tree is there - analyze may batch analyses, not WIP.
+    wip = [t["id"] for t in by("IN_PROGRESS")]
+    st["wip_waiting"] = {}
     for t in by(*ACTIVE):
-        out.append(_d("continue", t["id"], "%s is %s" % (t["id"], t["status"]), role=_role(t)))
+        if t["status"] == "ANALYSIS" and wip and (t.get("evidence") or {}).get("analysis") \
+                and not (hint == t["id"] and st["dirty"]):
+            st["wip_waiting"][t["id"]] = wip[0]
+            continue
+        sub = ", stage %s%s" % (stage_of(t)[0], "" if t.get("stage_field") else " (no stage field: from the evidence)") \
+            if t["status"] == "IN_PROGRESS" else ""
+        out.append(_d("continue", t["id"], "%s is %s%s" % (t["id"], t["status"], sub), role=_role(t)))
 
     # 3. review
     for t in by("NEEDS_REVIEW"):
@@ -493,6 +770,8 @@ def candidates(tasks, st, oqs=None, after="verified"):
                                   "or NEEDS_OWNER, not another sample" % t["validation_fail_streak"]
                                   if t.get("validation_fail_streak", 0) >= 2 else ""),
                               role="task-validator"))
+        elif t["status"] == "CODE_COMPLETE" and t["deploys"] and not t.get("delivered", True):
+            continue  # verified after DRAIN: the push decision below names it
         else:
             out.append(_d("verify", t["id"], "%s is %s without a PASS verify record"
                           % (t["id"], t["status"]), role="task-validator"))
@@ -519,15 +798,400 @@ def candidates(tasks, st, oqs=None, after="verified"):
 
     # 7. push or idle
     if st["unpushed"]:
-        out.append(_d("decide", None, "%d unpushed commit(s): push?" % st["unpushed"], ask=True))
+        waiting = [t["id"] for t in by("CODE_COMPLETE") if t["deploys"] and not t.get("delivered", True)
+                   and t["verify"] != "PASS"]
+        out.append(_d("decide", None, "%d unpushed commit(s)%s: push?%s" % (
+            st["unpushed"], " (not on %s)" % st["delivery_ref"] if st.get("delivery_ref") and
+            st["branch"] != st["delivery_ref"].rsplit("/", 1)[-1] else "",
+            " %s deploy%s and %s verified after the push (DRAIN)" % (
+                ", ".join(waiting), "s" if len(waiting) == 1 else "", "is" if len(waiting) == 1 else "are")
+            if waiting else ""), ask=True))
+    for c in out:
+        t = tasks.get(c["task"]) if c["task"] else None
+        c["stage"] = stage_of(t)[0] if t and c["action"] in WORK else None
     return out
 
 
+def stage_of(t):
+    """(stage, warning or None). IN_PROGRESS: the `stage:` field checked against the
+    evidence; `## Tests` filled = the red tests are written (implement), else red-tests.
+    The field wins when it is BEHIND the evidence (`stage: red-tests` with the tests filled:
+    review or verify sent the task back to its tests, a legal step back); the evidence wins
+    only when the field is AHEAD of it (`stage: implement` with no tests), with a warning. A
+    task without the field (started before stages), or with an unknown value, is routed by
+    the evidence."""
+    s = t["status"]
+    if s in ("TODO", "ANALYSIS", "VERIFY_FAIL"):
+        return "analyze", None
+    if s == "NEEDS_REVIEW":
+        return "review", None
+    if s in ("CODE_COMPLETE", "DEPLOYED", "VERIFIED"):
+        return "verify", None
+    if s != "IN_PROGRESS":
+        return None, None
+    ev = t.get("evidence") or {}
+    by_evidence = "implement" if ev.get("tests") else "red-tests"
+    why = "## Tests is filled" if ev.get("tests") else "## Tests is empty"
+    f = t.get("stage_field") or ""
+    warn = None
+    if f and f not in TASK_STAGES:
+        warn = "%s: `stage: %s` is not a stage (red-tests | implement); routed by the evidence (%s) " \
+               "to %s" % (t["id"], f, why, by_evidence)
+    elif f == "red-tests" and by_evidence == "implement":
+        by_evidence = "red-tests"  # sent back to its tests: the field is authoritative
+    elif f and f != by_evidence:
+        warn = "%s: `stage: %s`, but the evidence says %s (%s) - routed to %s; fix the field or " \
+               "the record" % (t["id"], f, by_evidence, why, by_evidence)
+    if not ev.get("analysis", True):
+        warn = (warn + "; " if warn else "%s: " % t["id"]) + "IN_PROGRESS without a complete analysis"
+    return by_evidence, warn
+
+
 def _role(t):
-    return "problem-investigator" if t["status"] == "ANALYSIS" else "developer"
+    if t["status"] == "ANALYSIS":
+        return "problem-investigator"
+    return STAGE_ROLE.get(stage_of(t)[0]) or "developer"
 
 
-def decide(project, taken=None):
+def is_work(c):
+    return c["action"] in WORK
+
+
+def work_available(cands):
+    """The one predicate for "is there work a session can do": it decides both which
+    stage runs (a held-back stage runs when nothing else is due) and when the router says
+    there is nothing to do (idle, or only owner decisions)."""
+    return any(is_work(c) for c in cands)
+
+
+def _thresholded(c):
+    """A candidate the stage thresholds apply to: entering or continuing a stage. Resumes
+    (unfinished work in the tree) and bookkeeping moves of the orchestrator always run."""
+    return bool(c.get("stage")) and c["action"] in ("continue", "review", "verify", "reanalyze", "start") \
+        and c.get("role") != "orchestrator"
+
+
+def _age_hours(project, tid):
+    """Hours since the task's record last changed: its last commit, or - when the record is
+    not committed or has uncommitted changes - the file's modification time (a task that
+    waits with its move uncommitted must still age past max_wait_hours). None when unknown."""
+    rel = "docs/tasks/%s.md" % tid
+    rc, dirty = git(project, "status", "--porcelain", "--", rel)
+    rc2, out = git(project, "log", "-1", "--format=%ct", "--", rel)
+    if rc == 0 and not dirty.strip() and rc2 == 0 and out.strip().isdigit():
+        stamp = int(out.strip())
+    else:
+        try:
+            stamp = os.path.getmtime(os.path.join(project, rel))
+        except OSError:
+            return None
+    return max(0.0, (time.time() - stamp) / 3600.0)
+
+
+def stage_queues(project, cands, tasks, proc, eff):
+    """{stage: {waiting, due, why, batch, min, max_wait_hours, model}}: how many tasks wait at
+    each stage and whether the stage is due now. Due: `min` tasks wait, a P0/P1 task waits
+    (effective priority), or the oldest waiting task is older than `max_wait_hours` (>0).
+    "Nothing else to do" is applied by hold_back."""
+    info = {}
+    for st in STAGES:
+        cfg = (proc.get("stages") or {}).get(st) or {"batch": 1, "min": 1, "max_wait_hours": 0}
+        waiting = []
+        for c in cands:
+            if _thresholded(c) and c["stage"] == st and c["task"] not in waiting:
+                waiting.append(c["task"])
+        due, why = False, "nothing waiting"
+        if waiting:
+            urgent = [t for t in waiting if t in eff and eff[t][0] <= URGENT]
+            if len(waiting) >= cfg["min"]:
+                due, why = True, "%d waiting (min %d)" % (len(waiting), cfg["min"])
+            elif urgent:
+                due, why = True, "%s P%d waiting (P0/P1 run at once)" % (urgent[0], eff[urgent[0]][0])
+            else:
+                why = "%d waiting, min %d" % (len(waiting), cfg["min"])
+                if cfg["max_wait_hours"]:
+                    ages = [(a, t) for a, t in ((_age_hours(project, t), t) for t in waiting) if a is not None]
+                    if ages:
+                        oldest, tid = max(ages)
+                        if oldest >= cfg["max_wait_hours"]:
+                            due, why = True, "%s waiting %.1f h (max_wait_hours %d)" % (
+                                tid, oldest, cfg["max_wait_hours"])
+                        else:
+                            why += ", oldest %.1f h of %d" % (oldest, cfg["max_wait_hours"])
+        info[st] = {"waiting": waiting, "due": due, "why": why, "batch": cfg["batch"], "min": cfg["min"],
+                    "max_wait_hours": cfg["max_wait_hours"], "model": (proc.get("models") or {}).get(st)}
+    return info
+
+
+def hold_back(cands, info):
+    """Candidates of a stage that is not due move behind the last due piece of work (so an
+    owner decision between them keeps its place). When no work is due, nothing is held:
+    a waiting stage runs when there is nothing else to do."""
+    held = lambda c: _thresholded(c) and not info[c["stage"]]["due"]  # noqa: E731
+    due_work = [c for c in cands if is_work(c) and not held(c)]
+    if not due_work:
+        for st, i in info.items():
+            if i["waiting"] and not i["due"]:
+                i["due"], i["why"] = True, i["why"] + "; nothing else to do"
+        return cands
+    kept = [c for c in cands if not held(c)]
+    back = [c for c in cands if held(c)]
+    for c in back:
+        c["reason"] += " (held: %s stage waits - %s)" % (c["stage"], info[c["stage"]]["why"])
+    last = max(i for i, c in enumerate(kept) if is_work(c))
+    return kept[:last + 1] + back + kept[last + 1:]
+
+
+def _parallel_mod():
+    """tw-parallel.py's seam logic (seam_paths, overlap): one definition of "two tasks touch
+    the same code", used here as a hint for batching."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tw_parallel", os.path.join(KIT, "scripts", "tw-parallel.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def config_areas(project):
+    """[(area, [dirs])] from .teamwright/config.yml: source_dirs, test_dirs, workdir."""
+    try:
+        kc = kit_config()
+        with open(os.path.join(project, kc.CONFIG), encoding="utf-8") as fh:
+            cfg = kc.parse_yaml(fh.read())
+    except Exception:  # an unreadable config only loses the area hint
+        return []
+    out = []
+    for a in cfg.get("areas") or [] if isinstance(cfg, dict) else []:
+        if not isinstance(a, dict) or not a.get("name"):
+            continue
+        dirs = []
+        for k in ("source_dirs", "test_dirs", "workdir"):
+            v = a.get(k)
+            for d in (v if isinstance(v, list) else [v] if v else []):
+                d = str(d).strip().lstrip("./").rstrip("/")
+                if d:
+                    dirs.append(d)
+        out.append((str(a["name"]), dirs))
+    return out
+
+
+def stage_candidates(project, stage, cands, tasks, eff):
+    """The tasks waiting at `stage`, in router order, with the facts the session needs to pick a
+    batch without reading the task files: priority, effective priority, how many open tasks
+    each unblocks, depends_on, seam paths and the areas they fall in, size hints, and the
+    other candidates whose seam overlaps (tw-parallel.py's rule; no seam path = overlaps all)
+    or that it depends on."""
+    try:
+        par = _parallel_mod()
+    except Exception:
+        par = None
+    areas = config_areas(project)
+    out = []
+    for c in cands:
+        if c.get("stage") != stage or not is_work(c) or any(x["id"] == c["task"] for x in out):
+            continue
+        t = tasks[c["task"]]
+        paths = sorted(par.seam_paths(t.get("seam"))) if par else []
+        hit = sorted({n for n, dirs in areas for pth in paths for d in dirs
+                      if pth == d or pth.startswith(d + "/")})
+        out.append({"id": t["id"], "action": c["action"], "title": t["title"], "type": t.get("type", ""),
+                    "priority": t["priority"],
+                    "effective_priority": "P%d" % eff[t["id"]][0] if eff.get(t["id"], (9,))[0] < 9 else t["priority"],
+                    "unblocks": eff.get(t["id"], (0, None, 0))[2], "depends_on": t["depends_on"],
+                    "seam_paths": paths, "areas": hit,
+                    "size": {"seam_paths": len(paths), "acceptance_items": t.get("acceptance_items", 0),
+                             "review_rounds": t.get("review_rounds", 0)},
+                    "held": "(held:" in c["reason"], "reason": c["reason"]})
+    for x in out:
+        x["overlaps"] = [y["id"] for y in out if y is not x and par and
+                         par.overlap(set(x["seam_paths"]), set(y["seam_paths"]))] if par else []
+        x["depends_on_candidates"] = [d for d in x["depends_on"] if any(y["id"] == d for y in out)]
+    return out
+
+
+def describe_stage(first, cands, info, proc, budget):
+    """Adds stage, batch, model, command, work_available, stages and headless to the
+    decision: the stage session to run now and the tasks it takes."""
+    stage = first.get("stage") if is_work(first) and first["action"] != "merge" else None
+    batch = []
+    if stage and first["action"] != "paused":
+        cap = info[stage]["batch"]
+        starts_left = budget["left"] if budget is not None else cap
+        for c in cands:
+            if len(batch) >= cap:
+                break
+            if c.get("stage") != stage or not is_work(c) or c["task"] in batch:
+                continue
+            if c["action"] == "start":
+                if starts_left <= 0:
+                    continue
+                starts_left -= 1
+            batch.append(c["task"])
+    first["stage"] = stage
+    first["batch"] = batch
+    first["batch_cap"] = info[stage]["batch"] if stage else 0
+    first["model"] = info[stage]["model"] if stage else None
+    if stage:
+        first["command"] = "/teamwright:%s %s" % (stage, " ".join(batch))
+    elif first["action"] == "merge":
+        first["command"] = "/teamwright:parallel merge %s" % first["task"]
+    else:
+        first["command"] = None
+    first["work_available"] = work_available(cands)
+    first["stages"] = info
+    first["select"] = (proc.get("router") or {}).get("select", "script")
+    first["decisions"] = decisions_of(cands)
+    first["headless"] = headless_for(first, cands, info)
+
+
+def decisions_of(cands):
+    """Every owner decision the router sees ({task, reason}), in router order: in an
+    autonomous run they are reported to a person while the other work goes on."""
+    out, seen = [], set()
+    for c in cands:
+        k = (c["task"], c["reason"])
+        if c["action"] == "decide" and k not in seen:
+            seen.add(k)
+            out.append({"task": c["task"], "reason": c["reason"]})
+    return out
+
+
+def headless_for(first, cands, info):
+    """One stage per job (an autonomous run). Unlike the interactive answer, an owner
+    decision does not stop the chain while other work is available: the job takes the
+    first piece of work in router order and lists the decisions. No job runs when the team
+    is paused, the tree holds uncommitted changes of no task, a pass ended (`stop`), or
+    there is no work a job can do without a person."""
+    def off(note, reason=None):
+        return {"run": False, "prompt": None, "model": None, "stage": None, "task": None,
+                "note": note, "reason": reason or note, "decisions": decisions_of(cands)}
+    if first["action"] == "paused":
+        return off("paused: no job runs until TEAMWRIGHT_PAUSE is removed")
+    if first.get("install_drift"):
+        return off("install drift: no job runs on hooks older than the plugin - the gates it documents "
+                   "(stage gate, stamps) would not run; a person runs `tw-install.py apply` "
+                   "(/teamwright:reconfigure) and commits the result", "install drift: " + "; ".join(first["install_drift"]))
+    if first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
+        return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+    if first["action"] == "stop":
+        return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+    work = [c for c in cands if is_work(c)]
+    if not work:
+        if any(c["action"] == "decide" for c in cands):
+            return off("owner decision: no job runs; tell the owner the reason", first["reason"])
+        return off("nothing to do: no job runs", first["reason"])
+    # a start that asks the owner which task to take cannot run without one (autonomy.start:
+    # ask): the job skips it; when nothing else is left, no job runs
+    runnable = [c for c in work if not (c["action"] == "start" and c.get("ask_owner"))]
+    if not runnable:
+        return off("owner decision: no job runs; process.autonomy.start is ask - the owner picks the "
+                   "task to start (set autonomy.start: auto for autonomous runs)", work[0]["reason"])
+    pick = runnable[0]
+    if pick["action"] == "merge":
+        prompt, model, stage = "/teamwright:parallel merge %s" % pick["task"], None, None
+    else:
+        stage = pick.get("stage")
+        prompt, model = "/teamwright:%s" % stage, info[stage]["model"]
+    note = "one stage per job: claude -p \"%s\"%s; the job pushes its commits to a wip/ branch " \
+           "(not a delivery), then asks the router again" % (prompt, " --model %s" % model if model else "")
+    if (pick["task"], pick["action"]) != (first["task"], first["action"]):
+        note += "; %s comes first interactively (%s) - reported, not waited on" % (
+            first["action"], first["reason"])
+    return {"run": True, "prompt": prompt, "model": model, "stage": stage, "task": pick["task"],
+            "note": note, "reason": pick["reason"], "decisions": decisions_of(cands)}
+
+
+def explicit_batch(ids, tasks, cap):
+    """Tasks a stage command names: dependencies among them first (a task goes after the one
+    it depends on), at most the stage's batch cap (the rest is dropped, with a warning), and a
+    warning for every pair whose seams overlap (tw-parallel.py's rule)."""
+    warns, order, seen = [], [], set()
+
+    def visit(tid, stack=()):
+        if tid in seen or tid in stack:
+            return
+        for d in tasks[tid]["depends_on"]:
+            if d in ids and d != tid:
+                visit(d, stack + (tid,))
+        seen.add(tid)
+        order.append(tid)
+    for tid in ids:
+        visit(tid)
+    for tid in ids:
+        for d in tasks[tid]["depends_on"]:
+            if d in ids:
+                warns.append("%s depends on %s: %s goes first" % (tid, d, d))
+    if len(order) > cap:
+        warns.append("%d tasks named, the stage takes at most %d (process.stages.<stage>.batch): %s "
+                     "left for the next session" % (len(order), cap, " ".join(order[cap:])))
+        order = order[:cap]
+    try:
+        par = _parallel_mod()
+    except Exception:
+        par = None
+    if par:
+        for i, a in enumerate(order):
+            for b in order[i + 1:]:
+                if par.overlap(par.seam_paths(tasks[a].get("seam")), par.seam_paths(tasks[b].get("seam"))):
+                    warns.append("%s and %s touch the same code (seams overlap): one after the other, "
+                                 "the second re-reads the first's change" % (a, b))
+    return order, warns
+
+
+def request_for(res, cands, tasks, stage, ids):
+    """A stage command's question: may /teamwright:<stage> run now, on which tasks? An
+    explicit stage command ignores `min` (the owner asked for it), not the order of work:
+    unfinished work in the tree, a pause or a task at another stage is refused with the
+    command to run instead."""
+    cap = (res.get("stages") or {}).get(stage, {}).get("batch", 1)
+    out = {"stage": stage, "tasks": ids, "ok": False, "batch": [], "hint": "", "warnings": [], "model":
+           (res.get("stages") or {}).get(stage, {}).get("model")}
+    router = res.get("command") or "%s%s" % (res["action"], " " + res["task"] if res.get("task") else "")
+    if res["action"] == "paused":
+        out["hint"] = "paused (TEAMWRIGHT_PAUSE): nothing runs"
+        return out
+    first = cands[0] if cands else None
+    if first and first["action"] == "resume" and first["task"] not in (ids or [first["task"]]) or \
+            first and first["action"] == "resume" and first.get("stage") != stage:
+        out["hint"] = "%s - finish it first: /teamwright:%s %s" % (first["reason"], first.get("stage") or "router",
+                                                                  first["task"])
+        return out
+    if first and first["action"] == "decide" and first["task"] is None and "uncommitted" in first["reason"]:
+        out["hint"] = first["reason"]
+        return out
+    here = [c for c in cands if c.get("stage") == stage and is_work(c)]
+    if ids:
+        for tid in ids:
+            t = tasks.get(tid)
+            if not t:
+                out["hint"] = "%s: no such task" % tid
+                return out
+            ts = stage_of(t)[0]
+            if ts != stage:
+                out["hint"] = "%s is %s%s: %s" % (
+                    tid, t["status"], ", stage %s" % ts if ts else "",
+                    "/teamwright:%s %s" % (ts, tid) if ts else "no stage runs on it")
+                return out
+            if not any(c["task"] == tid for c in here):
+                held = (res.get("state") or {}).get("wip_waiting") or {}
+                why = next((c["reason"] for c in cands if c["task"] == tid),
+                           "analysis done, it enters IN_PROGRESS when %s leaves it (one task IN_PROGRESS "
+                           "per working tree)" % held[tid] if tid in held else "not ready")
+                out["hint"] = "%s cannot run %s now: %s" % (tid, stage, why)
+                return out
+        out["batch"], out["warnings"] = explicit_batch(list(dict.fromkeys(ids)), tasks, cap)
+    else:
+        for c in here:
+            if c["task"] not in out["batch"] and len(out["batch"]) < cap:
+                out["batch"].append(c["task"])
+        if not out["batch"]:
+            out["hint"] = "nothing waits at %s; the router says: %s" % (stage, router)
+            return out
+    out["ok"] = True
+    return out
+
+
+def decide(project, taken=None, stage=None, ids=None):
     task, config = _load_helpers(project)
     st = state_of(project, config)
     kc = kit_config()
@@ -535,9 +1199,19 @@ def decide(project, taken=None):
     tasks = load_tasks(project, task)
     if tasks is None:
         res = _d("idle", None, "no docs/tasks/ - run /teamwright:adopt or /teamwright:init first")
-        res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None)
+        res.update(alternatives=[], state=st, tasks=[], warnings=[], settings=proc, budget=None,
+                   recommended=getattr(kc, "PROCESS_RECOMMENDED", {}),
+                   batch=[], model=None, command=None, work_available=False, stages={},
+                   select=(proc.get("router") or {}).get("select", "script"),
+                   decisions=[], headless={"run": False, "prompt": None, "model": None, "stage": None, "task": None,
+                                           "note": "not adopted", "reason": "not adopted", "decisions": []})
+        if stage:
+            res["request"] = {"stage": stage, "tasks": ids or [], "ok": False, "batch": [], "model": None,
+                              "hint": res["reason"], "candidates": []}
+        res["candidates"], res["batch_cap"], res["counts"] = [], 0, {}
         return res
     oqs = open_questions(project)
+    mark_delivered(project, tasks, st)
     own, wts = with_worktrees(project, task, tasks)
     elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
     cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"])
@@ -582,6 +1256,9 @@ def decide(project, taken=None):
         if c["action"] == "start" and auto:
             c["ask_owner"] = False
             c["reason"] += " (autonomy.start: auto)"
+    eff = effective_priority(tasks)
+    info = stage_queues(project, cands, tasks, proc, eff)
+    cands = hold_back(cands, info)
     if st["pause"]:
         first = _d("paused", None, "TEAMWRIGHT_PAUSE exists: the team is stopped; remove the file "
                    "to resume (next would be: %s)" % (
@@ -605,27 +1282,120 @@ def decide(project, taken=None):
         if k in seen or k == (first["action"], first["task"]):
             continue
         seen.add(k)
-        alts.append({"action": c["action"], "task": c["task"], "reason": c["reason"]})
+        alts.append({"action": c["action"], "task": c["task"], "reason": c["reason"], "stage": c.get("stage")})
     first["alternatives"] = alts[:5]
     first["state"] = st
-    eff = effective_priority(tasks)
-    first["tasks"] = [dict(t, ready=deps_done(t, tasks, proc["ready"]["after"])
+    # closed tasks (DONE, DEFERRED) are counted, never listed: on a long-lived project they
+    # are most of the records and none of the work
+    first["tasks"] = [dict(t, stage=stage_of(t)[0], ready=deps_done(t, tasks, proc["ready"]["after"])
                            and not blockers(t, oqs),
                            blockers=blockers(t, oqs),
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
-                      for t in _sorted(tasks.values())]
-    first["warnings"] = warnings_for(tasks, oqs) + drift_warnings(project)
+                      for t in _sorted(tasks.values()) if t["status"] not in CLOSED]
+    first["counts"] = {}
+    for t in tasks.values():
+        first["counts"][t["status"]] = first["counts"].get(t["status"], 0) + 1
+    first["warnings"] = helper_warnings(project) + warnings_for(tasks, oqs) + drift_warnings(project)
+    first["install_drift"] = [t for _, t in install_drift(project)]
     first["settings"] = proc
+    first["recommended"] = getattr(kc, "PROCESS_RECOMMENDED", {})
     first["parallel"] = {"own": own, "elsewhere": elsewhere, "worktrees": wts}
     first["budget"] = budget
+    describe_stage(first, cands, info, proc, budget)
+    first["candidates"] = stage_candidates(project, first["stage"], cands, tasks, eff) if first["stage"] else []
+    if stage:
+        first["request"] = request_for(first, cands, tasks, stage, ids or [])
+        first["request"]["candidates"] = first["candidates"] if first["stage"] == stage else \
+            stage_candidates(project, stage, cands, tasks, eff)
+        first["request"]["batch_cap"] = first["stages"][stage]["batch"]
+    if first["select"] == "agent":
+        # process.router.select: agent - the session finds the stage's tasks itself (reads
+        # the records); the router still decides pause, resume, the stage and whether there
+        # is work, but lists no candidates and picks no batch
+        first["candidates"], first["batch"] = [], []
+        if first.get("stage"):
+            first["command"] = "/teamwright:%s" % first["stage"]
+        req = first.get("request")
+        if req is not None:
+            req["candidates"] = []
+            if not ids:
+                req["batch"] = []
     return first
+
+
+BRIEF_CANDIDATES = 8   # --brief lists at most max(this, 2 x the stage's batch cap) candidates
+
+
+def _brief_candidate(c):
+    return {k: c[k] for k in ("id", "action", "title", "priority", "effective_priority", "unblocks",
+                              "depends_on_candidates", "overlaps", "areas", "size", "held") if k in c}
+
+
+def _brief_candidates(cands, cap):
+    """The first max(8, 2 x cap) candidates, compact; overlaps and dependencies name only the
+    candidates shown (a seam without a path overlaps every other one)."""
+    keep = cands[:max(BRIEF_CANDIDATES, 2 * (cap or 1))]
+    shown = {c["id"] for c in keep}
+    out = []
+    for c in keep:
+        b = dict(_brief_candidate(c), title=(c.get("title") or "")[:70])
+        b["overlaps"] = [x for x in c.get("overlaps") or [] if x in shown]
+        b["depends_on_candidates"] = [x for x in c.get("depends_on_candidates") or [] if x in shown]
+        out.append(b)
+    return out
+
+
+def ordered(res):
+    """The answer with `request` (a stage command's question) first: a reader that sees only
+    the head of the output - a truncated preview - still gets it."""
+    out = {}
+    if "request" in res:
+        out["request"] = res["request"]
+    for k, v in res.items():
+        if k != "request":
+            out[k] = v
+    return out
+
+
+def brief(res):
+    """The fields a stage session needs, without the task list: --brief."""
+    st = res.get("state") or {}
+    out = {}
+    req = res.get("request")
+    if req is not None:
+        out["request"] = dict({k: v for k, v in req.items() if k != "candidates"},
+                              candidates=_brief_candidates(req.get("candidates") or [], req.get("batch_cap")),
+                              candidates_total=len(req.get("candidates") or []))
+    for k in ("action", "task", "reason", "role", "ask_owner", "stage", "batch", "batch_cap", "model",
+              "command", "work_available", "select"):
+        out[k] = res.get(k)
+    if req is not None:
+        # a stage command picks from request.candidates; the router's own stage's list (the
+        # same one, or another stage's) is not repeated
+        out["candidates"], out["candidates_in"] = [], "request"
+    else:
+        out["candidates"] = _brief_candidates(res.get("candidates") or [], res.get("batch_cap"))
+    out["candidates_total"] = len(res.get("candidates") or [])
+    out["stages"] = {s: {"waiting": len(i["waiting"]), "due": i["due"], "why": i["why"], "batch": i["batch"],
+                         "model": i["model"]} for s, i in (res.get("stages") or {}).items()}
+    out["counts"] = res.get("counts") or {}
+    out["decisions"] = res.get("decisions") or []
+    out["warnings"] = res.get("warnings") or []
+    out["headless"] = res.get("headless")
+    out["budget"] = res.get("budget")
+    out["state"] = {k: st.get(k) for k in ("mode", "branch", "dirty", "unpushed", "delivery_ref", "pause",
+                                           "current_task", "interrupted_task", "wip_waiting")}
+    out["alternatives"] = [dict(a, reason=(a.get("reason") or "")[:90]) for a in (res.get("alternatives") or [])[:3]]
+    out["settings"] = {k: v for k, v in (res.get("settings") or {}).items() if k != "explicit"}
+    return out
 
 
 def human(res):
     st = res["state"]
-    counts = {}
-    for t in res["tasks"]:
-        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    counts = res.get("counts") or {}
+    if not counts:
+        for t in res["tasks"]:
+            counts[t["status"]] = counts.get(t["status"], 0) + 1
     lines = ["teamwright flow",
              "  mode: %s | branch: %s | %s | unpushed: %d%s" % (
                  st.get("mode") or "not adopted", st.get("branch") or "-",
@@ -639,10 +1409,22 @@ def human(res):
         lines.append("  in worktrees: " + ", ".join("%s %s (%s)" % (tid, wt["status"], wt["branch"])
                                                     for tid, wt in sorted(wts.items(), key=lambda kv: _num(kv[0]))))
     lines += ["", "next: %s%s - %s" % (res["action"], " " + res["task"] if res["task"] else "", res["reason"])]
+    if res.get("stage"):
+        lines.append("  stage: %s | batch: %s | model: %s | run: %s" % (
+            res["stage"], " ".join(res.get("batch") or []) or "-", res.get("model") or "role files",
+            res.get("command")))
     if res.get("role"):
         lines.append("  role: %s" % res["role"])
     if res.get("ask_owner"):
         lines.append("  owner decision needed")
+    queues = ["%s %d%s" % (st, len(i["waiting"]), "" if i["due"] else " (held: %s)" % i["why"])
+              for st, i in (res.get("stages") or {}).items() if i["waiting"]]
+    if queues:
+        lines.append("  stages: " + " · ".join(queues))
+    req = res.get("request")
+    if req:
+        lines.append("  /teamwright:%s: %s" % (req["stage"], "run on " + " ".join(req["batch"]) if req["ok"]
+                                                 else "refused - " + req["hint"]))
     for w in res.get("warnings") or []:
         lines.append("  warning: %s" % w)
     if res["alternatives"]:
@@ -658,14 +1440,34 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--pass", dest="taken", default=None,
                     help="tasks this pass already took, comma-separated (applies process.batch)")
+    ap.add_argument("--stage", choices=STAGES, default=None,
+                    help="answer a stage command: may this stage run now, on which tasks (`request`)")
+    ap.add_argument("--task", dest="ids", default=None,
+                    help="with --stage: the tasks the command names, comma-separated")
+    ap.add_argument("--brief", action="store_true",
+                    help="with --json: what a stage session needs (request first, candidates, stage "
+                         "counts, decisions, warnings, model, headless), no task list")
     args = ap.parse_args(argv)
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):
         print("tw-next: no such project: %s" % project, file=sys.stderr)
         return 2
+    args.json = args.json or args.brief
     taken = None if args.taken is None else [x.strip() for x in args.taken.split(",") if x.strip()]
-    res = decide(project, taken)
-    print(json.dumps(res, indent=2, ensure_ascii=False) if args.json else human(res))
+    ids = [x.strip() for x in (args.ids or "").replace(" ", ",").split(",") if x.strip()]
+    if ids and not args.stage:
+        print("tw-next: --task needs --stage", file=sys.stderr)
+        return 2
+    res = decide(project, taken, args.stage, ids)
+    try:
+        if args.json:
+            print(json.dumps(brief(res) if args.brief else ordered(res), indent=None if args.brief else 2,
+                             ensure_ascii=False, separators=(",", ":") if args.brief else None))
+        else:
+            print(human(res))
+        sys.stdout.flush()
+    except BrokenPipeError:  # a reader that stops early (grep -q) is not an error
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     return 0
 
 
