@@ -9,6 +9,8 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md` and the VERIFY session is `docs/process/sessions.md` §7. You never write a verdict yourself. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
+**Before any role: §0 of the protocol** — the context tool from `tools.context` is connected and answers (one cheap call), else no role is spawned: ask the owner, or end headless with `Outcome: escalate`. Every role's spawn prompt starts with the code-search line (§3).
+
 ## Entry
 
 ```

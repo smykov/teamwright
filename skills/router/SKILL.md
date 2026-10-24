@@ -9,6 +9,7 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 Arguments: `$ARGUMENTS` (`--status` → show the decision and stop).
 
+0. **Context tools** — `docs/process/stage-protocol.md` §0: the provider from `tools.context` is connected and answers before any role is spawned; otherwise ask the owner, or end headless with `Outcome: escalate`.
 1. **Ask**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief` (no task list: `request` and the candidates come first and stay small). Show at most six lines: the router's `action`, `task`, `reason`, `stage`, `stages` (waiting per stage, held ones with why), `warnings`. The script did the selection by status and the counting; do not read task files to look for work (unless `settings.router.select` is `agent`: then `docs/process/stage-protocol.md` §2).
 2. **Act on `action`**:
    - a stage (`stage` set; actions `start`, `continue`, `resume`, `review`, `verify`, `reanalyze`) → run **that one stage** exactly as `${CLAUDE_PLUGIN_ROOT}/skills/<stage>/SKILL.md` says — its Entry with `--brief --stage <stage>` (it returns the candidates and the batch cap), the batch choice, its Work. `resume` = unfinished work in the tree: start cold from evidence — the task record, `git status`, `git diff`, the log since its last `chore(task)` commit — keep only the task's changes, and finish the stage the router names;
