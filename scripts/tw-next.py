@@ -744,11 +744,20 @@ def _thresholded(c):
 
 
 def _age_hours(project, tid):
-    """Hours since the task's record last changed in git (None when never committed)."""
-    rc, out = git(project, "log", "-1", "--format=%ct", "--", "docs/tasks/%s.md" % tid)
-    if rc != 0 or not out.strip().isdigit():
-        return None
-    return max(0.0, (time.time() - int(out.strip())) / 3600.0)
+    """Hours since the task's record last changed: its last commit, or - when the record is
+    not committed or has uncommitted changes - the file's modification time (a task that
+    waits with its move uncommitted must still age past max_wait_hours). None when unknown."""
+    rel = "docs/tasks/%s.md" % tid
+    rc, dirty = git(project, "status", "--porcelain", "--", rel)
+    rc2, out = git(project, "log", "-1", "--format=%ct", "--", rel)
+    if rc == 0 and not dirty.strip() and rc2 == 0 and out.strip().isdigit():
+        stamp = int(out.strip())
+    else:
+        try:
+            stamp = os.path.getmtime(os.path.join(project, rel))
+        except OSError:
+            return None
+    return max(0.0, (time.time() - stamp) / 3600.0)
 
 
 def stage_queues(project, cands, tasks, proc, eff):

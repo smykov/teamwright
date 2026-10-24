@@ -513,4 +513,14 @@ mk T-1 NEEDS_REVIEW "stage: implement"; tests_md >> docs/tasks/T-1.md; commit_al
 expect_rc "once T-1 left IN_PROGRESS the analysed task moves on" "T-2 T-3" \
   "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(sys.stdin)["request"]["candidates"]))')"
 
+# ---- m2: an uncommitted record ages by its file time --------------------------------------
+fresh ages
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  stages:\n    review:\n      min: 3\n      max_wait_hours: 2\n' > .teamwright/config.yml
+mk T-1 TODO; commit_all
+mk T-2 NEEDS_REVIEW; touch -t 200101010000 docs/tasks/T-2.md
+expect "an uncommitted record older than max_wait_hours (file time): review is due" review T-2
+j | grep -q "T-2 waiting .* h (max_wait_hours 2)" && ok "the age reason, from the file time" || bad "the age reason, from the file time" "$(j | grep why)"
+touch docs/tasks/T-2.md
+expect "a fresh uncommitted record: review held, analysis first" start T-1
+
 finish
