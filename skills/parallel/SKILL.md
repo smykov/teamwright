@@ -2,7 +2,7 @@
 name: parallel
 description: Work several tasks at the same time — each in its own git worktree and Claude Code session — when their seams do not overlap. Analyses the ready tasks in the main tree, groups the disjoint ones (up to process.batch.parallel), creates the worktrees, and later merges each approved branch back (rebased, gate green) before one push. Use when the owner wants parallel work, or the router offers `merge`.
 argument-hint: "[auto | plan | start | status | merge [T-NNN]]"
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-parallel.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(git status *) Bash(git log *) Bash(git worktree *) Bash(git merge --ff-only *) Bash(git rebase *) Bash(git worktree *) Bash(git branch -d *) Bash(scripts/tw-gate *) Bash(sleep *) Bash(git branch -d *) Bash(git -C *)
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-parallel.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(git status *) Bash(git log *) Bash(git worktree *) Bash(git merge --ff-only *) Bash(git branch -d *) Bash(scripts/tw-gate *) Bash(sleep *) Bash(git -C * rebase *)
 ---
 
 # /teamwright:parallel — one task per worktree, merged back in order

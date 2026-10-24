@@ -23,7 +23,8 @@ and ask again; stop at CODE_COMPLETE (merged and verified from the main tree), a
 nothing twice, or after $TW_PARALLEL_MAX_STAGES (12) stages. At most `process.batch.parallel` runs at
 once. State: `.teamwright/parallel/<ID>.json`, log `.teamwright/parallel/<ID>.log` in the main tree.
 The command is `$TW_CLAUDE` (default `claude`) with `$TEAMWRIGHT_CLAUDE_ARGS` (default: acceptEdits,
-the tools a stage needs, and the autonomous-run note).
+the tools a stage needs, no `git push`, `git merge` or `gh`, and the autonomous-run note). Bash is
+otherwise unrestricted: run it where a headless agent may run commands (a container, a VM).
 
 Seams: path-like tokens in `analysis.seam` (a file, or a directory with a trailing part);
 two tasks overlap when a path of one equals or contains a path of the other. A seam
@@ -212,6 +213,7 @@ AUTONOMY = ("AUTONOMOUS RUN, NO OWNER IN THIS SESSION. Run only the stage comman
             "Outcome: escalate. Do not push, do not merge.")
 DEFAULT_ARGS = ["--permission-mode", "acceptEdits", "--allowedTools",
                 "Bash Read Edit Write Glob Grep Task TodoWrite Skill mcp__serena mcp__context7 mcp__codegraphcontext",
+                "--disallowedTools", "Bash(git push:*) Bash(git merge:*) Bash(gh:*)",
                 "--append-system-prompt", AUTONOMY]
 # context providers whose index lives in the tree: (cache dir, refresh command)
 INDEX = {"serena": (".serena/cache", ["serena", "project", "index", "."])}

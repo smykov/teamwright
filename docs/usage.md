@@ -67,7 +67,7 @@ Every decision of the router names a **stage** — analyze, red-tests, implement
 
 ### Autonomous runs: one stage per job
 
-A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs under `headless`: `run`, `prompt` (`/teamwright:<stage>`, no ids — the stage session picks its batch from the router's candidates), `model`, and `decisions`. An owner decision on one task (an escalation, a blocked question) does not stop the chain while other work is available; it is listed in `decisions` for a person. Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — when nothing else is left, `run` is false and the chain stops. On the `wip/` branch the router counts unpushed commits against the delivery branch (`<remote>/HEAD`, `/main` or `/master` of the remote the branch is pushed to — the only remote, else `origin`), so the push decision comes up, and a task that deploys is verified only after that push. A merge, a rebase, a cherry-pick or a squash merge of the `wip/` branch all count as delivered: a commit whose changes are on the delivery branch (same patch, or every file it touches has there its content in the commit or at `HEAD`) is not unpushed. After a delivery, merge the delivery branch back into `wip/teamwright` or reset `wip/teamwright` to it (`git checkout -B wip/teamwright origin/main && git push --force-with-lease origin wip/teamwright`, by a person): a squashed `wip/` keeps its old commits, and the next squash would show them again in the pull request. Starting a new task needs `process.autonomy.start: auto`: with `ask` nobody answers the start question, and no job runs for it. No job runs on an install older than the kit either (`install drift`: hooks without the plugin's helpers, or an older `@kit` in `installed.json`): a person runs `tw-install.py apply` and commits the result first. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project and its path in `TEAMWRIGHT_KIT`, saved as `.github/workflows/teamwright-stage.yml` (adapt the names; the real workflow lives in your repository; `tests/test-usage-example.sh` checks that it parses and that the router fields and step outputs it reads exist):
+A CI job runs one stage and ends; the next job asks the router again. The router's JSON has what a job needs under `headless`: `run`, `prompt` (`/teamwright:<stage>`, no ids — the stage session picks its batch from the router's candidates), `model`, and `decisions`. An owner decision on one task (an escalation, a blocked question) does not stop the chain while other work is available; it is listed in `decisions` for a person. Between jobs the work travels on a `wip/` branch (pre-push does not treat it as a delivery); pushing to the main branch (DRAIN) stays a decision for a person — when nothing else is left, `run` is false and the chain stops. On the `wip/` branch the router counts unpushed commits against the delivery branch (`<remote>/HEAD`, `/main` or `/master` of the remote the branch is pushed to — the only remote, else `origin`), so the push decision comes up, and a task that deploys is verified only after that push. A merge, a rebase, a cherry-pick or a squash merge of the `wip/` branch all count as delivered: a commit whose changes are on the delivery branch (same patch, or every file it touches has there its content in the commit or at `HEAD`) is not unpushed. After a delivery, merge the delivery branch back into `wip/teamwright` or reset `wip/teamwright` to it (`git checkout -B wip/teamwright origin/main && git push --force-with-lease origin wip/teamwright`, by a person): a squashed `wip/` keeps its old commits, and the next squash would show them again in the pull request. Starting a new task needs `process.autonomy.start: auto`: with `ask` nobody answers the start question, and no job runs for it. No job runs on an install older than the kit either (`install drift`: hooks without the plugin's helpers, or an older `@kit` in `installed.json`): a person runs `tw-install.py apply` and commits the result first. A sketch for GitHub Actions on a self-hosted runner, with the kit checked out next to the project and its path in `TEAMWRIGHT_KIT`, saved as `.github/workflows/teamwright-stage.yml` (adapt the names; the real workflow lives in your repository; pin actions by commit SHA, as here; task records, issues and requirements are model input, so a prompt injection in them runs with the job's rights - keep the runner isolated, give the job no secrets but the model key, and leave the push to the main branch to a person; `tests/test-usage-example.sh` checks that it parses and that the router fields and step outputs it reads exist):
 
 ```yaml
 name: teamwright stage
@@ -80,14 +80,14 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0, clean: false }
       - name: Work branch
         run: |
           if git fetch -q origin wip/teamwright; then git checkout -B wip/teamwright FETCH_HEAD
           else git checkout -B wip/teamwright; git push -q origin HEAD:refs/heads/wip/teamwright; fi
       - name: Journal from the previous job
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .teamwright/logs
           key: teamwright-state-${{ github.run_id }}
@@ -106,7 +106,7 @@ jobs:
           PY
       - name: One stage
         if: steps.route.outputs.run == 'true'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: ${{ steps.route.outputs.prompt }}
@@ -176,7 +176,7 @@ jobs:
     outputs:
       code: ${{ steps.c.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - id: c
         run: python3 scripts/tw-ci-changes --before "${{ github.event.before }}" --after "${{ github.event.pull_request.head.sha || github.sha }}"

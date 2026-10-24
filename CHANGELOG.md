@@ -23,7 +23,7 @@ All notable changes to teamwright. Versions follow [semantic versioning](https:/
 - **`/teamwright:settings` offers every key.** It offered only the keys whose default differs from the recommendation, in one question block of at most four questions with the five stage models first — so the stage batches, `batch.parallel`, `test_guard` and `router.select` were never offered, and most keys never fit. Now the skill shows the whole table, asks which groups to change, then asks up to four keys per call for each chosen group; the stage models are one question with ready sets.
 
 ### Changed
-- **Comments, tests and the changelog name no project.** References to the projects the kit was tried on — project names, their task ids and branch names, run numbers and dates of incidents — are replaced with neutral examples (`T-12`, `task/T-12-run3`) or removed. No behaviour changes.
+- **Neutral examples in comments, tests and the changelog** (`T-12`, `task/T-12-run3`). No behaviour changes.
 
 ## [0.12.0] - 2026-10-24
 
