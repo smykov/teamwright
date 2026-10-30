@@ -19,6 +19,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" --json
 
 - `installed: false` → suggest `/teamwright:adopt` or `/teamwright:init` and stop.
 - `items` — already ordered by impact (highest priority they unblock, then how many tasks). Each: `kind` (question, escalated, acceptance, blocked, held, tree), `id`, `cls` (credentials, infrastructure, external, device, decision, other), `need`, `tasks` (held directly), `unblocks` (those plus everything depending on them), `top_priority`, `evidence` (records to read), and for a question `options`, `asked`, `mentioned_by`, `in_table`.
+- `kind` is also `stopped`, `failed`, `stalled` or `merge`: the autonomous queue on GitHub — an Issue's chain stopped for the owner, a stage failed, a chain died with no run alive, a pull request from `task/T-NNN` waits. `github.checked: false` with `applicable: true` → say "GitHub not checked" and the reason: never report the queue as clear.
 - `stale` — `blocked_on` names a question that is already answered: the task waits for nothing but a field edit.
 - `stuck_tasks` of `open_tasks`, `by_class`, `paused`.
 
@@ -27,7 +28,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" --json
 1. **One line** — "N items hold M of K open tasks" (+ "team paused" when `paused`).
 2. **Decisions and questions** (`cls: decision`) — table "Item | What is needed | Unblocks | Asked". For a question, the question and its options; for `escalated`, read the review record in `evidence` and say in one sentence what the reviewer asks the owner to decide; for `acceptance`, the validator's ask from its record.
 3. **Actions outside the repository** — `credentials`, `infrastructure`, `external`, `device`, `other`, grouped by class: what to do by hand and where (a key in the provider's console, a DNS record, a check on a real phone). The team cannot do these; after the owner does one, the next `/teamwright:flow` continues the task (for `acceptance`: a new validation round).
-4. **Clean-up** — `stale` items (clear `blocked_on`), a question `mentioned_by` tasks whose `blocked_on` is empty (does the task wait for it? — the router's warning), a question missing from `docs/open-questions.md` (`in_table: false`: add the row), `tree` items.
+4. **Autonomous queue** — `stopped`, `failed`, `stalled`, `merge`: what happened, the link, and the one step that moves it: merge the pull request, or set the `teamwright` label on the Issue again to restart its chain after fixing the cause.
+5. **Clean-up** — `stale` items (clear `blocked_on`), a question `mentioned_by` tasks whose `blocked_on` is empty (does the task wait for it? — the router's warning), a question missing from `docs/open-questions.md` (`in_table: false`: add the row), `tree` items.
 
 Nothing waits → say so in one line and stop. Then ask once (AskUserQuestion): **answer the open questions and decisions now?** — "yes, in order of impact" (recommended) / "only some" / "not now".
 

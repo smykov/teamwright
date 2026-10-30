@@ -372,6 +372,7 @@ def report(project):
                   "open_questions": open_question_rows(project),
                   "pending_forks": [{"sprint": s["sprint"], "fork": f} for s in by_sprint for f in s["pending_forks"]]},
         "risks": risks,
+        "github": _github(project),
         # review findings below the blocking threshold, collected per sprint by the flow
         "follow_ups": {"open_items": sum((extra.get(t["id"]) or {}).get("open_items", 0) for t in open_
                                          if (extra.get(t["id"]) or {}).get("class") == "review-follow-up"),
@@ -382,6 +383,13 @@ def report(project):
                 "unpushed": st.get("unpushed") or 0,
                 "behind": int(behind) if behind.isdigit() else None},
     }
+
+
+def _github(project):
+    spec = importlib.util.spec_from_file_location("tw_github", os.path.join(HERE, "tw-github.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.queue(project)
 
 
 def _pct(t):
@@ -417,6 +425,18 @@ def human(r):
         lines.append("  owner: %s%s - %s" % (d["action"], " " + d["task"] if d["task"] else "", d["reason"]))
     for q in r["owner"]["open_questions"]:
         lines.append("  open question %s: %s" % (q["id"], q["question"]))
+    g = r["github"]
+    if g.get("checked"):
+        if g["issues"] or g["pull_requests"]:
+            lines.append("")
+            lines.append("autonomous queue: " + (", ".join("%s %d" % kv for kv in g["counts"].items()) or "empty"))
+        for i in g["issues"]:
+            lines.append("  #%d %s %s%s" % (i["number"], i["task"] or "-", i["state"],
+                                            " (%s)" % i["stage"] if i["stage"] else ""))
+        for p in g["pull_requests"]:
+            lines.append("  pull request #%d %s waits for the owner" % (p["number"], p["task"]))
+    elif g.get("applicable"):
+        lines += ["", "autonomous queue: not checked - " + g.get("reason", "")]
     return "\n".join(lines)
 
 

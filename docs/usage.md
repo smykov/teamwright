@@ -139,6 +139,12 @@ What survives between jobs, and why:
 - **The ledgers are not cached.** Where a task's ledger (`.teamwright/sessions/<ID>.reviews.jsonl`, `.verify.jsonl`, `.validation.jsonl`) exists, it alone decides and the stamps are not consulted — a stamp is never a way around a local ledger. A cache restored from an older job (the job that wrote the round was cut before its cache was saved) would hold the task's ledger without that round and refuse it; without the cache every job is a fresh checkout and the stamps decide. On a machine where a round was written elsewhere (a review in CI, the status move on your laptop with an older ledger for that task), move the status where the round was written, or remove that task's ledger file yourself.
 - **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
 
+### A queue of tasks from GitHub
+
+A chain can also take tasks one after another from open Issues with the label `teamwright`, named after the task (`T-12: …`): when one chain finishes or stops for you, the next labelled Issue starts. Labels say where each one is: `tw:<stage>`, `tw:finish`, `tw:stop`, `tw:failed`. The wiring is your workflow's. Stop the queue on a failed stage, or a broken key spends nothing but fails every task in turn; a label is what approves the spend, so cap it with a limit on the API key.
+
+Such work lives outside the repository, so `/teamwright:progress` and `/teamwright:blockers` read it through `gh`: a stopped or failed chain, a chain that died with no run alive (`stalled`), a pull request waiting for you. When GitHub cannot be read they say so instead of showing an empty queue.
+
 ## `/teamwright:blockers`
 
 What the team is waiting on you for, in one list: open questions (`docs/open-questions.md`) with the tasks each one holds, reviews escalated to you, acceptance checks that need you (`NEEDS_OWNER`), `BLOCKED` and held tasks, `blocked_on` fields that name questions already answered, and uncommitted or unpushed work. Each item has a class — credentials, infrastructure, external service, device or manual check, decision — and the open tasks it unblocks (with everything that depends on them); the list is ordered by that. Items outside the repository (a key, a DNS record, a check on a phone) are yours to do by hand; the next `/teamwright:flow` continues the task.

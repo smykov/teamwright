@@ -2,6 +2,11 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.14.0] - 2026-10-30
+
+### Added
+- **`/teamwright:progress` and `/teamwright:blockers` read the autonomous queue on GitHub** (`scripts/tw-github.py`, read-only, through `gh`). A task handed to a chain lives in an Issue, a run and a pull request, outside the repository, and a chain that ended or died was visible nowhere. Now Issues labelled `teamwright` have a state: queued, running, stalled (a stage label and no run alive), stopped, failed, finished. `/teamwright:blockers` lists stopped, failed and stalled chains and pull requests from `task/T-NNN`; `/teamwright:progress` shows the whole queue. When GitHub cannot be read both say so instead of showing an empty queue.
+
 ## [0.13.1] - 2026-10-24
 
 ### Added

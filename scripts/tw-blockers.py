@@ -15,6 +15,10 @@ item the team cannot move by itself:
   held         TODO with a free-text `blocked_on`
   stale        `blocked_on` names questions already answered (clear it)
   tree         uncommitted changes that belong to no task, unpushed commits
+  stopped      the autonomous chain of an Issue stopped and waits for the owner (tw:stop)
+  failed       a stage of that chain failed (tw:failed); the queue does not move past it
+  stalled      the Issue names a stage but no run is alive: the chain died without saying so
+  merge        a pull request from task/T-NNN waits for the owner
 
 Each item carries a class read from its text (credentials, infrastructure, external
 service, device or manual check, decision, other), the open tasks it unblocks (its
@@ -120,6 +124,13 @@ def _latest(project, tid, sub):
     return "docs/tasks/%s%s/%s" % (tid, sub, rounds[-1][1]) if rounds else None
 
 
+def _github():
+    spec = importlib.util.spec_from_file_location("tw_github", os.path.join(HERE, "tw-github.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _record_text(project, rel):
     try:
         with open(os.path.join(project, rel), encoding="utf-8", errors="replace") as fh:
@@ -207,6 +218,27 @@ def report(project):
         add("tree", "%d unpushed commit(s): push is the owner's call" % st["unpushed"], [],
             cls="decision")
 
+    # the autonomous queue: chains that ended or died must not be lost outside the repository
+    gh = _github().queue(project)
+    need = {"stopped": "the autonomous chain stopped", "failed": "a stage of the autonomous chain failed",
+            "stalled": "the Issue names a stage but no run is alive: restart by setting the label again"}
+    for i in gh.get("issues") or []:
+        if i["state"] not in need:
+            continue
+        ids = [i["task"]] if i["task"] else []
+        text = "%s: %s" % (need[i["state"]], i["note"]) if i["note"] else need[i["state"]]
+        twin = next((it for it in items if i["task"] and it["id"] == i["task"]), None)
+        if twin:
+            twin["evidence"].append(i["url"])
+            continue
+        cls = classify(i["note"]) if i["state"] == "stopped" else "infrastructure"
+        add(i["state"], text, [t for t in ids if t in tasks], [i["url"]], qid=i["task"] or "#%d" % i["number"],
+            cls=cls, issue=i["number"], title=i["title"])
+    for pr in gh.get("pull_requests") or []:
+        add("merge", "pull request #%d waits for the owner: %s" % (pr["number"], pr["title"]),
+            [pr["task"]] if pr["task"] in tasks else [], [pr["url"]], qid=pr["task"], cls="decision",
+            pr=pr["number"])
+
     def key(it):
         p = int(it["top_priority"][1:]) if it["top_priority"] else 9
         return (p, -len(it["unblocks"]), it["kind"] == "tree", _num(it["id"] or ""))
@@ -216,6 +248,7 @@ def report(project):
         counts[it["cls"]] = counts.get(it["cls"], 0) + 1
     return {"installed": True, "paused": bool(st.get("pause")), "items": items,
             "stale": stale, "by_class": counts,
+            "github": {k: gh[k] for k in ("checked", "applicable", "reason") if k in gh},
             "open_tasks": len(open_),
             "stuck_tasks": len({u for it in items for u in it["unblocks"]})}
 
@@ -238,6 +271,9 @@ def human(r):
             lines.append("    read: " + e)
     for w in r["stale"]:
         lines.append("- stale: " + w)
+    g = r["github"]
+    if g.get("applicable") and not g.get("checked"):
+        lines.append("- GitHub not checked: " + g.get("reason", ""))
     return "\n".join(lines)
 
 

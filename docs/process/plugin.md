@@ -14,6 +14,7 @@ scripts/tw-install.py             deterministic installer called by those comman
 scripts/tw-next.py                read-only router for /teamwright:flow, :router and the stage commands (next action, stage, candidates; JSON or summary)
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
 scripts/tw-blockers.py            read-only: what waits for a person, by class and by what it unblocks (blockers)
+scripts/tw-github.py              read-only: the autonomous queue on GitHub, Issues, runs and pull requests (blockers, progress)
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, send-backs, settings history and render drift, DRAIN exceptions, record sizes; --since / --split-date (improve)
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, context index per worktree, headless stage runs, status, journal merge
@@ -189,6 +190,16 @@ infrastructure, external, device, decision, other) and `unblocks`: its open task
 open task depending on them, directly or not. Items are ordered by the highest priority they
 unblock, then how many. Task state and question status come from the router's readers
 (`tw-next.py`), so both agree. `/teamwright:blockers` renders it and records the owner's answers.
+
+## tw-github.py: the autonomous queue
+
+`python3 scripts/tw-github.py [--project PATH] [--json]` is read-only and calls `gh`. Open Issues
+labelled `teamwright` get a state from their `tw:*` label and the unfinished `teamwright-agent.yml`
+runs: `queued`, `running`, `stalled` (a stage label, no run alive), `stopped`, `failed`, `finished`.
+It also lists open pull requests from `task/T-NNN` and Issues named after a task without the label.
+`gh` missing or without an answer gives `checked: false` and the reason, never an empty queue; a
+project with no GitHub remote gives `applicable: false`. Both `tw-blockers.py` and `tw-progress.py`
+read it.
 
 ## tw-next.py: the flow router
 
