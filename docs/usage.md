@@ -151,6 +151,8 @@ What the team is waiting on you for, in one list: open questions (`docs/open-que
 
 Then, if you want, it goes through the questions and decisions one at a time: context from the records, the options with a recommendation, your answer. Each answer becomes a row in `docs/decisions.md`, the question's status in `docs/open-questions.md`, cleared `blocked_on` fields and `BLOCKED → TODO` for the tasks it settles — one commit at the end, after you say yes. `--answer` skips the list. The data comes from `scripts/tw-blockers.py` (read-only).
 
+A pull request waiting from the autonomous queue goes the same way: its checks and diff against the acceptance, your "yes", the merge, then the task records. Nothing is merged without you.
+
 ## Settings, improve and feedback
 
 The pipeline is the same in every project; a few of its steps take parameters — the review blocking threshold, how many tasks a flow pass takes (capped per priority), batches, thresholds (`min`, `max_wait_hours`) and models per stage (`stages.<stage>`, `models.<stage>`), whether the script or the agent selects the tasks (`router.select`), the test guard, parallel worktrees (`batch.parallel`), and whether the flow starts and continues without asking ([all keys](process/plugin.md#config-teamwrightconfigyml)). adopt and init ask once; `/teamwright:settings` shows and changes them through the installer, and records the decision. Without settings the kit behaves as before them.
