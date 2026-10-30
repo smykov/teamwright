@@ -53,6 +53,16 @@ For each:
 
 At the end: one list of every file changed, then **commit once on "yes"**, staged by path — `docs: answers to OQ-01, OQ-03` for the documents, plus one `chore(task): T-NNN BLOCKED→TODO` line per status change in the body (the commit-msg convention). Do not push. Then run `tw-next.py --json` and say what `/teamwright:flow` will do next.
 
+## 4. Merging (`merge` items, only on the owner's "yes")
+
+One pull request at a time, in the list's order; never merge one the owner has not named or approved.
+
+1. **Check** — `gh pr view <n> --json mergeable,statusCheckRollup,files,body` and the diff: what changed against the task's `Acceptance`, which checks are red or pending, whether the branch conflicts. Red, pending or conflicting → say so and do not merge unless the owner answers "merge anyway" to that fact.
+2. **Ask** — one paragraph: what the task did, the checks, what stays open (follow-ups, `Validation` waiting for a device). "Merge?" with the recommendation first.
+3. **Merge** on "yes" — `gh pr merge <n> --squash --delete-branch`, then pull the default branch. The Issue closes through `Closes #N` in the pull request; if it stays open, close it with a link to the pull request.
+4. **Bring the records up to date** (Edit, never the shell): the status in `docs/tasks/T-NNN.md` only as the lifecycle allows (a task waiting for deployment or verification stays where it is, and the list says what it waits for), the follow-ups it filed, and `DONE` tasks in the sprint's plan when the project keeps one. Commit once on "yes", staged by path.
+5. Say what the merge freed: tasks with `depends_on` on it, and the queue, which continues by itself where the project runs the dispatcher on merges.
+
 ## Rules
 
 - Read-only until the owner says "yes" to answering; nothing is recorded without their answer.

@@ -2,6 +2,11 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.14.1] - 2026-10-30
+
+### Added
+- **`/teamwright:blockers` walks a waiting pull request through to the merge**: checks and diff against the task's acceptance, the owner's "yes", the merge, then the task records. Nothing is merged without the owner.
+
 ## [0.14.0] - 2026-10-30
 
 ### Added

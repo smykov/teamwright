@@ -1,7 +1,7 @@
 {
   "name": "teamwright",
   "displayName": "teamwright",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "A team process for AI coding agents, enforced by hooks: recorded tasks, analysis before code, tests first, review by a separate agent, verification against the running system.",
   "author": {
     "name": "Konstantin Smykov",
