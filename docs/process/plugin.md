@@ -9,7 +9,7 @@ The repository is both the marketplace and the plugin:
 ```
 .claude-plugin/marketplace.json   marketplace "teamwright", one entry: plugin "teamwright", source "."
 .claude-plugin/plugin.json        plugin manifest (name, version, description, author, license, keywords)
-commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :router, :analyze, :red-tests, :implement, :review, :verify, :parallel, :reconfigure, :status, :progress, :blockers, :settings, :update, :improve, :feedback (default scan locations)
+commands/ or skills/              /teamwright:adopt, :init, :requirements, :flow, :router, :analyze, :red-tests, :implement, :review, :verify, :parallel, :sprint, :reconfigure, :status, :progress, :blockers, :settings, :update, :improve, :feedback (default scan locations)
 scripts/tw-install.py             deterministic installer called by those commands
 scripts/tw-next.py                read-only router for /teamwright:flow, :router and the stage commands (next action, stage, candidates; JSON or summary)
 scripts/tw-progress.py            read-only progress report for /teamwright:progress (JSON or summary)
@@ -18,6 +18,7 @@ scripts/tw-github.py              read-only: the autonomous queue on GitHub, Iss
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, send-backs, settings history and render drift, DRAIN exceptions, record sizes; --since / --split-date (improve)
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, context index per worktree, headless stage runs, status, journal merge
+scripts/tw-sprint.py              candidates for the autonomous queue (dependencies, seams, what could stop a chain), their Issues and label
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
