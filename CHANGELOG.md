@@ -2,6 +2,11 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.14.2] - 2026-10-31
+
+### Fixed
+- **`/teamwright:blockers` no longer leaves answers and merge records only on the local machine**: the merge step pushes on the owner's "yes" and checks the branch is level with the remote; for answers it asks and recommends the push where the autonomous queue runs.
+
 ## [0.14.1] - 2026-10-30
 
 ### Added
