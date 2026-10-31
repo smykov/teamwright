@@ -2,6 +2,11 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.15.0] - 2026-10-31
+
+### Added
+- **`/teamwright:sprint`** forms a sprint for the autonomous contour (`scripts/tw-sprint.py`): candidates with their dependencies, overlapping seams and what could stop a chain, excluded tasks with the reason, warnings about unpushed commits and a task `IN_PROGRESS` on the default branch. On the owner's "yes" it opens the Issues and sets the label; without `--start` nothing starts. While the current sprint is not finished (an open labelled Issue or an open pull request from a task branch), it forms no new one and creates nothing, unless the owner decides to add to it.
+
 ## [0.14.2] - 2026-10-31
 
 ### Fixed

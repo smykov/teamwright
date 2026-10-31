@@ -6,7 +6,7 @@ Start with the [README](../README.md): what the kit does, the quickstart and the
 
 - [usage.md](usage.md) — onboarding with `/teamwright:adopt` and `/teamwright:init` (requirements first, with `/teamwright:requirements`), gate modes, `/teamwright:flow`, Docker runners, configuration changes, updating, manual install, metrics.
 - [design-decisions.md](design-decisions.md) — why the kit is shaped the way it is.
-- [Commands](../README.md#commands) — the skills (`adopt`, `init`, `requirements`, `flow`, `router` and the stage commands (`analyze`, `red-tests`, `implement`, `review`, `verify`), `parallel`, `status`, `progress`, `blockers`, `settings`, `update`, `improve`, `feedback`, `reconfigure`), each linked to its `SKILL.md`.
+- [Commands](../README.md#commands) — the skills (`adopt`, `init`, `requirements`, `flow`, `router` and the stage commands (`analyze`, `red-tests`, `implement`, `review`, `verify`), `parallel`, `sprint`, `status`, `progress`, `blockers`, `settings`, `update`, `improve`, `feedback`, `reconfigure`), each linked to its `SKILL.md`.
 - [providers/](../providers/) — one adapter per tool: what the agents are told about Spec Kit, Serena, Context7, Playwright and the alternatives ([tools.md](process/tools.md) explains the capabilities).
 - [examples/](../examples/README.md) — the offline demo.
 

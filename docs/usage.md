@@ -145,6 +145,10 @@ A chain can also take tasks one after another from open Issues with the label `t
 
 Such work lives outside the repository, so `/teamwright:progress` and `/teamwright:blockers` read it through `gh`: a stopped or failed chain, a chain that died with no run alive (`stalled`), a pull request waiting for you. When GitHub cannot be read they say so instead of showing an empty queue.
 
+## `/teamwright:sprint`
+
+Picks tasks for the autonomous queue on GitHub: what can go in, what cannot and why, what would stop a chain, what must come first. It shows the list and an order and asks once; only then it opens the Issues and sets the `teamwright` label, which starts the queue and the spending. There is no spending limit for a sprint, only one per stage. While the current sprint is not finished, it shows what moves each of its tasks and forms no new one; adding to it is your explicit decision.
+
 ## `/teamwright:blockers`
 
 What the team is waiting on you for, in one list: open questions (`docs/open-questions.md`) with the tasks each one holds, reviews escalated to you, acceptance checks that need you (`NEEDS_OWNER`), `BLOCKED` and held tasks, `blocked_on` fields that name questions already answered, and uncommitted or unpushed work. Each item has a class — credentials, infrastructure, external service, device or manual check, decision — and the open tasks it unblocks (with everything that depends on them); the list is ordered by that. Items outside the repository (a key, a DNS record, a check on a phone) are yours to do by hand; the next `/teamwright:flow` continues the task.
