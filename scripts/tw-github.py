@@ -6,7 +6,8 @@ the label `teamwright`, a `tw:<stage>` label for where its chain is, a run in Ac
 pull request from `task/T-NNN`. /teamwright:progress and /teamwright:blockers read this so
 a task whose chain has ended or died is not lost. Each Issue gets a state:
 
-  queued    labelled, no chain has touched it yet
+  queued    labelled, no chain has touched it yet, or tw:start: the dispatcher took it, no stage yet
+  waiting   tw:wait - the dispatcher holds it behind an overlapping task; it continues by itself
   running   a tw:<stage> label and an unfinished teamwright-agent run naming the task
   stalled   a tw:<stage> label and no such run: the chain died without saying so
   stopped   tw:stop - the chain waits for the owner
@@ -62,9 +63,23 @@ def _state(labels, running):
     for s in ("failed", "stop", "finish"):
         if s in stages:
             return {"failed": "failed", "stop": "stopped", "finish": "finished"}[s]
-    if not stages:
+    if "wait" in stages and not running:
+        return "waiting"
+    if not stages or stages == ["start"]:
         return "running" if running else "queued"
     return "running" if running else "stalled"
+
+
+def _report(issue):
+    """What the last run report says below its table (the secret found, the question): a stop
+    comment often only points back to it."""
+    for c in reversed((issue.get("comments") or [])[-3:]):
+        lines = (c.get("body") or "").splitlines()
+        rows = [n for n, line in enumerate(lines) if line.startswith("|")]
+        if rows:
+            text = " ".join(line.strip() for line in lines[rows[-1] + 1:] if line.strip() and "```" not in line)
+            return re.sub(r"\x1b\[[0-9;]*m|\^\[\[[0-9;]*m", "", text)[:400]
+    return ""
 
 
 def _last_comment(issue):
@@ -108,7 +123,7 @@ def queue(project):
             continue
         task = m.group(0) if m else None
         out.append({"number": i["number"], "task": task, "title": i.get("title"), "url": i.get("url"),
-                    "state": _state(names, task in active), "note": _last_comment(i),
+                    "state": _state(names, task in active), "note": _last_comment(i), "report": _report(i),
                     "stage": next((n[3:] for n in names if n.startswith("tw:")), None)})
     out.sort(key=lambda x: x["number"])
     task_prs = []

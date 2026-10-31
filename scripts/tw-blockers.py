@@ -227,11 +227,13 @@ def report(project):
             continue
         ids = [i["task"]] if i["task"] else []
         text = "%s: %s" % (need[i["state"]], i["note"]) if i["note"] else need[i["state"]]
+        if i.get("report") and i["state"] in ("stopped", "failed"):
+            text += " Report: %s" % i["report"]
         twin = next((it for it in items if i["task"] and it["id"] == i["task"]), None)
         if twin:
             twin["evidence"].append(i["url"])
             continue
-        cls = classify(i["note"]) if i["state"] == "stopped" else "infrastructure"
+        cls = classify(i["report"] or i["note"]) if i["state"] == "stopped" else "infrastructure"
         add(i["state"], text, [t for t in ids if t in tasks], [i["url"]], qid=i["task"] or "#%d" % i["number"],
             cls=cls, issue=i["number"], title=i["title"])
     for pr in gh.get("pull_requests") or []:
