@@ -69,7 +69,7 @@ echo x > dirty.txt; git add dirty.txt
 expect_rc "staged changes become a tree item" "1" "$(q 'len([i for i in d["items"] if i["kind"]=="tree"])')"
 python3 "$BL" --project . | grep -q "^Waiting for a person: " && ok "human output" || bad "human output"
 # follow-ups with no decision, and a review that ran without the context tool
-B2="$TMP/b2"; mkdir -p "$B2"; cd "$B2"; git init -q -b main .
+B2="$TMP/b2"; mkdir -p "$B2"; cd "$B2" || exit 1; git init -q -b main .
 mk T-5 NEEDS_REVIEW P2
 mkdir -p docs/tasks/T-5.reviews docs/tasks/T-5.follow-ups
 printf -- '---\ntask: T-5\nround: 1\nverdict: REQUEST_CHANGES\ncontext_tool: builtin — the server timed out\n---\nx\n' > docs/tasks/T-5.reviews/1.md
@@ -77,6 +77,6 @@ printf -- '- [ ] T-5 r1#1 Medium naming: x (a.py)\n' > docs/tasks/T-5.follow-ups
 out="$(python3 "$BL" --project . --json)"
 echo "$out" | grep -q '"kind": "follow-up"' && ok "a Medium follow-up with no decision is listed" || bad "a Medium follow-up with no decision is listed" "$out"
 echo "$out" | grep -q '"kind": "degraded"' && ok "a review without the context tool is listed" || bad "a review without the context tool is listed" "$out"
-cd "$KIT"
+cd "$KIT" || exit 1
 
 finish
