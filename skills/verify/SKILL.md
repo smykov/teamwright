@@ -9,7 +9,7 @@ allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(g
 
 You are the **orchestrator** of one stage session (`AGENTS.md`); the common protocol is `docs/process/stage-protocol.md` and the VERIFY session is `docs/process/sessions.md` §7. You never write a verdict yourself. Arguments: `$ARGUMENTS` (task ids; empty = the router's candidates).
 
-**Before any role: §0 of the protocol** — the context tool from `tools.context` is connected and answers (one cheap call), else no role is spawned: ask the owner, or end headless with `Outcome: escalate`. Every role's spawn prompt starts with the code-search line (§3).
+**Before any role: §0 of the protocol** — the context tool from `tools.context` is connected and answers (one cheap call), else no role is spawned: ask the owner; headless, go on with the built-in search, tell the role so, and the acceptance record says `context_tool: builtin — <why>`. Every role's spawn prompt starts with the code-search line (§3).
 
 ## Entry
 
@@ -29,4 +29,4 @@ A candidate whose verdict is already recorded (the router's `continue` with role
    - verify `FAIL` → `VERIFY_FAIL`; the next analyze session re-analyses it;
    - verify `PASS`, acceptance `FAIL` → back to `IN_PROGRESS` with the findings and `stage: implement` (or `red-tests` when a test is missing or toothless), then a new review;
    - `NEEDS_OWNER` → decision point with the exact action needed.
-   Survivors listed under `Follow-ups` go to the sprint's follow-up task (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict.
+   Survivors listed under `Follow-ups` go to the task's own record, `docs/tasks/T-NNN.follow-ups/v<round>.md` (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict.

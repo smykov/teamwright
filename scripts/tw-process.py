@@ -13,7 +13,7 @@ The facts teamwright-metrics does not compute, all from git and the records:
                 or a deliberate exception - worth reading)
   bookkeeping   share of commits that are `chore(task)` records
   records       task record sizes (every role re-reads them)
-  follow_ups    open review follow-ups (unchecked items in tasks of class review-follow-up)
+  follow_ups    open review follow-ups (docs/tasks/<ID>.follow-ups/, and older review-follow-up tasks)
   render_drift  rendered files (AGENTS.md, role files) whose settings line still carries
                 another value than `process:` - a locally edited file the installer
                 keeps (kept-local) does not get a settings change
@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.join(KIT, "template", "scripts", "hooks"))
 import _config  # noqa: E402
 import _task  # noqa: E402
 
-FOLLOW_UP_CLASS = "review-follow-up"
+FOLLOW_UP_CLASS = _task.FOLLOW_UP_CLASS
 
 
 def git(project, *args):
@@ -202,7 +202,8 @@ def report(project, since=None, split=None):
     tdir = os.path.join(project, "docs", "tasks")
     history = settings_history(project)
     rounds, sizes = [], []
-    follow_open, follow_tasks = 0, []
+    follow_tasks = []
+    open_follow_ups = _task.follow_ups(os.path.join(project, "docs", "tasks"))
     names = sorted(os.listdir(tdir)) if os.path.isdir(tdir) else []
     for f in names:
         p = os.path.join(tdir, f)
@@ -213,9 +214,7 @@ def report(project, since=None, split=None):
             sizes.append((len(text.encode("utf-8")), tid,
                           len(json.dumps(rec.get("analysis") or "", ensure_ascii=False).encode("utf-8"))))
             if str(rec.get("class") or "").strip() == FOLLOW_UP_CLASS and _task.status(rec) not in ("DONE", "DEFERRED"):
-                n = len(re.findall(r"^\s*- \[ \]", text, re.M))
-                follow_open += n
-                follow_tasks.append({"task": tid, "open_items": n})
+                follow_tasks.append({"task": tid, "open_items": len(re.findall(r"^\s*- \[ \]", text, re.M))})
         if f.endswith(".reviews") and os.path.isdir(p):
             tid = f[:-len(".reviews")]
             for r in sorted(os.listdir(p)):
@@ -253,7 +252,8 @@ def report(project, since=None, split=None):
         "records": {"total_kb": round(sum(s for s, _, _ in sizes) / 1024, 1),
                     "largest": [{"task": t, "kb": round(s / 1024, 1), "analysis_kb": round(a / 1024, 1)}
                                 for s, t, a in sizes[:5]]},
-        "follow_ups": {"open_items": follow_open, "tasks": follow_tasks},
+        "follow_ups": {"open_items": len(open_follow_ups), "tasks": follow_tasks,
+                       "needs_task": sum(1 for i in open_follow_ups if i["needs_task"])},
         "render_drift": render_drift(project),
     })
     return out

@@ -20,6 +20,7 @@
 #    platform token) is always high unless the line marks it as an example/fake.
 # False positive: put `teamwright:allow-secret` (or `gitleaks:allow`) on the line.
 # Deliberate bypass (human, rare): git commit --no-verify — and say why in review.
+# Before the commit: scripts/tw-scan runs this hook over the working tree.
 # Tests: TEAMWRIGHT_NO_GITLEAKS=1 forces the fallback scanner; --scan-stdin scans
 # any unified diff given on stdin (used by `make scan` without gitleaks).
 set -uo pipefail

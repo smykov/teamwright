@@ -32,6 +32,15 @@ LABEL = "teamwright"
 TIMEOUT = 20
 
 
+def _is_done(project, task):
+    """A finished task's open Issue needs no label: nothing is left to start."""
+    try:
+        with open(os.path.join(project, "docs", "tasks", task + ".md"), encoding="utf-8", errors="replace") as fh:
+            return re.search(r"^status:\s*DONE\s*$", fh.read(), re.M) is not None
+    except OSError:
+        return False
+
+
 def _gh(project, *args):
     """(parsed JSON, None) or (None, why)."""
     try:
@@ -106,7 +115,7 @@ def queue(project):
             return {"checked": False, "applicable": True, "reason": why}
         runs = []
     prs, why = _gh(project, "pr", "list", "--state", "open", "--limit", "100",
-                   "--json", "number,title,headRefName,url")
+                   "--json", "number,title,headRefName,url,statusCheckRollup")
     if why:
         return {"checked": False, "applicable": True, "reason": why}
     active = set()
@@ -118,7 +127,7 @@ def queue(project):
         m = TASK_RE.search(i.get("title") or "")
         names = [l.get("name") or "" for l in i.get("labels") or []]
         if LABEL not in names:
-            if m and i.get("title", "").startswith(m.group(0) + ":"):
+            if m and i.get("title", "").startswith(m.group(0) + ":") and not _is_done(project, m.group(0)):
                 unlabelled.append({"number": i["number"], "task": m.group(0), "url": i.get("url")})
             continue
         task = m.group(0) if m else None
@@ -130,7 +139,8 @@ def queue(project):
     for p in prs:
         m = re.fullmatch(r"task/(T-\d+)(?:-.*)?", p.get("headRefName") or "")
         if m:
-            task_prs.append({"number": p["number"], "task": m.group(1), "title": p.get("title"), "url": p.get("url")})
+            task_prs.append({"number": p["number"], "task": m.group(1), "title": p.get("title"), "url": p.get("url"),
+                             "no_checks": p.get("statusCheckRollup") == []})
     counts = {}
     for x in out:
         counts[x["state"]] = counts.get(x["state"], 0) + 1

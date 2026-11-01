@@ -14,7 +14,7 @@ The pipeline — statuses, roles, gates, records, "two send-backs → ESCALATE",
 
 | Key | Values | Default (key absent) | Recommended | What it changes |
 |---|---|---|---|---|
-| `review.blocking` | `low` · `medium` · `high` | `low` | `medium` | From which severity a review finding returns the task. Below it, findings are follow-ups (one task per sprint). Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` block always. The review gate checks that the verdict matches the findings table |
+| `review.blocking` | `low` · `medium` · `high` | `low` | `medium` | From which severity a review finding returns the task. Below it, findings are follow-ups: lines in the task's own record; Medium or higher wait for the owner's decision in `/teamwright:sprint`. Critical and the categories `secret-leak`, `security`, `weakened-test`, `done-not-working`, `recurrence` block always. The review gate checks that the verdict matches the findings table |
 | `batch.max_tasks` | 1–5 | 1 | 3 | How many tasks one `/teamwright:flow` pass takes, one after another |
 | `batch.by_priority.P0`…`P3` | 1–5 | P0 1, P1 1, P2 3, P3 3 | P0 1, P1 2, P2 3, P3 3 | Cap for a pass that holds a task of that priority; the lowest cap in the pass wins. The router checks it (`tw-next.py --pass`) |
 | `batch.parallel` | 1–10 | 1 (off) | 1 | Tasks worked at the same time, each in its own worktree and session, when their seams do not overlap (`/teamwright:parallel`). Worth it when tasks are independent and each runs long; every extra session costs the owner's attention and the merges |
@@ -44,7 +44,7 @@ Add what the data says, one line each, from `python3 "${CLAUDE_PLUGIN_ROOT}/scri
 ## 2. Change — the owner's decision
 
 1. From the arguments, or ask (AskUserQuestion, up to four keys at once, the recommended value first, one line on its consequence). Name the trade-off plainly when there is one:
-   - `review.blocking: high` → Medium findings, docs drift among them, stop returning tasks: the follow-up task grows and docs drift until it is done.
+   - `review.blocking: high` → Medium findings, docs drift among them, stop returning tasks: they wait as lines for the owner, and each one the owner turns into a task costs a full chain of its own.
    - `batch.max_tasks` above 1 with `autonomy.continue: true` → longer sessions; the flow still stops at a barrier when the context gets long.
    - `stages.<stage>.min` above 1 → that stage waits while other work exists: tasks sit there longer, sessions are fewer and fuller. Pair it with `max_wait_hours`.
    - `models.<stage>` cheaper than `opus` on analyze, implement or review → more send-backs; measure with `/teamwright:improve` before keeping it.

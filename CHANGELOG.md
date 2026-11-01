@@ -2,6 +2,28 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.16.1] - 2026-11-01
+
+### Changed
+- **Follow-ups live in the task's own record**, `docs/tasks/<ID>.follow-ups/`, not in a shared sprint task, so parallel branches no longer conflict over them. Older `review-follow-up` tasks and `## Follow-ups` sections are still read.
+- **A follow-up at Medium or higher waits for the owner's decision.** `/teamwright:sprint` and `/teamwright:blockers` show it; nothing creates a task by itself, because each task costs a full chain. A task made from a follow-up is `P3`, `deploys: false`, `class: from-follow-up`, and its own follow-ups stay lines. A link `-> T-MMM` closes with that task; a link to no task counts as none. Closing by hand: `- [x] ... — closed: <why>`.
+- **`/teamwright:sprint` prints the count and the lines needing a decision**, also during a running sprint and without the contour; `--all-follow-ups` lists the rest.
+- **Review and verify go on when the context tool is down**, headless too. Where `tools.context` names a provider, review and acceptance records need `context_tool: used` or `context_tool: builtin — <why>` (the gates check it), and `/teamwright:blockers` shows a record that ran without the tool.
+
+### Added
+- **`scripts/tw-scan [--strict] [BASE]`**: the pre-commit hook itself over the working tree, through a throwaway index and object directory. The test-writer and the red-tests stage run it before the commit. Exit 3: clean, but by the weaker fallback scanner, in a headless run.
+- **Exemptions in the `.gitleaks.toml` template** for a translation key and a test variable: for one rule, on the whole line, so a quoted value stays a finding.
+- **`no_checks` on task pull requests**: sprint, blockers and progress say when no CI ran on a chain's branch. `docs/usage.md` has an example step; the kit ships no workflow.
+
+### Fixed
+- **"Issue without the label" is not reported for a task already `DONE`.**
+
+### What to do by hand
+- Install gitleaks on the runner of an autonomous contour, and add the CI step if your chain's branches run no CI.
+- Add the exemptions to an existing `.gitleaks.toml`, if you want them.
+- Old lines: after the update `/teamwright:sprint` may list Medium lines from `.follow-ups/` and `## Follow-ups` written earlier. Decide them or close them; lines in `review-follow-up` tasks ask for nothing.
+- `review.blocking: high` keeps Medium findings from returning a task: they now wait for your decision instead of growing one shared task.
+
 ## [0.16.0] - 2026-11-01
 
 ### Added

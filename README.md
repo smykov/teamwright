@@ -107,7 +107,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 - Large work (more than one seam, or behaviour not settled) starts in a spec; small work goes straight to a task record. [written rule] — [lifecycle](docs/process/lifecycle.md#0-where-tasks-come-from)
 - A task enters `IN_PROGRESS`, and its code is edited, only after the analysis block names the root cause, the evidence, the invariant, the seam and the approach (an `rca` task: root cause, evidence, decision). [hook blocks] — [analysis gate](docs/process/gates.md#analysis-gate)
 - The next task is computed from task files: unfinished work first, then ready tasks by priority; a prerequisite inherits the priority of the tasks waiting on it. [tool: router] — [readiness rule](docs/process/lifecycle.md#4-readiness-rule)
-- Review returns a task only for findings at or above the project's threshold (`process.review.blocking`); Critical and dangerous categories (secret leak, security, weakened test, done-not-working, recurrence) always do; the rest become one follow-up task per sprint. [hook blocks] — [settings](skills/settings/SKILL.md)
+- Review returns a task only for findings at or above the project's threshold (`process.review.blocking`); Critical and dangerous categories (secret leak, security, weakened test, done-not-working, recurrence) always do; the rest become follow-up lines in the task's own record, and the owner decides which become tasks. [hook blocks] — [settings](skills/settings/SKILL.md)
 - Tasks per flow pass: one by default; the project sets the cap per priority, one task at a time in the tree, a red gate stops the pass. [router] — [passes](docs/process/sessions.md#3-passes-how-many-tasks-in-a-row)
 - Tasks run in parallel only in separate worktrees and sessions, only when their analysed seams do not overlap; each branch is rebased, gated and fast-forwarded in one at a time. [router and tool] — [/teamwright:parallel](skills/parallel/SKILL.md)
 - A requirement is read by id, not by reading every document: `scripts/tw-req FR-03` gives its row, the spec sections and the tasks that cite it. [tool] — [tw-req](template/scripts/tw-req)
@@ -247,7 +247,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | journal | `.teamwright/logs/*.jsonl`: tool calls, agent starts and session outcomes logged by a hook; no file contents or prompts |
 | process settings | `process:` in `.teamwright/config.yml`: review blocking threshold, tasks per pass (per priority), batches, thresholds and model per stage, task selection (`router.select`), test guard, parallel worktrees, autonomy; parameters of fixed steps, set by you through `/teamwright:settings` |
 | pass | one `/teamwright:flow` run that takes tasks one after another, up to the cap in the settings |
-| follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the sprint's `review-follow-up` task |
+| follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the task's own `docs/tasks/<ID>.follow-ups/`; Medium or higher also gets its own task |
 
 ## What gets installed
 
@@ -275,6 +275,7 @@ Paths are in your repository after install; each links to its source in [`templa
 | [`scripts/tw-run`](template/scripts/tw-run) | runs an area's command on the host or in the CI's container image | tool |
 | [`scripts/tw-gate`](template/scripts/tw-gate) | runs an area's full gate once per state of the area's files, full output in a log, PASS reused on the same content; detached, so it outlives the 10-minute Bash limit (exit 75, call again); `--for-task` lists a task's gates | tool |
 | [`scripts/tw-test`](template/scripts/tw-test) | the one way to run tests while working: the area's test command for the tests you name, full output in a log, a short summary (counts, failed tests with their first error, log path), cached per state of the area's files — FAIL included; detached like tw-gate | tool |
+| [`scripts/tw-scan`](template/scripts/tw-scan) | the commit's secret and forbidden-file scan over the working tree, before the commit; changes nothing | tool |
 | [`scripts/tw-mutants`](template/scripts/tw-mutants) | re-runs a task's mutant catalog on a throwaway copy in one runner start, with generated code copied or generated and a per-copy build cache; fails only on a survivor that breaks a named guarantee | tool |
 | [`scripts/metrics/teamwright-metrics`](template/scripts/metrics/teamwright-metrics) | metrics from git, task records and journals | tool |
 | [`scripts/tw-req`](template/scripts/tw-req) | one requirement by id: its row, the spec sections and tasks that cite it | tool |

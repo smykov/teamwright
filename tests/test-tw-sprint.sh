@@ -19,6 +19,8 @@ mk T-6 DONE "" "" "" "works"
 mk T-7 TODO "" "" "" "checked on a real device"
 mk T-8 TODO "" "" "" "queued already"
 mk T-9 TODO "" "" "app/c.py" "has an Issue without the label"
+mkdir -p docs/tasks/T-6.follow-ups
+printf -- '- [ ] T-6 r1#1 Medium docs-drift: stale text (a.md)\n- [ ] T-6 r1#2 Medium naming: linked (b.py) -> T-1\n- [ ] T-6 r1#3 Low style: nit (c.py)\n- [x] T-6 r1#4 Low style: fixed (d.py)\n- [ ] T-6 v1 mutant 03-log: changed a log\n' > docs/tasks/T-6.follow-ups/r1.md
 printf '| ID | Q | Status |\n|---|---|---|\n| OQ-01 | q | open |\n' > docs/open-questions.md
 git add -A; git -c user.name=t -c user.email=t@t commit -qm init
 git update-ref refs/remotes/origin/main HEAD
@@ -84,4 +86,19 @@ export TW_GH="$TMP/bin/no-such-gh"
 python3 "$S" issues T-1 --project . >/dev/null 2>&1; rc=$?
 expect_rc "without GitHub nothing is created" 2 "$rc"
 q '" ".join(d["warnings"])' | grep -q "GitHub not checked" && ok "not checked is said" || bad "not checked" ""
+fq() { TW_GH="$TMP/bin/gh" python3 "$S" --project . --json | python3 -c "import json,sys; d=json.load(sys.stdin)['follow_ups']; print($1)"; }
+expect_rc "open follow-ups are counted from the task's own record" "4" "$(fq 'd["open_items"]')"
+expect_rc "a Medium line with no task needs one; linked, Low and mutant lines do not" "T-6 r1#1 Medium docs-drift: stale text (a.md)" "$(fq '" ".join(i["text"] for i in d["needs_task"])')"
+FU="$TMP/fu"; mkdir -p "$FU/T-1.follow-ups" "$FU/T-2.follow-ups"
+printf -- '---\nid: T-1\nstatus: IN_PROGRESS\n---\n\n## Follow-ups\n\n- [ ] T-1 old Medium naming: from a section (s.py)\n\n## Next\n\n- [ ] not a follow-up\n' > "$FU/T-1.md"
+printf -- '---\nid: T-2\nstatus: TODO\nclass: from-follow-up\n---\n' > "$FU/T-2.md"
+printf -- '---\nid: T-3\nstatus: TODO\nclass: review-follow-up\n---\n- [ ] T-9 r1#1 Medium naming: already in a task (a.py)\n' > "$FU/T-3.md"
+printf -- '---\nid: T-4\nstatus: DONE\n---\n' > "$FU/T-4.md"
+printf -- '- [ ] T-1 r1#1 Medium a: live link (a) -> T-2\n- [ ] T-1 r1#2 High b: done link (b) -> T-4\n- [ ] T-1 r1#3 Medium c: no such task (c) -> T-99\n- [ ] T-1 r1#4 medium d: lower case (d)\n- [ ] T-1 v1 mutant High-branch: changed a branch\n- [x] T-1 r1#5 Medium e: closed — closed: not a bug\n' > "$FU/T-1.follow-ups/r1.md"
+printf -- '- [ ] T-2 r1#1 High f: follow-up of a follow-up (f)\n' > "$FU/T-2.follow-ups/r1.md"
+fu() { PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, '$HOOKS'); import _task; r=_task.follow_ups('$FU'); print($1)"; }
+expect_rc "a done link closes the line, closed and non-section lines are not counted" "7" "$(fu 'len(r)')"
+expect_rc "only undecided Medium or higher need a decision" "no such task|lower case|from a section" "$(fu '"|".join(i["text"].split(":")[1].split("(")[0].strip() for i in r if i["needs_task"])')"
+expect_rc "a mutant line has no severity" "None" "$(fu '[i["severity"] for i in r if "mutant" in i["text"]][0]')"
+expect_rc "a link to no task is marked" "1" "$(fu 'sum(i["link_broken"] for i in r)')"
 finish

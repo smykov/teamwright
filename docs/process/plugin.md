@@ -197,7 +197,14 @@ unblock, then how many. Task state and question status come from the router's re
 `python3 scripts/tw-github.py [--project PATH] [--json]` is read-only and calls `gh`. Open Issues
 labelled `teamwright` get a state from their `tw:*` label and the unfinished `teamwright-agent.yml`
 runs: `queued`, `running`, `stalled` (a stage label, no run alive), `stopped`, `failed`, `finished`.
-It also lists open pull requests from `task/T-NNN` and Issues named after a task without the label.
+It also lists open pull requests from `task/T-NNN`, marking one with no checks at all (`no_checks`),
+and Issues named after a task without the label, except tasks already `DONE`.
+
+A pull request a workflow opened with the default `GITHUB_TOKEN` starts no other workflow, so a
+chain's branch can reach the owner with no CI. The kit ships no workflow: in the project's contour
+push with an App or personal token, or run CI by `gh workflow run <ci> --ref task/<ID>` as the
+chain's last step (`docs/usage.md` has the step; neither way has been tried on a live contour yet). Until then `/teamwright:sprint`, `/teamwright:blockers` and `/teamwright:progress`
+say that nothing checked the branch.
 `gh` missing or without an answer gives `checked: false` and the reason, never an empty queue; a
 project with no GitHub remote gives `applicable: false`. Both `tw-blockers.py` and `tw-progress.py`
 read it.

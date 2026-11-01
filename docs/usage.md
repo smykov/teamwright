@@ -134,6 +134,8 @@ jobs:
           echo "router: $REASON"
 ```
 
+Two additions for a real contour. Install gitleaks on the runner: without it `scripts/tw-scan` exits 3, because the fallback scanner is weaker than a scan of your own after the stage. A branch pushed with the default `GITHUB_TOKEN` starts no CI, so end the chain with `gh workflow run <your-ci>.yml --ref "task/<ID>"`, with `workflow_dispatch` in that workflow. This step is an example and has not been tried on a live contour: check that the run shows on the pull request.
+
 `concurrency` keeps one stage running per repository (reviewers one at a time); when only owner decisions are left (push, an escalation, `NEEDS_OWNER`), `run` is false and the chain stops until a person acts.
 
 What survives between jobs, and why:

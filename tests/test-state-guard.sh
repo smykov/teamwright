@@ -27,6 +27,12 @@ expect_deny "Write of the journal denied" \
 expect_allow "Write of an unrelated .teamwright file allowed" \
   "$(run Write s1 "file_path=.teamwright/config.next.yml" "content=mode: enforce")"
 
+# ---- the secret scan before the commit is the agent's to run ----------------------
+TW=(@agent_id=a-t @agent_type=test-writer)
+expect_allow "scripts/tw-scan runs under enforce" "$(run Bash s1 "command=scripts/tw-scan" "${TW[@]}")"
+expect_allow "scripts/tw-scan --strict runs under enforce" "$(run Bash s1 "command=./scripts/tw-scan --strict" "${TW[@]}")"
+expect_deny "the hook itself stays refused" "$(run Bash s1 "command=scripts/hooks/pre-commit" "${TW[@]}")" "STATE GUARD"
+
 # ---- gate-first does not soften the guard on the mode switch ---------------------
 printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\n' > "$CFG"
 expect_deny "gate-first: config.yml still hard-denied" \

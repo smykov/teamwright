@@ -23,7 +23,7 @@ git fetch -q; python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-progress.py" --json
 - `total`, `by_status`, `by_sprint` (goal, `active`, `closed`, `pending_forks`), `by_area`, `by_stage` (tasks matched to a `docs/plan.md` stage by the FR-NN they name; `frs_without_tasks`), `current_stage`, `milestone` (from the adaptation);
 - `next`, `ready`, `in_flight` — from the router (`tw-next.py`), the same answer `/teamwright:flow` gives;
 - `owner` — `decisions` (BLOCKED, ESCALATE, NEEDS_OWNER, unpushed commits, a dirty tree), `open_questions`, `pending_forks`;
-- `follow_ups` — open review findings below the blocking threshold (unchecked items in the sprint's `review-follow-up` task);
+- `follow_ups` — open review findings below the blocking threshold (unchecked lines in `docs/tasks/<ID>.follow-ups/`, and in older `review-follow-up` tasks); `needs_task` — those at Medium or higher with no task;
 - `risks` — `verify_fail`, `open_rca`, `recurrences`, `two_plus_review_rounds`, `warnings`;
 - `unassigned` — tasks no area matched; `analysed: false` means no `analysis.seam` yet, so the area is not known before analysis;
 - `extra` — the project's own reader (`extra_command` in the adaptation), `errors`, `git`.

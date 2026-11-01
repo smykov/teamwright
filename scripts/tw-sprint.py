@@ -143,11 +143,22 @@ def collect(project):
     for i in queue.get("issues") or []:
         if i["state"] == "failed":
             warnings.append("Issue #%s failed: a failed chain stops the queue taking new tasks" % i["number"])
+    # a project on an older kit has no follow_ups in its _task yet
+    follow = getattr(task, "follow_ups", lambda _d: [])(os.path.join(project, "docs", "tasks"))
+    needs = [i for i in follow if i["needs_task"]]
+    if needs:
+        warnings.append("%d follow-up(s) at Medium or higher have no task of their own: %s"
+                        % (len(needs), ", ".join(sorted({i["task"] for i in needs}))))
+    for p in queue.get("pull_requests") or []:
+        if p.get("no_checks"):
+            warnings.append("pull request #%s (%s): no CI ran on it, nothing has checked this branch"
+                            % (p["number"], p["task"]))
     current = [{"task": i["task"], "issue": i["number"], "state": i["state"], "stage": i.get("stage"),
                 "note": i.get("note"), "url": i.get("url")} for i in queue.get("issues") or []]
     prs = queue.get("pull_requests") or []
     return {"current_sprint": {"active": bool(current or prs), "issues": current, "pull_requests": prs},
-            "candidates": candidates, "excluded": excluded, "warnings": warnings, "in_progress": wip,
+            "candidates": candidates, "excluded": excluded,
+            "follow_ups": {"open_items": len(follow), "needs_task": needs, "items": follow}, "warnings": warnings, "in_progress": wip,
             "unpushed": ahead, "queue_checked": bool(queue.get("checked")), "unlabelled": queue.get("unlabelled") or []}
 
 
@@ -202,7 +213,7 @@ def issues(project, ids, start, add_to_current=False):
     return 1 if rc else 0
 
 
-def show(data):
+def show(data, all_follow_ups=False):
     cur = data["current_sprint"]
     if cur["active"]:
         print("current sprint is not finished: finish it before forming a new one")
@@ -213,6 +224,10 @@ def show(data):
             print("  %s pull request #%s waits for a merge" % (r["task"], r["number"]))
     for w in data["warnings"]:
         print("warning: %s" % w)
+    fu = data["follow_ups"]
+    print("open follow-ups: %d, %d need a task" % (fu["open_items"], len(fu["needs_task"])))
+    for i in fu["items"] if all_follow_ups else fu["needs_task"]:
+        print("  %s%s" % (i["text"], "  [needs a decision]" if i["needs_task"] else ""))
     print("candidates: %d" % len(data["candidates"]))
     for c in data["candidates"]:
         print("  %s %s %s %s/%s %s" % (c["id"], c["effective_priority"], c["status"], c["type"] or "-",
@@ -231,6 +246,7 @@ def main(argv=None):
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--all-follow-ups", action="store_true", help="list every open follow-up, not only those needing a decision")
     ap.add_argument("--start", action="store_true", help="issues: set the label, the queue starts")
     ap.add_argument("--add-to-current", action="store_true",
                     help="issues: add to an unfinished sprint (the owner's explicit decision)")
@@ -247,7 +263,7 @@ def main(argv=None):
     if a.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
-        show(data)
+        show(data, a.all_follow_ups)
     return 0
 
 
