@@ -2,6 +2,12 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.15.1] - 2026-10-31
+
+### Fixed
+- **`/teamwright:blockers` says why a chain stopped**: a stop comment that only points back now brings the text of the last run report (the secret found, the question), which also sets the item's class.
+- **A task held behind an overlapping one (`tw:wait`) or just taken by the dispatcher (`tw:start`) is no longer `stalled`**: restarting it by the label, as `stalled` advises, was wrong.
+
 ## [0.15.0] - 2026-10-31
 
 ### Added
