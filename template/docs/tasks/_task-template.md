@@ -34,6 +34,9 @@ verify_exception: ""
 class: ""
 # set by the reviewer when the same defect class was fixed before
 recurrence_of: []
+# optional, on a bug task: the task whose delivered work this defect escaped from. A person or an agent
+# fills it in when the bug is found; metrics count escaped defects from it (metrics.md). Not checked by any gate.
+escaped_from: ""
 # true when the seam is a checker or guard - code whose whole guarantee is rejecting bad
 # input (a validator, a manifest check, a permission guard). The test-writer's bite check
 # is then a sweep of every condition, guard, return and write on the task's changed lines

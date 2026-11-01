@@ -19,8 +19,25 @@ expect_rc "PreToolUse writes tools.jsonl" 1 "$(wc -l < "$L/tools.jsonl" | tr -d 
 expect_rc "event is pre" pre "$(field "$L/tools.jsonl" 1 event)"
 expect_rc "agent_id is recorded" a1 "$(field "$L/tools.jsonl" 1 agent_id)"
 expect_rc "agent_type is recorded" developer "$(field "$L/tools.jsonl" 1 agent_type)"
-expect_rc "Bash detail is program + subcommand only (cd and VAR= stripped)" "curl -H" "$(field "$L/tools.jsonl" 1 detail)"
+expect_rc "Bash detail is program only when the next word is a flag (cd and VAR= stripped)" "curl" "$(field "$L/tools.jsonl" 1 detail)"
 if grep -q "$SECRET" "$L/tools.jsonl"; then bad "no command arguments or secrets in the journal"; else ok "no command arguments or secrets in the journal"; fi
+
+# the second word of a command: a subcommand stays, anything that may be a secret does not
+JD="$TMP/journal-detail"; mkdir -p "$JD"
+detail_of() {  # detail_of COMMAND -> the detail journaled for it
+  rm -f "$JD/tools.jsonl"
+  TEAMWRIGHT_LOG_DIR="$JD" j Bash s1 "command=$1" @hook_event_name=PreToolUse
+  field "$JD/tools.jsonl" 1 detail
+}
+expect_rc "the subcommand stays: git status" "git status" "$(detail_of "git status --short")"
+expect_rc "the subcommand stays: docker-compose up" "docker-compose up" "$(detail_of "docker-compose up -d")"
+expect_rc "a password flag is not journaled" "mysql" "$(detail_of "mysql -p$SECRET db")"
+expect_rc "a URL with a login is not journaled" "curl" "$(detail_of "curl https://user:$SECRET@example.invalid/x")"
+expect_rc "a user@host word is not journaled" "ssh" "$(detail_of "ssh $SECRET@example.invalid")"
+expect_rc "a long bare token is not journaled" "login" "$(detail_of "login abcdef0123456789abcdef0123456789")"
+expect_rc "a token with an underscore is not journaled" "login" "$(detail_of "login tok_abc123")"
+expect_rc "a key=value word is not journaled" "tool" "$(detail_of "tool key=$SECRET")"
+expect_rc "a program word with a login is dropped whole" "" "$(detail_of "https://user:$SECRET@example.invalid/x run")"
 
 j Write s1 "file_path=$P/src/a.py" "content=PASSWORD=$SECRET" @hook_event_name=PostToolUse
 expect_rc "PostToolUse is journaled as post" post "$(field "$L/tools.jsonl" 2 event)"

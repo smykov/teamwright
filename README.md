@@ -142,7 +142,7 @@ What the kit asks of agents, and how each rule is enforced: *written rule* (T0),
 **Agent sessions**
 - Each role is a fresh subagent run in the foreground; after an interruption the step is rebuilt from git and the task record, not from memory, and every session ends with an `Outcome:` line that a hook journals. [written rule; tool: router] — [sessions](docs/process/sessions.md)
 - Before changing a seam, agents find every caller with the configured context tool and check package APIs against the pinned version's docs; an empty result is not proof of absence. [written rule; reviewer checks API calls] — [tools](docs/process/tools.md)
-- Agents cannot change the gate config, the mode or the ledgers; config changes go through the installer. [hook blocks] — [state guard](docs/process/gates.md#state-guard)
+- Agents cannot change the gate config, the mode or the ledgers; config changes go through the installer. A write to the hooks, settings, role definitions or `.mcp.json` asks a person, and is refused where nobody can answer. The push override, the pause file and `core.hooksPath` are refused to agents. [hook blocks] — [state guard](docs/process/gates.md#state-guard)
 - `CLAUDE.md` is a map with a size budget. [hook warns] — [CLAUDE.md budget](docs/process/gates.md#claudemd-budget)
 
 **Safety**
@@ -307,8 +307,9 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 - The `/teamwright:*` commands live in the plugin, not in the repository: a fresh clone needs the plugin installed and `bash scripts/install-hooks.sh` run once. The project settings offer the plugin and a session-start check names what is missing ([usage](docs/usage.md#another-machine-or-a-fresh-clone)).
 - One active task per working tree; parallel sessions need separate worktrees.
 - The review gate trusts `agent_type`: whoever can edit `.claude/agents/` can name an agent `code-reviewer`. Review agent definitions like code.
-- The deny list matches command text, not every form of a command (`sh -c`, scripts).
+- The deny list matches command text, not every form of a command (`sh -c`, scripts). The state guard parses commands: a script file that writes a hook or setting, or changes git config, is not seen.
 - Patch-guard signatures and fix detection are heuristics: expect false positives until tuned to your stack.
+- Hooks are not a sandbox, and the autonomous chain has known open gaps, some of them defects: [threat model](docs/security/threat-model.md#open-gaps).
 - Metrics depend on conventions: missing `Co-Authored-By:` trailers, fixes not called fixes, squash merges and area granularity all move the numbers. No metric is a target.
 - The verify gate checks that a `PASS` record exists for the current code, not that the tests were meaningful; the reviewer and the validator judge that.
 - Tool-level gates are Claude Code-specific; other runtimes get `AGENTS.md`, the git hooks and the metrics.
@@ -323,6 +324,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 - [docs/design-decisions.md](docs/design-decisions.md) — why the kit is shaped this way
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - [examples/](examples/) — the offline demo
+- [docs/security/threat-model.md](docs/security/threat-model.md) — what the hooks stop and what they do not, both run modes, open gaps
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## Status

@@ -2,6 +2,19 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.16.0] - 2026-11-01
+
+### Added
+- **Threat model** (`docs/security/threat-model.md`): assets, actors, trust boundaries for the interactive flow and the autonomous chain, 30 threats each with its control, its test or "no test", a status and the residual risk, two attack trees, and open gaps. `scripts/check-threat-model.py` and `tests/test-threat-model.sh` keep its references to files, code and tests true, and refuse `mitigated` without a test. The defects it found are narrowed below; what stays open is listed there.
+- **Metrics: first-pass acceptance** (by task type, with undecided and skipped tasks shown beside the denominator), **cost and tokens per accepted task** (median, p75, the share spent on tasks not `DONE`, with `--prices`), **escaped defects** (`--escape-window-days`, default 30). `docs/process/metrics.md`, section 4.
+- **`escaped_from:`**, an optional field in the task template: the task a bug's defect came from. No gate reads it; a field nobody uses prints `no data`.
+
+### Fixed
+- **The journal no longer stores a flag, URL or login as a command's "subcommand"** (TM-05): the second word is kept only when it looks like one (letters, digits, dashes, up to 24 characters). `git status` stays; `mysql -p...` is journaled as `mysql`. A short bare token still looks like a subcommand: the row stays `partial`.
+- **Writes to the files that define the gates reach a person** (TM-09, TM-10, TM-21): `scripts/hooks/*`, `.claude/settings*.json`, `.claude/agents/*`, `.mcp.json`, `.teamwright/patch-guard.conf`, `.git/config`, `.git/hooks/*`, through Edit, Write or a parsed shell command. `enforce` asks; `dontAsk` and `bypassPermissions` are refused; `gate-first` warns. `tw-install.py`, reading and `git add`/`commit`/`diff` pass. **Behaviour change:** a `claude -p` stage in `enforce` can no longer change these files, and an agent edit of a role file or `patch-guard.conf` now prompts.
+- **Agents cannot use the human exits around git hooks** (TM-12, TM-13), in every mode: push overrides in a command, `core.hooksPath` by `git config`, `git -c` or `GIT_CONFIG_*`, removing `TEAMWRIGHT_PAUSE`. New deny rules carry the plain forms and are merged on update. `pre-push` ignores `TEAMWRIGHT_ALLOW_PUSH` when `CLAUDECODE` is set. **Behaviour change:** the override works only from a person's own terminal; `/teamwright:flow` reports a pause and a person removes the file.
+- **The autonomous example enables git hooks** on a fresh checkout (`scripts/install-hooks.sh`). The kit ships no workflow, so a chain gets this by adding the step. All of these stay `partial`: a script file is not seen, and `--no-verify` still skips the hooks.
+
 ## [0.15.1] - 2026-10-31
 
 ### Fixed

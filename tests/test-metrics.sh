@@ -398,4 +398,124 @@ if printf '%s' "$md" | grep -q "### Per stage" && printf '%s' "$md" | grep -q "|
 J="$TMP/stages2.json"; python3 "$M" --json > "$J"
 expect_rc "per stage: without --prices the cost is no data" true "$(q "r['journal']['stages']['cost'].startswith('no data') and ${ST}['review']['cost_usd'] is None")"
 
+# --- first-pass acceptance, cost per accepted task, escaped defects
+R6="$TMP/accept"; mkdir -p "$R6" && cd "$R6" || exit 1
+git init -q -b main .
+t6() { mkdir -p docs/tasks; printf -- '---\nid: %s\ntitle: t\ntype: %s\nstatus: DONE\n%s\n---\n' "$1" "$2" "${3:-}" > "docs/tasks/$1.md"; git add "docs/tasks/$1.md"; }
+t6 T-1 feature; t6 T-2 feature; t6 T-3 bug; t6 T-5 feature; t6 T-6 bug; t6 T-7 chore; t6 T-8 feature; t6 T-12 feature
+t6 T-4 chore "review: skipped:trivial"
+c 2026-01-01 "chore(task): create"
+# T-1: one APPROVE, nothing back: first pass
+c 2026-01-02 "chore(task): T-1 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-1 IN_PROGRESS→NEEDS_REVIEW"; review T-1 1 APPROVE
+c 2026-01-04 "chore(task): T-1 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-01-05 "chore(task): T-1 CODE_COMPLETE→DONE"
+# T-2: two rounds, a send-back
+c 2026-01-02 "chore(task): T-2 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-2 IN_PROGRESS→NEEDS_REVIEW"; review T-2 1 REQUEST_CHANGES
+c 2026-01-04 "chore(task): T-2 NEEDS_REVIEW→IN_PROGRESS"; c 2026-01-04 "chore(task): T-2 IN_PROGRESS→NEEDS_REVIEW"; review T-2 2 APPROVE
+c 2026-01-05 "chore(task): T-2 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-01-06 "chore(task): T-2 CODE_COMPLETE→DONE"
+# T-3: approved in one round, then failed verification, no new review record
+c 2026-01-02 "chore(task): T-3 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-3 IN_PROGRESS→NEEDS_REVIEW"; review T-3 1 APPROVE
+c 2026-01-04 "chore(task): T-3 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-01-05 "chore(task): T-3 CODE_COMPLETE→VERIFY_FAIL"
+c 2026-01-06 "chore(task): T-3 VERIFY_FAIL→CODE_COMPLETE"; c 2026-01-07 "chore(task): T-3 CODE_COMPLETE→DONE"
+# T-4: review skipped as trivial; T-5: still in progress; T-6: rejected as a recurrence
+c 2026-01-02 "chore(task): T-4 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-4 IN_PROGRESS→NEEDS_REVIEW"
+c 2026-01-03 "chore(task): T-4 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-01-04 "chore(task): T-4 CODE_COMPLETE→DONE"
+c 2026-01-02 "chore(task): T-5 TODO→IN_PROGRESS"
+c 2026-01-02 "chore(task): T-6 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-6 IN_PROGRESS→NEEDS_REVIEW"; review T-6 1 REJECT_RECURRENCE
+c 2026-01-04 "chore(task): T-6 NEEDS_REVIEW→DEFERRED"
+# T-7: first pass on transitions alone, no review record; T-8: one ESCALATE round, approved later
+c 2026-01-02 "chore(task): T-7 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-7 IN_PROGRESS→NEEDS_REVIEW"
+c 2026-01-04 "chore(task): T-7 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-01-05 "chore(task): T-7 CODE_COMPLETE→DONE"
+c 2026-01-02 "chore(task): T-8 TODO→IN_PROGRESS"; c 2026-01-03 "chore(task): T-8 IN_PROGRESS→NEEDS_REVIEW"; review T-8 1 ESCALATE
+c 2026-01-04 "chore(task): T-8 NEEDS_REVIEW→BLOCKED"; c 2026-01-05 "chore(task): T-8 BLOCKED→CODE_COMPLETE"; c 2026-01-06 "chore(task): T-8 CODE_COMPLETE→DONE"
+J="$TMP/accept0.json"
+python3 "$M" --json > "$J"; expect_rc "acceptance: runs" 0 $?
+A='r["acceptance"]["summary"]["all"]'
+expect_rc "the field is used by no record: escaped rate is no data, not 0" null "$(q "${A}['escaped_defect_rate']['value']")"
+expect_rc "the reason says the field is unused" true "$(q "'used by no task record' in ${A}['escaped_defect_rate']['source']")"
+expect_rc "no journal: cost is no data, not 0" null "$(q "${A}['cost_per_accepted_task_median']['value']")"
+expect_rc "first pass: T-1 and T-7 of T-1 T-2 T-3 T-6 T-7 T-8" "[2, 6]" "$(q "[${A}['first_pass_acceptance']['num'], ${A}['first_pass_acceptance']['n']]")"
+expect_rc "first pass on transitions alone is counted aloud (T-7)" 1 "$(q "${A}['first_pass_without_review_record']['value']")"
+expect_rc "undecided tasks stay visible outside the denominator (T-5)" 1 "$(q "${A}['tasks_no_review_decision']['value']")"
+expect_rc "a skipped review stays visible outside the denominator (T-4)" 1 "$(q "${A}['tasks_review_skipped']['value']")"
+expect_rc "first pass by type" '{"bug": [0, 2], "chore": [1, 1], "feature": [1, 3]}' "$(q '{k: [v["num"], v["n"]] for k, v in sorted(r["acceptance"]["first_pass_by_type"]["all"].items())}')"
+J="$TMP/accept1.json"; python3 "$M" --json --split-date 2026-01-06 > "$J"
+expect_rc "first pass splits by the task's period" '[[2, 3], [0, 3]]' "$(q '[[r["acceptance"]["summary"][p]["first_pass_acceptance"][k] for k in ("num","n")] for p in ("before","after")]')"
+md="$(python3 "$M" --split-date 2026-01-06)"
+if printf '%s' "$md" | grep -q "first pass acceptance | 66.7% (2/3) | 0.0% (0/3) | -66.7 pp"; then ok "markdown: first pass before, after, delta"; else bad "markdown: first pass before, after, delta"; fi
+if printf '%s' "$md" | grep -q "no single industry definition"; then ok "markdown: says the definition is ours"; else bad "markdown: says the definition is ours"; fi
+if printf '%s' "$md" | grep -q "not what a subscription costs"; then ok "markdown: says the cost is a list price"; else bad "markdown: says the cost is a list price"; fi
+# no task records at all, then no transitions at all
+R7="$TMP/notype"; mkdir -p "$R7" && cd "$R7" || exit 1
+git init -q -b main .
+c 2026-01-01 "chore(task): T-1 IN_PROGRESS→NEEDS_REVIEW"; c 2026-01-02 "chore(task): T-1 NEEDS_REVIEW→DONE"
+J="$TMP/notype.json"; python3 "$M" --json > "$J"
+expect_rc "no task records: first pass from transitions" "[1, 1]" "$(q "[${A}['first_pass_acceptance']['num'], ${A}['first_pass_acceptance']['n']]")"
+expect_rc "no task records: by type is no data" '"no data"' "$(q 'json.dumps(r["acceptance"]["first_pass_by_type"]["status"])')"
+expect_rc "no task records: escaped rate is no data" null "$(q "${A}['escaped_defect_rate']['value']")"
+R8="$TMP/notasks"; mkdir -p "$R8" && cd "$R8" || exit 1
+git init -q -b main . && c 2026-01-01 "feat: x"
+J="$TMP/notasks.json"; python3 "$M" --json > "$J"
+expect_rc "no transitions: the section is no data" '"no data"' "$(q 'json.dumps(r["acceptance"]["status"])')"
+if python3 "$M" | grep -q "## 4. Acceptance"; then ok "no transitions: markdown still has the section"; else bad "no transitions: markdown still has the section"; fi
+
+# escaped defects and cost on the same history
+cd "$R6" || exit 1
+t6 T-9 bug "escaped_from: T-1"; c 2026-01-15 "chore(task): T-9 created, 10 days after T-1 DONE"
+t6 T-10 bug "escaped_from: T-7"; c 2026-03-20 "chore(task): T-10 created, past the window of T-7"
+t6 T-11 bug "escaped_from: T-99"; c 2026-03-21 "chore(task): T-11 names an unknown task"
+t6 T-13 bug "escaped_from: T-5"; c 2026-03-22 "chore(task): T-13 names a task not DONE"
+c 2026-04-01 "chore(task): T-12 NEEDS_REVIEW→CODE_COMPLETE"; c 2026-04-02 "chore(task): T-12 CODE_COMPLETE→DONE"
+c 2026-04-10 "chore(task): tip of the history"
+J="$TMP/esc.json"; python3 "$M" --json > "$J"
+expect_rc "escaped: T-1 of 6 DONE tasks old enough; T-12 is younger than the window" "[1, 6]" "$(q "[${A}['escaped_defect_rate']['num'], ${A}['escaped_defect_rate']['n']]")"
+expect_rc "escaped: the younger DONE task is reported, not hidden" 1 "$(q "${A}['accepted_tasks_inside_escape_window']['value']")"
+expect_rc "escaped: links that cannot count are named" '{"after_window": 1, "origin_not_done": 1, "unknown_origin": 1}' "$(q 'dict(sorted(r["acceptance"]["escape"]["ignored_links"].items()))')"
+expect_rc "escaped: observed up to the last commit, reproducibly" 2026-04-10 "$(q 'r["acceptance"]["escape"]["as_of"]')"
+J="$TMP/esc2.json"; python3 "$M" --json --escape-window-days 5 > "$J"
+expect_rc "--escape-window-days: T-9 past a 5-day window, T-12 now old enough" "[0, 7]" "$(q "[${A}['escaped_defect_rate']['num'], ${A}['escaped_defect_rate']['n']]")"
+J="$TMP/esc3.json"; python3 "$M" --json --escape-window-days 90 > "$J"
+expect_rc "a wider window: T-1 and T-7 escaped, T-12 too young" "[2, 6]" "$(q "[${A}['escaped_defect_rate']['num'], ${A}['escaped_defect_rate']['n']]")"
+python3 "$M" --escape-window-days -1 >/dev/null 2>&1; expect_rc "a negative window is refused" 2 "$?"
+L6="$R6/.teamwright/logs"; mkdir -p "$L6"
+cat > "$L6/outcomes.jsonl" <<'EOF'
+{"ts":"2026-01-05T10:00:00Z","event":"SubagentStop","session_id":"c1","agent_id":"a1","agent_type":"developer","outcome":"none","tokens":{"claude-opus-x":{"input":500000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-05T11:00:00Z","event":"Stop","session_id":"c1","agent_id":"","outcome":"barrier","stage":"implement","batch":["T-1"],"tokens":{"claude-opus-x":{"input":500000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-06T10:00:00Z","event":"Stop","session_id":"c2","agent_id":"","outcome":"barrier","stage":"review","batch":["T-2","T-5"],"tokens":{"claude-opus-x":{"input":2000000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-07T10:00:00Z","event":"Stop","session_id":"c3","agent_id":"","outcome":"barrier","batch":[],"current_task":"T-7","tokens":{"claude-opus-x":{"input":1000000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-08T10:00:00Z","event":"Stop","session_id":"c4","agent_id":"","outcome":"barrier","batch":[],"current_task":"","tokens":{"claude-opus-x":{"input":100000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-08T11:00:00Z","event":"Stop","session_id":"c5","agent_id":"","outcome":"none","stage":"verify","batch":["T-3"],"tokens":{"claude-sonnet-x":{"input":100000,"output":0,"cache_read":0,"cache_write":0}}}
+{"ts":"2026-01-09T10:00:00Z","event":"Stop","session_id":"c6","agent_id":"","outcome":"barrier","batch":["T-99"],"tokens":{"claude-opus-x":{"input":100000,"output":0,"cache_read":0,"cache_write":0}}}
+EOF
+printf '{"opus": {"input": 10, "output": 50, "cache_read": 1, "cache_write": 10}}\n' > "$TMP/p6.json"
+J="$TMP/cost.json"; python3 "$M" --json --prices "$TMP/p6.json" > "$J"
+expect_rc "cost per accepted task: T-1, T-2 (half a session), T-7 cost 10 each; T-3 has no price" "[10.0, 3]" "$(q "[${A}['cost_per_accepted_task_median']['value'], ${A}['cost_per_accepted_task_median']['n']]")"
+expect_rc "cost p75" 10.0 "$(q "${A}['cost_per_accepted_task_p75']['value']")"
+expect_rc "tokens per accepted task need no prices (1M, 1M, 0.1M, 1M)" "[1000000.0, 4]" "$(q "[${A}['tokens_per_accepted_task_median']['value'], ${A}['tokens_per_accepted_task_median']['n']]")"
+expect_rc "share of cost on tasks not DONE: T-5, 10 of 40" "[0.25, 10.0, 40.0]" "$(q "[${A}['cost_share_not_done'][k] for k in ('value','num','n')]")"
+expect_rc "DONE tasks no session names leave the n and are counted" 3 "$(q "${A}['accepted_tasks_without_tokens']['value']")"
+expect_rc "attribution: sessions" "[6, 4, 1]" "$(q '[r["acceptance"]["cost_attribution"][k] for k in ("sessions_with_tokens","sessions_attributed","sessions_split")]')"
+expect_rc "attribution: what no task owns is reported" "[200000, 2.0]" "$(q '[r["acceptance"]["cost_attribution"][k] for k in ("tokens_unattributed","cost_unattributed_usd")]')"
+expect_rc "attribution: models without a price are named" '["claude-sonnet-x"]' "$(q 'r["acceptance"]["cost_attribution"]["unpriced_models"]')"
+J="$TMP/cost2.json"; python3 "$M" --json > "$J"
+expect_rc "without --prices: cost is no data, tokens are there" "[null, 4]" "$(q "[${A}['cost_per_accepted_task_median']['value'], ${A}['tokens_per_accepted_task_median']['n']]")"
+expect_rc "without --prices: the reason names the option" true "$(q "'--prices' in ${A}['cost_share_not_done']['source']")"
+printf '{"ts":"2026-01-08T10:00:00Z","event":"Stop","session_id":"n1","agent_id":"","outcome":"barrier","batch":[],"tokens":{"claude-opus-x":{"input":1,"output":0,"cache_read":0,"cache_write":0}}}\n' > "$L6/outcomes.jsonl"
+J="$TMP/cost3.json"; python3 "$M" --json > "$J"
+expect_rc "no session names a task: tokens per task are no data" null "$(q "${A}['tokens_per_accepted_task_median']['value']")"
+expect_rc "no session names a task: the reason says so" true "$(q "'none names a known task' in ${A}['tokens_per_accepted_task_median']['source']")"
+
+# `escaped_from` is optional and no hook reads it
+if grep -q '^escaped_from: ""$' "$KIT/template/docs/tasks/_task-template.md"; then ok "the task template offers escaped_from"; else bad "the task template offers escaped_from"; fi
+P9="$TMP/fieldproj"; mkdir -p "$P9/.teamwright" "$P9/docs/tasks" && cd "$P9" || exit 1
+git init -q -b main .
+printf 'version: 1\nmode: enforce\nareas:\n  - name: core\n' > .teamwright/config.yml
+BODY="$(printf -- '---\nid: T-1\ntype: bug\nstage: red-tests\nescaped_from: T-0\nstatus: IN_PROGRESS\nanalysis:\n  root_cause: a\n  evidence: b\n  invariant: c\n  seam: d\n  approach: e\n---\nbody\n')"
+printf -- '---\nid: T-1\ntype: bug\nescaped_from: T-0\nstatus: ANALYSIS\n---\nbody\n' > docs/tasks/T-1.md
+for g in analysis-gate review-gate verify-gate; do
+  expect_allow "$g: a record with escaped_from passes" \
+    "$(hook_json Write s1 "file_path=docs/tasks/T-1.md" "content=$BODY" | CLAUDE_PROJECT_DIR="$P9" bash "$HOOKS/$g.sh")"
+done
+git add -A && git commit -qm init
+python3 "$KIT/scripts/tw-next.py" --project "$P9" --json >/dev/null 2>&1; expect_rc "the router reads a record with escaped_from" 0 "$?"
+
 finish

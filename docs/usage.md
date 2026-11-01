@@ -89,6 +89,10 @@ jobs:
         run: |
           if git fetch -q origin wip/teamwright; then git checkout -B wip/teamwright FETCH_HEAD
           else git checkout -B wip/teamwright; git push -q origin HEAD:refs/heads/wip/teamwright; fi
+      - name: Git hooks (local config, a checkout does not bring them)
+        run: |
+          bash scripts/install-hooks.sh
+          bash scripts/install-hooks.sh --check
       - name: Journal from the previous job
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -138,6 +142,8 @@ What survives between jobs, and why:
 - **The journal is not.** `.teamwright/logs` (tool calls, outcomes, tokens per stage) is local and gitignored; `actions/checkout` cleans it. The cache step carries it from job to job (`clean: false` alone is enough on a self-hosted runner that keeps its workspace); without it the per-stage metrics of CI runs are lost and an `interrupted` outcome is not seen by the next job.
 - **The ledgers are not cached.** Where a task's ledger (`.teamwright/sessions/<ID>.reviews.jsonl`, `.verify.jsonl`, `.validation.jsonl`) exists, it alone decides and the stamps are not consulted — a stamp is never a way around a local ledger. A cache restored from an older job (the job that wrote the round was cut before its cache was saved) would hold the task's ledger without that round and refuse it; without the cache every job is a fresh checkout and the stamps decide. On a machine where a round was written elsewhere (a review in CI, the status move on your laptop with an older ledger for that task), move the status where the round was written, or remove that task's ledger file yourself.
 - **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
+
+Before running a chain, read the [threat model](security/threat-model.md): this sketch leaves open what it lists. It enables the git hooks with `scripts/install-hooks.sh`, because `core.hooksPath` is local config a checkout does not bring: the secret scan and the pause then hold in the job, and `--no-verify` still skips them. A chain written before 0.16.0 does not have this step; adding it starts those checks on the chain's commits. With nobody to answer, a stage's write to `scripts/hooks/`, `.claude/settings*.json`, `.claude/agents/` or `.mcp.json` is refused in `enforce` mode: a person makes those changes.
 
 ### A queue of tasks from GitHub
 
@@ -290,5 +296,6 @@ python3 scripts/metrics/teamwright-metrics --repo ../other-repo     # any git re
 - **Git** (any repository, including history before adoption): agent co-authorship, fix and revert share, recurrence rate, recurring areas, tasks fixed again, hotspots.
 - **Tasks**: cycle and lead time, rework rate, review rounds, approvals without a review record, escalations, from `chore(task): T-042 FROM→TO` commits and committed review records.
 - **Journals**: session outcomes, declared vs actual review, permission denials, from `.teamwright/logs/`.
+- **Acceptance**: first-pass acceptance by task type, cost and tokens per accepted task (`--prices`), escaped defects from the optional `escaped_from:` field (`--escape-window-days`).
 
 Every number carries its n and source; a missing source prints `no data`, never `0`. Definitions and biases: [metrics.md](process/metrics.md).
