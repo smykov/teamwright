@@ -27,6 +27,10 @@ Kit only: [plugin.md](process/plugin.md) — installer commands, the config sche
 
 The files installed into a project start from [`template/`](../template/): `AGENTS.md`, `CLAUDE.md`, `PRINCIPLES.md`, role files in `.claude/agents/`, hooks in `scripts/hooks/`, and templates in `docs/`.
 
+## Security
+
+- [security/threat-model.md](security/threat-model.md) — assets, actors, trust boundaries, threats with their controls and tests, open gaps.
+
 ## Contributing
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) — how the kit is checked and released · [SECURITY.md](../SECURITY.md) · [CHANGELOG.md](../CHANGELOG.md)

@@ -19,6 +19,10 @@ teamwright is meant to let agents work for hours without asking, so some command
 - **`/teamwright:parallel auto`** starts headless `claude -p` sessions in the background with `acceptEdits` and Bash (without `git push`, `git merge` and `gh`; `TEAMWRIGHT_CLAUDE_ARGS` replaces the defaults). Run it on a machine where an agent may run commands: a container or a VM, without credentials it does not need.
 - **Autonomous CI runs** (`docs/usage.md`): task records, issues and requirements are model input. Keep the runner isolated, pin actions by SHA, and leave the push to the main branch to a person.
 
+## Threat model
+
+[docs/security/threat-model.md](docs/security/threat-model.md) lists what is protected, from whom, the control and test for each threat, and the open gaps, including known defects. Read it before running the autonomous chain.
+
 ## Scope
 
 teamwright's hooks are **guardrails for a cooperative agent, not a sandbox**. They stop an agent from skipping process steps by accident or by shortcut; they do not contain a hostile process running with your user's rights.

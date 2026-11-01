@@ -309,6 +309,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 - The review gate trusts `agent_type`: whoever can edit `.claude/agents/` can name an agent `code-reviewer`. Review agent definitions like code.
 - The deny list matches command text, not every form of a command (`sh -c`, scripts).
 - Patch-guard signatures and fix detection are heuristics: expect false positives until tuned to your stack.
+- Hooks are not a sandbox, and the autonomous chain has known open gaps, some of them defects: [threat model](docs/security/threat-model.md#open-gaps).
 - Metrics depend on conventions: missing `Co-Authored-By:` trailers, fixes not called fixes, squash merges and area granularity all move the numbers. No metric is a target.
 - The verify gate checks that a `PASS` record exists for the current code, not that the tests were meaningful; the reviewer and the validator judge that.
 - Tool-level gates are Claude Code-specific; other runtimes get `AGENTS.md`, the git hooks and the metrics.
@@ -323,6 +324,7 @@ The process is fixed; the tools that serve it are chosen per project, one per ca
 - [docs/design-decisions.md](docs/design-decisions.md) — why the kit is shaped this way
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - [examples/](examples/) — the offline demo
+- [docs/security/threat-model.md](docs/security/threat-model.md) — what the hooks stop and what they do not, both run modes, open gaps
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## Status
