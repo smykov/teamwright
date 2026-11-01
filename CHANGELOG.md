@@ -2,6 +2,11 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.16.2] - 2026-11-01
+
+### Fixed
+- **The kit's own scripts pass the narrowed gitleaks template.** Counters and pattern constants such as `tokens = usage(...)` would have stopped a project's first scan; those eight lines carry `# gitleaks:allow`, so the template stays narrow.
+
 ## [0.16.1] - 2026-11-01
 
 ### Changed

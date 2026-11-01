@@ -310,7 +310,7 @@ elif ev in ("Stop", "SubagentStop"):
         return sums
 
     try:
-        tokens = usage(data.get("agent_transcript_path") if ev == "SubagentStop"
+        tokens = usage(data.get("agent_transcript_path") if ev == "SubagentStop"  # gitleaks:allow
                        else data.get("transcript_path"), ev == "SubagentStop")
     except Exception:
         tokens = {}

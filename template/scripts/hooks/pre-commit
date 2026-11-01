@@ -57,7 +57,7 @@ def literal(val, before):
     if not quoted and re.match(r"^[A-Za-z_][\w]*(\.[A-Za-z_]\w*)+$", val):
         return False          # attribute reference: settings.db_password
     if not quoted and re.match(r"^[a-z_][a-z0-9_]*$", val):
-        return False          # plain variable name: password = new_password
+        return False          # plain variable name: password = new_password  # gitleaks:allow
     return True
 
 STRONG = {"private-key", "aws-access-key", "github-token", "gitlab-token", "slack-token",
