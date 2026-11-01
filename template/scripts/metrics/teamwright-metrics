@@ -1286,7 +1286,7 @@ def stage_section(recs, opt):
                       if isinstance(r["raw"].get("batch"), list) and r["raw"].get("batch")), [])
         row = rows.setdefault(stage, {"sessions": 0, "durations": [], "tool_calls": [], "outcomes": Counter(),
                                       "tasks": 0, "sessions_with_batch": 0, "sessions_with_tokens": 0,
-                                      "tokens": dict.fromkeys(TOKEN_KINDS, 0), "tokens_by_model": {},
+                                      "tokens": dict.fromkeys(TOKEN_KINDS, 0), "tokens_by_model": {},  # gitleaks:allow
                                       "cost": 0.0, "priced": False})
         row["sessions"] += 1
         if dur is not None:
@@ -1516,9 +1516,9 @@ def cost_summary(ts, costs, why, opt):
     out = {
         "cost_per_accepted_task_median": number(q(usd, .5, 2), len(usd), psrc),
         "cost_per_accepted_task_p75": number(q(usd, .75, 2), len(usd), psrc),
-        "tokens_per_accepted_task_median": number(q(toks, .5, 0), len(toks), src),
-        "tokens_per_accepted_task_p75": number(q(toks, .75, 0), len(toks), src),
-        "accepted_tasks_without_tokens": count(len(done) - len(with_tok) if ts else None,
+        "tokens_per_accepted_task_median": number(q(toks, .5, 0), len(toks), src),  # gitleaks:allow
+        "tokens_per_accepted_task_p75": number(q(toks, .75, 0), len(toks), src),  # gitleaks:allow
+        "accepted_tasks_without_tokens": count(len(done) - len(with_tok) if ts else None,  # gitleaks:allow
                                                src + " - DONE tasks no session names: left out of the n", len(done)),
     }
     if opt.prices:

@@ -65,9 +65,9 @@ LOCK_FILES = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "
               "go.sum", "Gemfile.lock", "composer.lock", "gradle.lockfile", "Podfile.lock"]
 CI_FILES = [".github/workflows", ".gitlab-ci.yml", ".circleci", "Jenkinsfile",
             "azure-pipelines.yml", "bitbucket-pipelines.yml", "Makefile", "justfile", "Taskfile.yml"]
-SECRETISH = re.compile(r"(^|/)(\.env(\..+)?|[^/]*\.local\.json|[^/]*\.(pem|key|p12|pfx|keystore|jks)|"
+SECRETISH = re.compile(r"(^|/)(\.env(\..+)?|[^/]*\.local\.json|[^/]*\.(pem|key|p12|pfx|keystore|jks)|"  # gitleaks:allow
                        r"id_(rsa|dsa|ecdsa|ed25519)|credentials(\.json)?|service-account[^/]*\.json)$")
-SECRET_OK = re.compile(r"(^|/)\.env\.(example|sample|template)$")
+SECRET_OK = re.compile(r"(^|/)\.env\.(example|sample|template)$")  # gitleaks:allow
 WALK_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", ".dart_tool", "build",
              "dist", ".gradle", "Pods", "target", ".next", ".serena"}
 
