@@ -139,6 +139,8 @@ What survives between jobs, and why:
 - **The ledgers are not cached.** Where a task's ledger (`.teamwright/sessions/<ID>.reviews.jsonl`, `.verify.jsonl`, `.validation.jsonl`) exists, it alone decides and the stamps are not consulted — a stamp is never a way around a local ledger. A cache restored from an older job (the job that wrote the round was cut before its cache was saved) would hold the task's ledger without that round and refuse it; without the cache every job is a fresh checkout and the stamps decide. On a machine where a round was written elsewhere (a review in CI, the status move on your laptop with an older ledger for that task), move the status where the round was written, or remove that task's ledger file yourself.
 - **No new commit, no next job.** A stage that ends without a commit (refused, nothing to do, a failure before its first commit) would be asked the same question again by the next job; the last step compares `HEAD` with the commit the job started from and stops the chain instead.
 
+Before running a chain, read the [threat model](security/threat-model.md): this sketch leaves open what it lists, for one that it enables no git hooks on a fresh checkout.
+
 ### A queue of tasks from GitHub
 
 A chain can also take tasks one after another from open Issues with the label `teamwright`, named after the task (`T-12: …`): when one chain finishes or stops for you, the next labelled Issue starts. Labels say where each one is: `tw:<stage>`, `tw:finish`, `tw:stop`, `tw:failed`. The wiring is your workflow's. Stop the queue on a failed stage, or a broken key spends nothing but fails every task in turn; a label is what approves the spend, so cap it with a limit on the API key.
@@ -290,5 +292,6 @@ python3 scripts/metrics/teamwright-metrics --repo ../other-repo     # any git re
 - **Git** (any repository, including history before adoption): agent co-authorship, fix and revert share, recurrence rate, recurring areas, tasks fixed again, hotspots.
 - **Tasks**: cycle and lead time, rework rate, review rounds, approvals without a review record, escalations, from `chore(task): T-042 FROM→TO` commits and committed review records.
 - **Journals**: session outcomes, declared vs actual review, permission denials, from `.teamwright/logs/`.
+- **Acceptance**: first-pass acceptance by task type, cost and tokens per accepted task (`--prices`), escaped defects from the optional `escaped_from:` field (`--escape-window-days`).
 
 Every number carries its n and source; a missing source prints `no data`, never `0`. Definitions and biases: [metrics.md](process/metrics.md).

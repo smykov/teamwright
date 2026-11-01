@@ -2,6 +2,13 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.16.0] - 2026-11-01
+
+### Added
+- **Threat model** (`docs/security/threat-model.md`): assets, actors, trust boundaries for the interactive flow and the autonomous chain, 30 threats each with its control, its test or "no test", a status and the residual risk, two attack trees, and open gaps. `scripts/check-threat-model.py` and `tests/test-threat-model.sh` keep its references to files, code and tests true, and refuse `mitigated` without a test. It records four defects as open, not fixed here: secrets can reach the journal through the second word of a command, gates and settings are not guarded against edits, the push override and the pause file are open to agents, and the autonomous sketch enables no git hooks.
+- **Metrics: first-pass acceptance** (by task type, with undecided and skipped tasks shown beside the denominator), **cost and tokens per accepted task** (median, p75, the share spent on tasks not `DONE`, with `--prices`), **escaped defects** (`--escape-window-days`, default 30). `docs/process/metrics.md`, section 4.
+- **`escaped_from:`**, an optional field in the task template: the task a bug's defect came from. No gate reads it; a field nobody uses prints `no data`.
+
 ## [0.15.1] - 2026-10-31
 
 ### Fixed
