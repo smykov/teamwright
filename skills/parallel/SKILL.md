@@ -44,7 +44,7 @@ The limit is the machine as much as the setting: each worktree runs its own gate
 cd <path> && claude "/teamwright:flow <ID>"
 ```
 
-Give the owner these commands: each one is a session they open (a terminal tab, a background job). In that session the router sees only its own task, drives it from `ANALYSIS → IN_PROGRESS` to `CODE_COMPLETE` with fresh role agents, keeps review follow-ups in the task's own record (`## Follow-ups`) instead of the shared sprint task, and never pushes; it ends `idle` with "merge it from the main tree".
+Give the owner these commands: each one is a session they open (a terminal tab, a background job). In that session the router sees only its own task, drives it from `ANALYSIS → IN_PROGRESS` to `CODE_COMPLETE` with fresh role agents, keeps review follow-ups in `docs/tasks/<ID>.follow-ups/`, and never pushes; it ends `idle` with "merge it from the main tree".
 
 ## 3. Status
 
@@ -57,7 +57,7 @@ For each `ready_to_merge` task:
 1. **Bring it up to date in its worktree**, so the main branch never gets an untested combination: behind the main branch → `git -C <path> rebase <main>`. Conflict → `git -C <path> rebase --abort`; the task's own session resolves it (rebase there, gate, and a new review round when code changed); skip this task for now.
 2. **Gate in the worktree** after the rebase: `<path>/scripts/tw-gate <area>` for each gate `<path>/scripts/tw-gate --for-task <ID>` lists (exit 75 `RUNNING`: the same command again) — that worktree's own copy, so it runs there (a rebase changes the content, so nothing cached before it is reused). Red → back to its session; skip.
 3. **Merge**: `git merge --ff-only tw/<ID>` in the main tree (a fast-forward: what was tested is what lands).
-4. **Follow-ups**: they arrive with the merge in `docs/tasks/<ID>.follow-ups/`; `/teamwright:sprint` shows them and asks for a task for those at Medium or higher.
+4. **Follow-ups**: they arrive with the merge in `docs/tasks/<ID>.follow-ups/`; `/teamwright:sprint` and `/teamwright:blockers` show those at Medium or higher, and the owner decides.
 5. **Journal and clean-up**: `tw-parallel.py logs <ID>` (appends that session's journal to the main one — metrics keep it), then `git worktree remove <path>` and `git branch -d tw/<ID>`. A worktree with uncommitted changes is not removed: report it.
 6. Next task — the others are now behind by this merge: step 1 again for each.
 

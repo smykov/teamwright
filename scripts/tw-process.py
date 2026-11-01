@@ -13,7 +13,7 @@ The facts teamwright-metrics does not compute, all from git and the records:
                 or a deliberate exception - worth reading)
   bookkeeping   share of commits that are `chore(task)` records
   records       task record sizes (every role re-reads them)
-  follow_ups    open review follow-ups (unchecked items in tasks of class review-follow-up)
+  follow_ups    open review follow-ups (docs/tasks/<ID>.follow-ups/, and older review-follow-up tasks)
   render_drift  rendered files (AGENTS.md, role files) whose settings line still carries
                 another value than `process:` - a locally edited file the installer
                 keeps (kept-local) does not get a settings change

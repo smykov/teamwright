@@ -14,7 +14,8 @@ Only the latest release gets fixes while teamwright is in 0.x.
 
 teamwright is meant to let agents work for hours without asking, so some commands are pre-approved. Know them before you install it:
 
-- **Skills' `allowed-tools`.** `/teamwright:flow`, `router`, `red-tests` and `implement` pre-approve `scripts/tw-run`, `scripts/tw-test` and `scripts/tw-gate`; `tw-run <area> -- <command>` runs any shell command in the area. `/teamwright:init` and `/teamwright:requirements` pre-approve `git commit` and `make`. While such a skill runs, those commands do not ask.
+- **Skills' `allowed-tools`.** `/teamwright:flow`, `router`, `red-tests` and `implement` pre-approve `scripts/tw-run`, `scripts/tw-test` and `scripts/tw-gate` (`red-tests` also `scripts/tw-scan`); `tw-run <area> -- <command>` runs any shell command in the area. `/teamwright:init` and `/teamwright:requirements` pre-approve `git commit` and `make`. While such a skill runs, those commands do not ask.
+- **`/teamwright:sprint`** pre-approves `git add` and `git commit`, plus Write and Edit: it records the owner's decision on a follow-up as a new task or a closed line.
 - **The project's config is code.** `tw-gate`, `tw-test` and `tw-mutants` run the commands in `.teamwright/config.yml`; `tw-progress.py` runs `extra_command` from `.teamwright/progress.json`. Review changes to `.teamwright/*.yml` and `.teamwright/*.json` like changes to a Makefile, from people and from agents.
 - **`/teamwright:parallel auto`** starts headless `claude -p` sessions in the background with `acceptEdits` and Bash (without `git push`, `git merge` and `gh`; `TEAMWRIGHT_CLAUDE_ARGS` replaces the defaults). Run it on a machine where an agent may run commands: a container or a VM, without credentials it does not need.
 - **Autonomous CI runs** (`docs/usage.md`): task records, issues and requirements are model input. Keep the runner isolated, pin actions by SHA, and leave the push to the main branch to a person.

@@ -113,6 +113,7 @@ PY2
 has "top-level gate_command not wrapped" "$G/AGENTS.md" "make check"
 hasnt "top-level gate_command: no tw-run" "$G/AGENTS.md" "tw-run backend -- make check"
 [ -x "$G/scripts/tw-run" ] && ok "tw-run installed executable" || bad "tw-run installed executable"
+[ -x "$G/scripts/tw-scan" ] && ok "tw-scan installed executable" || bad "tw-scan installed executable"
 [ -x "$G/scripts/tw-gate" ] && ok "tw-gate installed executable" || bad "tw-gate installed executable"
 [ -x "$G/scripts/tw-mutants" ] && ok "tw-mutants installed executable" || bad "tw-mutants installed executable"
 [ -x "$G/scripts/hooks/_job.sh" ] && ok "hooks/_job.sh installed executable (tw-gate, tw-mutants, tw-test)" || bad "hooks/_job.sh installed executable"

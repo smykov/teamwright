@@ -19,6 +19,8 @@ item the team cannot move by itself:
   failed       a stage of that chain failed (tw:failed); the queue does not move past it
   stalled      the Issue names a stage but no run is alive: the chain died without saying so
   merge        a pull request from task/T-NNN waits for the owner
+  follow-up    findings at Medium or higher with no decision: a task, or closed with a reason
+  degraded     the latest review or acceptance of an open task ran without the context tool
 
 Each item carries a class read from its text (credentials, infrastructure, external
 service, device or manual check, decision, other), the open tasks it unblocks (its
@@ -241,6 +243,21 @@ def report(project):
             pr["number"], pr["title"], " (no CI ran on it: nothing has checked this branch)" if pr.get("no_checks") else ""),
             [pr["task"]] if pr["task"] in tasks else [], [pr["url"]], qid=pr["task"], cls="decision",
             pr=pr["number"])
+
+    follow = getattr(task, "follow_ups", lambda _d: [])(os.path.join(project, "docs", "tasks"))
+    undecided = [i for i in follow if i["needs_task"]]
+    if undecided:
+        add("follow-up", "%d finding(s) at Medium or higher have no decision, in %s: a task or closed "
+            "with a reason (/teamwright:sprint, section 1b)"
+            % (len(undecided), ", ".join(sorted({i["task"] for i in undecided}, key=_num))),
+            [], sorted({i["file"] for i in undecided}), qid="follow-ups", cls="decision")
+    for tid in sorted(open_, key=_num):
+        for sub_dir, what in ((".reviews", "review"), (".validation", "acceptance")):
+            rel = _latest(project, tid, sub_dir)
+            said = str(task.parse(_record_text(project, rel) or "").get("context_tool") or "") if rel else ""
+            if said.startswith("builtin"):
+                add("degraded", "the latest %s of %s ran without the context tool (%s): callers may be "
+                    "missed; re-run it, or accept that" % (what, tid, said), [tid], [rel], cls="decision")
 
     def key(it):
         p = int(it["top_priority"][1:]) if it["top_priority"] else 9

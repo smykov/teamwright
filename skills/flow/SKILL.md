@@ -25,7 +25,7 @@ Project files you follow (read them, do not restate them from memory): `AGENTS.m
 
 ## 0. Context tools are connected
 
-Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it names an MCP-based provider (e.g. `serena`, `context7`), check that its tools are actually available in this session (the tool list, or `claude mcp list` in a terminal). Not available → say once: "<provider> is configured but not connected in this session: restart Claude Code and approve the server, or answer `continue` to work with the built-in search", and wait for the owner's answer (`continue` = work with the built-in search, and pass that note to every role you spawn); headless — review and verify go on with the built-in search and say so, any other stage ends with `Outcome: escalate`. Every role's spawn prompt starts with the code-search line (`docs/process/stage-protocol.md` §0, §3).
+Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it names an MCP-based provider (e.g. `serena`, `context7`), check that its tools are actually available in this session (the tool list, or `claude mcp list` in a terminal). Not available → say once: "<provider> is configured but not connected in this session: restart Claude Code and approve the server, or answer `continue` to work with the built-in search", and wait for the owner's answer (`continue` = work with the built-in search, and pass that note to every role you spawn); headless — review and verify go on with the built-in search and record `context_tool: builtin — <why>`, any other stage ends with `Outcome: escalate`. Every role's spawn prompt starts with the code-search line (`docs/process/stage-protocol.md` §0, §3).
 
 ## 1. Ask the router
 

@@ -290,14 +290,14 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    `security`, `weakened-test`, `done-not-working` or `recurrence` — at any threshold.
    Severities other than Critical | High | Medium | Low are refused. Rows below the
    threshold are follow-ups: the task is approved and the flow writes them to the task's
-   own `docs/tasks/<ID>.follow-ups/`; Medium or higher also gets a task of its own. Without the key nothing here is checked (every
+   own `docs/tasks/<ID>.follow-ups/`; Medium or higher waits for the owner's decision (`/teamwright:sprint`, `/teamwright:blockers`). Without the key nothing here is checked (every
    finding may send the task back, as before settings existed).
 7. **A review that spawns more than two tasks** (`lifecycle.md` §6: one reviewed task
    spawns at most two new tasks; more goes into one umbrella task). Creating a new
    `docs/tasks/<ID>.md` counts toward the review of task R when the session's latest
    spawn by its main agent was a `code-reviewer` naming R (the journal); a later spawn
-   of another role closes that window, a reviewer's own helper spawns do not. Both the
-   reviewer (an rca task) and the orchestrator (a task from a follow-up) count. The
+   of another role closes that window, a reviewer's own helper spawns do not. The
+   reviewer (an rca task) and the orchestrator count. The
    third new record is refused — leave it as a line in the follow-ups (one
    umbrella task) instead, or ask the owner. Counted per reviewed task and spawn in
    `.teamwright/sessions/<R>.new-tasks.jsonl`; re-creating the same id is not a new
@@ -571,6 +571,10 @@ runtime sets it there: use a terminal of your own). A person also removes the pa
 
 **Incident it prevents.** Agents paste config values, tokens seen in logs, or local
 settings files into commits. Once pushed, a secret has to be rotated, not deleted.
+
+`scripts/tw-scan [--strict] [BASE]` runs this hook over the working tree through a
+throwaway index and object directory, before the commit. Exit 3: clean, but by the fallback
+scanner only, in a headless run; the runner needs gitleaks.
 
 **What it blocks**
 

@@ -213,7 +213,7 @@ def issues(project, ids, start, add_to_current=False):
     return 1 if rc else 0
 
 
-def show(data):
+def show(data, all_follow_ups=False):
     cur = data["current_sprint"]
     if cur["active"]:
         print("current sprint is not finished: finish it before forming a new one")
@@ -226,8 +226,8 @@ def show(data):
         print("warning: %s" % w)
     fu = data["follow_ups"]
     print("open follow-ups: %d, %d need a task" % (fu["open_items"], len(fu["needs_task"])))
-    for i in fu["items"]:
-        print("  %s%s" % (i["text"], "  [needs a task]" if i["needs_task"] else ""))
+    for i in fu["items"] if all_follow_ups else fu["needs_task"]:
+        print("  %s%s" % (i["text"], "  [needs a decision]" if i["needs_task"] else ""))
     print("candidates: %d" % len(data["candidates"]))
     for c in data["candidates"]:
         print("  %s %s %s %s/%s %s" % (c["id"], c["effective_priority"], c["status"], c["type"] or "-",
@@ -246,6 +246,7 @@ def main(argv=None):
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--all-follow-ups", action="store_true", help="list every open follow-up, not only those needing a decision")
     ap.add_argument("--start", action="store_true", help="issues: set the label, the queue starts")
     ap.add_argument("--add-to-current", action="store_true",
                     help="issues: add to an unfinished sprint (the owner's explicit decision)")
@@ -262,7 +263,7 @@ def main(argv=None):
     if a.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
-        show(data)
+        show(data, a.all_follow_ups)
     return 0
 
 

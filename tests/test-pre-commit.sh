@@ -61,23 +61,59 @@ try "a stamp with no ledger line for its round: refused" 1 docs/tasks/T-7.review
 grep -q "not written by the gate here" "$TMP/err" && ok "the refusal names the stamp" || bad "the refusal names the stamp" "$(cat "$TMP/err")"
 W2="${STAMP_OK/\"round\": 1/\"round\": 2}"
 try "a stamp whose writer differs from the ledger: refused" 1 docs/tasks/T-7.reviews/2.gate.json "${W2/a-rev/a-x}"
-# --check-tree: the commit's scan over the tree, nothing touched
+# tw-scan: the commit's scan over the tree, nothing touched
 git reset -q --hard; git clean -qfd
-expect_rc "check-tree: clean tree" "0" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
+cp "$KIT/template/scripts/tw-scan" scripts/tw-scan
+git add scripts/tw-scan; git commit -qm tool
+unset CI TEAMWRIGHT_HEADLESS CLAUDE_CODE_ENTRYPOINT
+sec() { bash scripts/tw-scan "$@" >"$TMP/sec.out" 2>&1; echo $?; }
+expect_rc "tw-scan: clean tree" "0" "$(sec)"
+grep -q "weaker than gitleaks" "$TMP/sec.out" && ok "tw-scan: says the fallback is weaker" || bad "tw-scan: says the fallback is weaker" "$(cat "$TMP/sec.out")"
+expect_rc "tw-scan: fallback only, headless: 3" "3" "$(sec --strict)"
+expect_rc "tw-scan: fallback only, CI: 3" "3" "$(CI=true sec)"
 printf '%s\n' "key = '${A}QWERTYUIOPASDFGH'" > untracked.py
-expect_rc "check-tree: finds a secret in an untracked file" "1" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
-expect_rc "check-tree: the index is untouched" "" "$(git diff --cached --name-only)"
+objs=$(find .git/objects -type f | wc -l)
+expect_rc "tw-scan: finds a secret in an untracked file" "1" "$(sec)"
+expect_rc "tw-scan: the index is untouched" "" "$(git diff --cached --name-only)"
+expect_rc "tw-scan: no object is left behind" "$objs" "$(find .git/objects -type f | wc -l)"
+git config color.ui always
+expect_rc "tw-scan: color.ui always does not hide it" "1" "$(sec)"
+git config --unset color.ui
+git config diff.external /bin/true
+expect_rc "tw-scan: an external diff does not hide it" "1" "$(sec)"
+git config --unset diff.external
 rm -f untracked.py
 echo a=b > conf.ini; git add conf.ini; git commit -qm conf
 printf '%s\n' "${PWK}Sup3rS3cretValue" > conf.ini
-expect_rc "check-tree: finds one in a modified file" "1" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
+expect_rc "tw-scan: finds one in a modified file" "1" "$(sec)"
 git checkout -q conf.ini
-python3 - "$KIT/template/.gitleaks.toml" <<'PYT' && ok "gitleaks template: exemptions are by value, paths unchanged" || bad "gitleaks template: exemptions are by value, paths unchanged"
-import re, sys, tomllib
-c = tomllib.load(open(sys.argv[1], "rb"))["allowlist"]
-assert all(re.search(r, "a/.env.example") or "lock" in r for r in c["paths"])
-hit = lambda v: any(re.search(r, v) for r in c["regexes"])
-assert hit("strings.filePasswordProtected") and hit("usage(x)") and hit("passwordA)")
-assert not hit("Zx81Kq03Lm77Pp")
+: > .gitignore; printf 'x\n' > c.local.json
+expect_rc "tw-scan: refuses what the commit refuses" "1" "$(sec)"
+rm -f c.local.json; git checkout -q .gitignore
+expect_rc "tw-scan: an unknown BASE is an error" "2" "$(sec nosuch)"
+printf '%s\n' "${PWK}Sup3rS3cretValue" > hist.ini; git add hist.ini; git commit -qnm hist
+expect_rc "tw-scan: BASE reaches commits since it" "1" "$(sec HEAD~1)"
+git rm -qf hist.ini; git commit -qm gone
+# The template's exemptions, by the real scanner where there is one.
+python3 - "$KIT/template/.gitleaks.toml" <<'PYT' && ok "gitleaks template: exemptions on one rule, by line, none by path" || bad "gitleaks template: exemptions on one rule, by line, none by path"
+import sys, tomllib
+c = tomllib.load(open(sys.argv[1], "rb"))
+rule = next(r for r in c["rules"] if r["id"] == "generic-secret-assignment")
+al = rule["allowlists"][0]
+assert al["regexTarget"] == "line" and "paths" not in al
+assert not any("strings" in r or "usage" in r for r in c["allowlist"]["regexes"])
+assert all(".env" in p or "lock" in p for p in c["allowlist"]["paths"])
 PYT
+if command -v gitleaks >/dev/null 2>&1; then
+  G="$TMP/gl"; mkdir -p "$G"
+  leak() { printf '%s\n' "$1" > "$G/in.txt"; gitleaks stdin --no-banner --config "$KIT/template/.gitleaks.toml" < "$G/in.txt" >/dev/null 2>&1; echo $?; }
+  S1="s.AbCdEfGhIj""KlMnOpQrStUvWx"; S2="Zx81Kq03""Lm77Pp"
+  expect_rc "gitleaks: a quoted Vault-like token is found" "1" "$(leak "vault_token = '$S1'")"
+  expect_rc "gitleaks: a quoted strings.X value is found" "1" "$(leak "password = 'strings.CorrectHorseBattery'")"
+  expect_rc "gitleaks: a quoted usage( value is found" "1" "$(leak "api_key = 'usage($S2'")"
+  expect_rc "gitleaks: a quoted json.loads( value is found" "1" "$(leak "password = 'json.loads($S2'")"
+  expect_rc "gitleaks: a value after passwordA) is found" "1" "$(leak "password: passwordA)$S2")"
+  expect_rc "gitleaks: a translation key passes" "0" "$(leak "  'password_protected': strings.filePasswordProtected,")"
+  expect_rc "gitleaks: a test variable passes" "0" "$(leak "signIn(email: emailA, password: passwordA);")"
+fi
 finish

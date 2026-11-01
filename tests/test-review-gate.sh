@@ -414,4 +414,18 @@ expect_deny "committed since the reviewer spawn: still counted" "$out" "created 
 out="$(gr Edit s9 "file_path=$G/docs/tasks/T-1.md" "old_string=status: NEEDS_REVIEW" "new_string=status: IN_PROGRESS")"
 expect_allow "another session without a review window: not counted" "$out"
 
+# context_tool: where a provider is named, the record says what it searched with
+mkdir -p "$P/.teamwright"; printf 'version: 1\ntools:\n  context: serena\n' > "$P/.teamwright/config.yml"
+ctx() { run Write "$S" "file_path=$(rd T-80)/1.md" "content=$(printf -- '---\ntask: T-80\nround: 1\nreviewer: code-reviewer\nverdict: REQUEST_CHANGES\n%s---\nfindings\n' "$1")" "${REV[@]}"; }
+expect_deny "context_tool: a missing field is refused" "$(ctx '')" "context_tool"
+expect_deny "context_tool: builtin without a reason is refused" "$(ctx 'context_tool: builtin
+')" "context_tool"
+expect_allow "context_tool: used passes" "$(ctx 'context_tool: used
+')"
+expect_allow "context_tool: builtin with a reason passes" "$(ctx 'context_tool: builtin — the server timed out
+')"
+printf 'version: 1\ntools:\n  context: builtin\n' > "$P/.teamwright/config.yml"
+expect_allow "context_tool: not asked of a project with no provider" "$(ctx '')"
+rm -f "$P/.teamwright/config.yml"
+
 finish

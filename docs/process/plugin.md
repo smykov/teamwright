@@ -203,7 +203,7 @@ and Issues named after a task without the label, except tasks already `DONE`.
 A pull request a workflow opened with the default `GITHUB_TOKEN` starts no other workflow, so a
 chain's branch can reach the owner with no CI. The kit ships no workflow: in the project's contour
 push with an App or personal token, or run CI by `gh workflow run <ci> --ref task/<ID>` as the
-chain's last step. Until then `/teamwright:sprint`, `/teamwright:blockers` and `/teamwright:progress`
+chain's last step (`docs/usage.md` has the step; neither way has been tried on a live contour yet). Until then `/teamwright:sprint`, `/teamwright:blockers` and `/teamwright:progress`
 say that nothing checked the branch.
 `gh` missing or without an answer gives `checked: false` and the reason, never an empty queue; a
 project with no GitHub remote gives `applicable: false`. Both `tw-blockers.py` and `tw-progress.py`

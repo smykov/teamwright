@@ -18,14 +18,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" --json
 - `current_sprint` — `active`, the open labelled Issues with their `state` and `note`, the open pull requests from task branches.
 - `candidates` — open tasks the queue can take: status, `stage`, priority, `surface`, `waits_for` (open `depends_on`), `overlaps`, `areas`, `acceptance_items`, `risks`.
 - `excluded` — with the `reason`: already in the queue, `BLOCKED`, unanswered `blocked_on`.
-- `follow_ups` — open follow-ups from every task (`items`), and `needs_task`: those at Medium or higher with no task. Read from this tree: a line on an unmerged branch shows after its merge.
+- `follow_ups` — open follow-ups from every task (`items`), and `needs_task`: those at Medium or higher with no decision. Read from this tree: a line on an unmerged branch shows after its merge.
 - `warnings` — unpushed commits, a task `IN_PROGRESS` on the default branch, a failed chain, GitHub not checked.
 
-GitHub not checked → say so and stop: without the queue the current sprint is unknown.
+GitHub not checked → say so, do §1b, and stop: without the queue the current sprint is unknown.
 
 ## 1a. The current sprint comes first
 
-`current_sprint.active` → **do not form a new sprint.** Show each Issue and pull request with what moves it, and stop:
+`current_sprint.active` → **do not form a new sprint.** Show each Issue and pull request with what moves it, do §1b, and stop:
 
 - `queued`, `running` — wait; `/teamwright:progress`.
 - `stopped`, `failed`, `stalled` — `/teamwright:blockers`: fix the cause and set the label again, or take the task out of the queue on the owner's decision (remove the label).
@@ -35,7 +35,7 @@ The candidates may be shown only if the owner asks to look ahead, marked as not 
 
 ## 1b. Open follow-ups
 
-Show `follow_ups.open_items` and the lines, every time. For each `needs_task` line ask the owner: a task of its own (or one umbrella task for several), or close it with a reason. On "yes", on the default branch: create the task from the template (`type: chore`, `priority: P2`, `surface: none`, the finding as Acceptance), end the line with `-> T-MMM`, commit. Lines below Medium stay until the owner takes them into a task or ticks them.
+Show the count and the `needs_task` lines; the rest only if the owner asks (`--all-follow-ups`). For each `needs_task` line ask the owner: a task of its own, one umbrella task for several, or closed with a reason. No task is created without that answer: each one costs a full chain. On "a task", on the default branch after `git fetch` and fast-forward, with an id no remote branch uses: create it from the template (`type: chore`, `class: from-follow-up`, `priority: P3`, `surface: none`, `deploys: false`, the finding as Acceptance), end the line with `-> T-MMM`, commit. On "closed": `- [x] <the line> — closed: <why>`, commit. A line ending in `-> T-MMM` closes by itself when T-MMM is `DONE`; a follow-up of a `from-follow-up` task stays a line.
 
 ## 2. Choose
 
@@ -79,4 +79,4 @@ Labels go on in the order shown; the queue takes as many at once as it has place
 - Never pass `--add-to-current` on your own judgement.
 - Never label a task the owner did not approve, and never widen the list after the "yes".
 - Do not edit existing task records here: a task that needs an answer goes to `/teamwright:blockers`. The one thing written here is a new task from a follow-up, on the owner's "yes" (§1b).
-- No GitHub remote or no contour workflow in the project → say that this command is for the autonomous queue, and offer `/teamwright:flow` or `/teamwright:parallel`.
+- No GitHub remote or no contour workflow in the project → do §1b, say that this command is for the autonomous queue, and offer `/teamwright:flow` or `/teamwright:parallel`.
