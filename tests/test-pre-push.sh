@@ -42,6 +42,8 @@ expect_rc "push after approval passes" 0 "$(push)"
 status T-3 IN_PROGRESS
 code a.py "fix(T-3): address review"
 expect_rc "code after a send-back (IN_PROGRESS) blocks" 1 "$(push)"
+CLAUDECODE=1 TEAMWRIGHT_ALLOW_PUSH=1 git push -q origin main 2>"$TMP/err"; expect_rc "the override is ignored inside Claude Code" 1 "$?"
+grep -q "ignored inside Claude Code" "$TMP/err" && ok "says the override was ignored" || bad "says the override was ignored"
 TEAMWRIGHT_ALLOW_PUSH=1 git push -q origin main 2>/dev/null; expect_rc "human override pushes" 0 "$?"
 
 # a patch left in a DEFERRED task: blocked until the owner ratifies it

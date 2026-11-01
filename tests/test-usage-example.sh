@@ -17,6 +17,18 @@ echo "  (YAML read with: $(fact parser))"
 expect_rc "the steps read run, prompt, model, reason and head from the route step" "head model prompt reason run" "$(fact used)"
 expect_rc "the journal is kept between jobs (cache), the ledgers are not" True "$(fact cached)"
 
+# the hooks step on a fresh clone of an installed project: the hooks work, the tree stays clean
+git init -q --bare -b main "$TMP/origin.git"
+new_repo "$TMP/inst"; git add -A; git commit -qm "chore: init"; git remote add origin "$TMP/origin.git"; git push -q origin main
+git clone -q "$TMP/origin.git" "$TMP/fresh" && cd "$TMP/fresh" || exit 1
+expect_rc "a fresh checkout has no core.hooksPath" "" "$(git config --get core.hooksPath)"
+bash -e "$OUT/hooks.sh" >/dev/null 2>&1; expect_rc "the hooks step runs on a fresh checkout" 0 "$?"
+expect_rc "the hooks step enables the git hooks" "scripts/hooks" "$(git config --get core.hooksPath)"
+expect_rc "the hooks step leaves the tree clean" "" "$(git status --porcelain)"
+touch TEAMWRIGHT_PAUSE; git commit -q --allow-empty -m "chore: tip"
+git push -q origin HEAD:refs/heads/wip/x 2>/dev/null; expect_rc "after it, the pause holds on a wip push from the job" 1 "$?"
+rm TEAMWRIGHT_PAUSE
+
 # the route step against a project with work: run=true and a stage command
 P="$TMP/proj"; mkdir -p "$P/docs/tasks" "$P/.teamwright" && cd "$P" || exit 1
 git init -q -b main .

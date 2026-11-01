@@ -102,6 +102,26 @@ install manifest and the ledgers are not the agents' to change:
   helpers (`scripts/hooks`, `_hookio`). Hooks are run by Claude Code and git with the
   runtime's input; a gate fed a hand-made payload would write a genuine-looking ledger
   line or stamp. Reading them (`cat`, `grep`, `git diff`) is fine.
+- **Files that define the gates**: `scripts/hooks/*`, `.claude/settings.json`,
+  `.claude/settings.local.json`, `.claude/agents/*`, `.mcp.json`,
+  `.teamwright/patch-guard.conf`, `.git/config`, `.git/hooks/*`. A write through Edit,
+  Write or the shell forms above needs a person: in `enforce` the hook answers `ask`, so the
+  owner sees a prompt and can approve a change they asked for. Where nobody can answer, the
+  call is refused (`claude -p` refuses a prompt by itself; `dontAsk` and `bypassPermissions`
+  are refused by the hook). In `gate-first` it warns, like the other gate decisions.
+  `tw-install.py` writes these files from its own process, so `/teamwright:update`,
+  `reconfigure` and `adopt` are not stopped, nor are reading them or `git add`,
+  `git commit` and `git diff`. Claude Code protects some of these paths itself: its
+  documentation lists `.claude`, `.git` and `.mcp.json` as protected paths, prompted in
+  the default and `acceptEdits` modes and allowed in `bypassPermissions`; `scripts/hooks/`
+  is not on that list.
+- **The human exits around git hooks** are refused in every mode: setting
+  `TEAMWRIGHT_ALLOW_PUSH`, `TEAMWRIGHT_PAUSE_FILE`, `TEAMWRIGHT_PUSH_STATUSES`,
+  `TEAMWRIGHT_WIP_REFS_RE` or `TEAMWRIGHT_DOC_PATHS_RE` in a command; `git config` that
+  sets or unsets `core.hooksPath`, `git -c core.hooksPath=...`, `GIT_CONFIG_*` assignments;
+  removing or moving `TEAMWRIGHT_PAUSE`. Reading `core.hooksPath`, naming these in
+  `grep` or a commit message, creating the pause file and `bash scripts/install-hooks.sh`
+  stay allowed. The deny list in `.claude/settings.json` carries the plain forms as well.
 - Owner override: a person runs `TEAMWRIGHT_OWNER=1 python3 <kit>/scripts/tw-install.py apply ...`
   outside Claude Code, or edits the file by hand. The variable is ignored when
   `CLAUDECODE` is set (every Claude Code tool call), and agent commands that mention
@@ -424,10 +444,11 @@ the agent's report.
 | `PermissionRequest`, `PermissionDenied` | `perms.jsonl` | permission decision needed / call denied (`PermissionDenied` fires for auto-mode denials; a deny-rule refusal shows as a `pre` line with no `post`) |
 | `PostToolUse` of Edit/Write on `docs/tasks/<ID>.verify/<n>.md` | `verify.jsonl` | verify record landed: task, round, kind, tool, environment, result, commit (never the command or the body) |
 | `Stop`, `SubagentStop` | `outcomes.jsonl` | session or subagent end: `outcome` from the final message's `Outcome: barrier\|idle\|escalate\|interrupted` line — `last_assistant_message`, else the last assistant text in the transcript (`none` if missing; `outcome_source`: message / transcript / none); a `Stop` without the line while an agent the session launched has not finished is `waiting` (`outcome_source: open-agent`), and so is a `Stop` whose final message ends on the flow's `waiting for <role> on <ID>` line (`outcome_source: waiting-line`) — active task and its status, the agent's tool-call count; `stage` from a `Stage: analyze\|red-tests\|implement\|review\|verify\|flow` line, and `batch` / `batch_reason` from `Batch: <ids> - <why>` (the tasks the session chose from the router's candidates); `tokens` — model usage of the agent's transcript so far, per model (`input`, `output`, `cache_read`, `cache_write`; cumulative; `Stop`: the session's own lines from `transcript_path`, `SubagentStop`: `agent_transcript_path`; `{}` without a path), read incrementally with the offset kept under `.teamwright/logs/.tokens/` |
-| any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
+| any gate warning or denial | `gates.jsonl` | `event: gate`, `gate`, `decision` (`warn` / `deny` / `ask`), session, agent, tool, first line of the reason — written by the gates themselves (`_hookio.deny`) |
 
-`detail` classifies a call, it never replays it: program + subcommand of a shell command
-(no arguments, no `VAR=value`), a repo-relative path, an agent type, a skill name, a URL
+`detail` classifies a call, it never replays it: the program of a shell command, plus its
+next word only when that looks like a subcommand (letters, digits, dashes, up to 24
+characters; a short bare token passes this test), no other arguments, no `VAR=value`, a repo-relative path, an agent type, a skill name, a URL
 host. File contents, prompts, arguments, error texts and denial reasons are not stored.
 The hook prints nothing and always exits 0. Directory: `$TEAMWRIGHT_LOG_DIR`.
 
@@ -540,7 +561,9 @@ green are seen before review. Commits that exist on the remote only in wip branc
 still undelivered: the DRAIN range of a later push ignores wip branches.
 
 **Deliberate exits:** `tail_code: ratified` in the task record (owner's decision, stays
-in history); human, one-off: `TEAMWRIGHT_ALLOW_PUSH=1 git push`.
+in history); human, one-off, in their own terminal: `TEAMWRIGHT_ALLOW_PUSH=1 git push`
+(ignored when `CLAUDECODE` is set, which covers `!` commands inside a session if the
+runtime sets it there: use a terminal of your own). A person also removes the pause file.
 
 ## Secret scan
 
@@ -863,7 +886,7 @@ guard's variables. Unset means the default.
 | `TEAMWRIGHT_DOC_PATHS_RE` | `pre-push` | commits touching only these paths belong to no task (`^(docs\|specs\|openspec)/\|^(PRINCIPLES\|AGENTS\|CLAUDE)\.md$`) |
 | `TEAMWRIGHT_WIP_REFS_RE` | `pre-push` | remote refs that are CI-only pushes, not deliveries (`^refs/heads/wip/`) |
 | `TEAMWRIGHT_TASK_BRANCH_RE` | router, progress report | a branch that names a task worked in its own worktree, group 1 = the id (`^(?:tw\|task)/(<task id>)(?:$\|[-_/.])`) |
-| `TEAMWRIGHT_ALLOW_PUSH=1` | `pre-push` | one-off human override of DRAIN |
+| `TEAMWRIGHT_ALLOW_PUSH=1` | `pre-push` | one-off human override of DRAIN, own terminal; ignored inside Claude Code |
 | `PATCH_GUARD=off` | patch guard | one-off human override |
 | `TEAMWRIGHT_CLAUDE_MD_MAX_KB` | CLAUDE.md budget | warning threshold in KB (`40`, set in `.claude/settings.json` → `env`) |
 | `TEAMWRIGHT_SESSION_CHECK` | session check | `0` turns it off (on) |
@@ -956,9 +979,11 @@ gate is wrong or the process is — record it in `docs/failures.md` and fix the 
   run the review where the work was done.
 - One `.teamwright/current-task` per working tree; parallel sessions need worktrees.
 - The state guard parses shell commands; a script file that writes
-  `.teamwright/config.yml` without the command naming it, or a path built at run time,
-  slips through. Review changes to that
-  file like code (it is committed), and `tw-install.py` refuses lowering the mode.
+  `.teamwright/config.yml`, a hook, the settings or `.mcp.json` without the command naming
+  it, or a path built at run time, slips through. So does a script that sets the git
+  config or removes the pause file. Review changes to those files like code (they are
+  committed), and `tw-install.py` refuses lowering the mode. Other executed files
+  (`scripts/tw-*`, `.teamwright/progress.json`) are not in the guard's list.
 - The review gate trusts `agent_type`: anyone who can edit `.claude/agents/` can name
   an agent `code-reviewer`. Review changes to agent definitions like code.
 - The review gate's new-task count (check 7) attributes a new record by the journal's

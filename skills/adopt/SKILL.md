@@ -116,7 +116,7 @@ The installer never overwrites a file it did not write; conflicts are yours to m
 - **Existing agents** (`.claude/agents/**`) → a table: existing agent → teamwright role (`problem-investigator`, `test-writer`, `developer`, `technical-writer`, `code-reviewer`, `task-validator`) → keep / replace / merge. Domain specialists, ops commands and project skills are **kept**. A duplicate of a teamwright role (e.g. a stack-specific test writer) is replaced only with consent; its useful stack conventions move into the area's role file outside the markers. Removal is `git rm` on "yes" (recoverable from history). An existing file named like a teamwright role → merge, never overwrite.
 - **Existing decision records** (`docs/adr/`, `docs/decisions/`) → link them from `docs/decisions.md`, do not copy.
 - **`core.hooksPath` set by another hook manager** → show both options: chain the manager's hooks from `scripts/hooks/*`, or call teamwright's hooks from the manager. Owner decides.
-- **`scripts/hooks/patch-guard.conf`** → propose signatures for the project's languages (allowlists, special cases, regex branches in this codebase) as a diff.
+- **`scripts/hooks/patch-guard.conf`** (the write asks the owner: the state guard's list of files that define the gates) → propose signatures for the project's languages (allowlists, special cases, regex branches in this codebase) as a diff.
 - Invalid `.claude/settings.json` or `.mcp.json` → show the parse error; the owner fixes it.
 
 After a file is merged by hand, record it so `plan` stops reporting it as a conflict: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" apply --accept <path>`.

@@ -46,6 +46,13 @@ expect_deny() {  # desc output [needle]
     bad "$1" "expected deny, got: ${2:-<empty>}"
   fi
 }
+expect_ask() {  # desc output [needle]
+  if printf '%s' "$2" | grep -q '"permissionDecision": "ask"'; then
+    if [ -z "${3:-}" ] || printf '%s' "$2" | grep -qF -- "$3"; then ok "$1"; else bad "$1" "ask without '$3'"; fi
+  else
+    bad "$1" "expected ask, got: ${2:-<empty>}"
+  fi
+}
 expect_allow() { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected allow, got: $2"; fi; }
 expect_rc() {  # desc expected actual
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "exit $3, expected $2"; fi

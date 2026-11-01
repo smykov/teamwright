@@ -1265,8 +1265,8 @@ def decide(project, taken=None, stage=None, ids=None):
     info = stage_queues(project, cands, tasks, proc, eff)
     cands = hold_back(cands, info)
     if st["pause"]:
-        first = _d("paused", None, "TEAMWRIGHT_PAUSE exists: the team is stopped; remove the file "
-                   "to resume (next would be: %s)" % (
+        first = _d("paused", None, "TEAMWRIGHT_PAUSE exists: the team is stopped; a person removes the "
+                   "file to resume (next would be: %s)" % (
                        ("%s %s" % (cands[0]["action"], cands[0]["task"] or "")).strip()
                        if cands else "idle"), ask=True)
         rest = cands

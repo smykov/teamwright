@@ -208,6 +208,11 @@ def main(argv):
     if sessions_cached:
         errs.append(".teamwright/sessions is cached between jobs: a restored ledger without a cut job's round refuses it")
     # the work branch is created when it does not exist yet
+    hooks = [s for s in steps if "install-hooks.sh" in str(s.get("run") or "")]
+    if not hooks:
+        errs.append("no step enables the git hooks: core.hooksPath does not come with a checkout")
+    elif route and steps.index(hooks[0]) > steps.index(route[0]):
+        errs.append("the git hooks are enabled after the router runs")
     if not any("refs/heads/wip/" in str(s.get("run") or "") for s in steps):
         errs.append("no step creates the wip/ branch when it is missing")
     # no new commit -> stop: the dispatching step compares HEAD with the route step's head
@@ -229,6 +234,9 @@ def main(argv):
     if route:
         with open(os.path.join(argv[3], "route.sh"), "w") as fh:
             fh.write(route[0]["run"])
+    if hooks:
+        with open(os.path.join(argv[3], "hooks.sh"), "w") as fh:
+            fh.write(hooks[0]["run"])
     if disp:
         with open(os.path.join(argv[3], "dispatch.sh"), "w") as fh:
             fh.write(disp[0]["run"])

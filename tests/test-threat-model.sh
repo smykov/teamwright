@@ -21,6 +21,6 @@ broken 'pre-commit::scan_diff' 'pre-commit::no_such_symbol' "a missing symbol is
 broken '| TM-06 |' '| TM-05 |' "a duplicate id is caught" "duplicate id"
 broken '`tests/test-review-gate.sh::developer subagent cannot write the review`; `tests/test-review-gate.sh::an implementing agent id stays denied even with reviewer type`' 'no test' "mitigated without a test is caught" "mitigated without a test"
 broken ' | partial | Regexes' ' | safe | Regexes' "an unknown status is caught" "unknown status"
-broken '| B5 | T, E | Reported' '| B99 | T, E | Reported' "an unknown boundary is caught" "unknown boundary"
+broken '| B5 | T, E | Agents' '| B99 | T, E | Agents' "an unknown boundary is caught" "unknown boundary"
 broken '(TM-21)' '(TM-99)' "a tree leaf without a row is caught" "TM-99"
 finish

@@ -32,12 +32,14 @@ In scope, for example:
 - a gate that allows what its documentation says it blocks, with an ordinary Edit, Write or shell call;
 - the installer overwriting a file it did not write, or writing outside the project;
 - the secret scan missing a secret it claims to detect, or a hook leaking file contents, prompts or command arguments into the journal;
-- a way for an agent to lower the gate mode or rewrite the ledgers and journals the gates rely on.
+- a way for an agent to lower the gate mode or rewrite the ledgers and journals the gates rely on;
+- an ordinary Edit, Write or shell write to the hooks, settings, agent definitions or `.mcp.json` that does not reach a person in `enforce` mode, or an agent command that uses the push override, removes the pause file or switches `core.hooksPath`.
 
 Out of scope — known and documented limits, listed in [README › Known limitations](README.md#known-limitations) and [docs/process/gates.md › Known limitations](docs/process/gates.md#known-limitations):
 
-- `git commit --no-verify` and `git push --no-verify`;
-- a script or program that writes files directly instead of through Edit/Write;
+- `git commit --no-verify` and `git push --no-verify` (they skip the git hooks, the pause included);
+- a script or program that writes files directly instead of through Edit/Write, or that changes git config or removes the pause file;
+- `gate-first` mode, where writes to the hooks and settings only warn;
 - shell forms the deny list does not match (`sh -c`, scripts);
 - an agent definition named `code-reviewer` by whoever can edit `.claude/agents/`;
 - ledgers and journals on another machine.
