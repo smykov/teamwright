@@ -29,4 +29,4 @@ A candidate whose verdict is already recorded (the router's `continue` with role
    - verify `FAIL` → `VERIFY_FAIL`; the next analyze session re-analyses it;
    - verify `PASS`, acceptance `FAIL` → back to `IN_PROGRESS` with the findings and `stage: implement` (or `red-tests` when a test is missing or toothless), then a new review;
    - `NEEDS_OWNER` → decision point with the exact action needed.
-   Survivors listed under `Follow-ups` go to the sprint's follow-up task (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict.
+   Survivors listed under `Follow-ups` go to the task's own record, `docs/tasks/T-NNN.follow-ups/v<round>.md` (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict.

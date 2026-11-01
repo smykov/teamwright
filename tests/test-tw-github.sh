@@ -10,6 +10,7 @@ git remote add origin https://github.com/acme/widget.git
 for id in T-1 T-2 T-3 T-4 T-5 T-6 T-7 T-11 T-12 T-13; do
   printf -- '---\nid: %s\ntitle: task %s\ntype: feature\nstatus: TODO\npriority: P2\ndeploys: false\nsurface: none\ndepends_on: []\n---\nbody\n' "$id" "$id" > "docs/tasks/$id.md"
 done
+printf -- '---\nid: T-14\ntitle: finished\ntype: feature\nstatus: DONE\npriority: P2\ndeploys: false\nsurface: none\ndepends_on: []\n---\nbody\n' > docs/tasks/T-14.md
 git add -A; git -c user.name=t -c user.email=t@t commit -qm init
 cat > "$TMP/bin/gh" <<'SH'
 #!/usr/bin/env bash
@@ -26,11 +27,12 @@ case "$1" in
  {"number":12,"title":"T-12: taken","labels":[{"name":"teamwright"},{"name":"tw:start"}],"url":"u12","comments":[]},
  {"number":13,"title":"T-13: leak","labels":[{"name":"teamwright"},{"name":"tw:stop"}],"url":"u13","comments":[{"body":"### report\n\n| a | b |\n|---|---|\n| x | y |\n\n**Found:** a value in app/a.dart:3\n"},{"body":"chain stopped, see the report above"}]},
  {"number":7,"title":"T-7: nobody took it","labels":[],"url":"u7","comments":[]},
+ {"number":14,"title":"T-14: finished, Issue left open","labels":[],"url":"u14","comments":[]},
  {"number":8,"title":"a question about T-1","labels":[],"url":"u8","comments":[]}]
 J
   ;;
   run) echo '[{"status":"in_progress","displayTitle":"teamwright agent T-2 implement","url":"r"},{"status":"completed","displayTitle":"teamwright agent T-3 red-tests","url":"r"}]' ;;
-  pr) echo '[{"number":9,"title":"T-6: chain done","headRefName":"task/T-6","url":"p9"},{"number":10,"title":"other","headRefName":"fix/x","url":"p10"}]' ;;
+  pr) echo '[{"number":9,"title":"T-6: chain done","headRefName":"task/T-6","url":"p9","statusCheckRollup":[]},{"number":10,"title":"other","headRefName":"fix/x","url":"p10"}]' ;;
 esac
 SH
 chmod +x "$TMP/bin/gh"
@@ -43,6 +45,8 @@ expect_rc "each Issue gets its state" "queued running stalled stopped failed fin
 expect_rc "a stop comment that points back takes the report below the table" "**Found:** a value in app/a.dart:3" "$(q '[i for i in d["issues"] if i["task"]=="T-13"][0]["report"]')"
 expect_rc "only task branches count as task pull requests" "T-6" "$(q '" ".join(p["task"] for p in d["pull_requests"])')"
 expect_rc "an Issue named after a task without the label is reported" "T-7" "$(q '" ".join(u["task"] for u in d["unlabelled"])')"
+expect_rc "a pull request with no checks is marked" "True" "$(q 'd["pull_requests"][0]["no_checks"]')"
+expect_rc "blockers say no CI ran on it" "1" "$(b 'sum("no CI ran" in i["need"] for i in d["items"])')"
 expect_rc "the note is the comment's first non-empty line" "needs a production API key" "$(q 'd["issues"][3]["note"]')"
 expect_rc "blockers list what stopped, failed, stalled and waits for a merge" "failed merge stalled stopped stopped" "$(b '" ".join(sorted(i["kind"] for i in d["items"]))')"
 expect_rc "the class of a stopped chain comes from its note" "credentials" "$(b '[i["cls"] for i in d["items"] if i["kind"]=="stopped"][0]')"

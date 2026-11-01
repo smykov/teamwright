@@ -2,7 +2,7 @@
 name: sprint
 description: Form a sprint for the autonomous contour — which tasks can go into the GitHub queue, which cannot and why, what would stop a chain, what must come first — and, after the owner's "yes", open their Issues and start the queue. Use when the owner asks to pick tasks for the autonomous queue, form a sprint, or choose candidates for a run.
 argument-hint: "[N tasks] [goal, e.g. measure | clear bugs] [T-NNN ...]"
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" *) Bash(git status *) Bash(git log *) Read Grep
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" *) Bash(git status *) Bash(git log *) Bash(git add *) Bash(git commit *) Read Grep Write Edit
 ---
 
 # /teamwright:sprint — what goes into the autonomous queue
@@ -18,6 +18,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" --json
 - `current_sprint` — `active`, the open labelled Issues with their `state` and `note`, the open pull requests from task branches.
 - `candidates` — open tasks the queue can take: status, `stage`, priority, `surface`, `waits_for` (open `depends_on`), `overlaps`, `areas`, `acceptance_items`, `risks`.
 - `excluded` — with the `reason`: already in the queue, `BLOCKED`, unanswered `blocked_on`.
+- `follow_ups` — open follow-ups from every task (`items`), and `needs_task`: those at Medium or higher with no task. Read from this tree: a line on an unmerged branch shows after its merge.
 - `warnings` — unpushed commits, a task `IN_PROGRESS` on the default branch, a failed chain, GitHub not checked.
 
 GitHub not checked → say so and stop: without the queue the current sprint is unknown.
@@ -31,6 +32,10 @@ GitHub not checked → say so and stop: without the queue the current sprint is 
 - `finished`, or an open pull request — the owner merges through `/teamwright:blockers`; when the task is left at `CODE_COMPLETE`, set the label again for verify.
 
 The candidates may be shown only if the owner asks to look ahead, marked as not startable yet. Adding to the running sprint is the owner's explicit decision: only after they ask for it, `issues … --add-to-current`.
+
+## 1b. Open follow-ups
+
+Show `follow_ups.open_items` and the lines, every time. For each `needs_task` line ask the owner: a task of its own (or one umbrella task for several), or close it with a reason. On "yes", on the default branch: create the task from the template (`type: chore`, `priority: P2`, `surface: none`, the finding as Acceptance), end the line with `-> T-MMM`, commit. Lines below Medium stay until the owner takes them into a task or ticks them.
 
 ## 2. Choose
 
@@ -73,5 +78,5 @@ Labels go on in the order shown; the queue takes as many at once as it has place
 
 - Never pass `--add-to-current` on your own judgement.
 - Never label a task the owner did not approve, and never widen the list after the "yes".
-- Do not edit task records here: a task that needs an answer goes to `/teamwright:blockers`.
+- Do not edit existing task records here: a task that needs an answer goes to `/teamwright:blockers`. The one thing written here is a new task from a follow-up, on the owner's "yes" (§1b).
 - No GitHub remote or no contour workflow in the project → say that this command is for the autonomous queue, and offer `/teamwright:flow` or `/teamwright:parallel`.

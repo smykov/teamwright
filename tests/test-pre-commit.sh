@@ -61,4 +61,23 @@ try "a stamp with no ledger line for its round: refused" 1 docs/tasks/T-7.review
 grep -q "not written by the gate here" "$TMP/err" && ok "the refusal names the stamp" || bad "the refusal names the stamp" "$(cat "$TMP/err")"
 W2="${STAMP_OK/\"round\": 1/\"round\": 2}"
 try "a stamp whose writer differs from the ledger: refused" 1 docs/tasks/T-7.reviews/2.gate.json "${W2/a-rev/a-x}"
+# --check-tree: the commit's scan over the tree, nothing touched
+git reset -q --hard; git clean -qfd
+expect_rc "check-tree: clean tree" "0" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
+printf '%s\n' "key = '${A}QWERTYUIOPASDFGH'" > untracked.py
+expect_rc "check-tree: finds a secret in an untracked file" "1" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
+expect_rc "check-tree: the index is untouched" "" "$(git diff --cached --name-only)"
+rm -f untracked.py
+echo a=b > conf.ini; git add conf.ini; git commit -qm conf
+printf '%s\n' "${PWK}Sup3rS3cretValue" > conf.ini
+expect_rc "check-tree: finds one in a modified file" "1" "$(bash scripts/hooks/pre-commit --check-tree >/dev/null 2>&1; echo $?)"
+git checkout -q conf.ini
+python3 - "$KIT/template/.gitleaks.toml" <<'PYT' && ok "gitleaks template: exemptions are by value, paths unchanged" || bad "gitleaks template: exemptions are by value, paths unchanged"
+import re, sys, tomllib
+c = tomllib.load(open(sys.argv[1], "rb"))["allowlist"]
+assert all(re.search(r, "a/.env.example") or "lock" in r for r in c["paths"])
+hit = lambda v: any(re.search(r, v) for r in c["regexes"])
+assert hit("strings.filePasswordProtected") and hit("usage(x)") and hit("passwordA)")
+assert not hit("Zx81Kq03Lm77Pp")
+PYT
 finish

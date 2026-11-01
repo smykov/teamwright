@@ -237,7 +237,8 @@ def report(project):
         add(i["state"], text, [t for t in ids if t in tasks], [i["url"]], qid=i["task"] or "#%d" % i["number"],
             cls=cls, issue=i["number"], title=i["title"])
     for pr in gh.get("pull_requests") or []:
-        add("merge", "pull request #%d waits for the owner: %s" % (pr["number"], pr["title"]),
+        add("merge", "pull request #%d waits for the owner: %s%s" % (
+            pr["number"], pr["title"], " (no CI ran on it: nothing has checked this branch)" if pr.get("no_checks") else ""),
             [pr["task"]] if pr["task"] in tasks else [], [pr["url"]], qid=pr["task"], cls="decision",
             pr=pr["number"])
 

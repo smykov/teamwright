@@ -143,11 +143,22 @@ def collect(project):
     for i in queue.get("issues") or []:
         if i["state"] == "failed":
             warnings.append("Issue #%s failed: a failed chain stops the queue taking new tasks" % i["number"])
+    # a project on an older kit has no follow_ups in its _task yet
+    follow = getattr(task, "follow_ups", lambda _d: [])(os.path.join(project, "docs", "tasks"))
+    needs = [i for i in follow if i["needs_task"]]
+    if needs:
+        warnings.append("%d follow-up(s) at Medium or higher have no task of their own: %s"
+                        % (len(needs), ", ".join(sorted({i["task"] for i in needs}))))
+    for p in queue.get("pull_requests") or []:
+        if p.get("no_checks"):
+            warnings.append("pull request #%s (%s): no CI ran on it, nothing has checked this branch"
+                            % (p["number"], p["task"]))
     current = [{"task": i["task"], "issue": i["number"], "state": i["state"], "stage": i.get("stage"),
                 "note": i.get("note"), "url": i.get("url")} for i in queue.get("issues") or []]
     prs = queue.get("pull_requests") or []
     return {"current_sprint": {"active": bool(current or prs), "issues": current, "pull_requests": prs},
-            "candidates": candidates, "excluded": excluded, "warnings": warnings, "in_progress": wip,
+            "candidates": candidates, "excluded": excluded,
+            "follow_ups": {"open_items": len(follow), "needs_task": needs, "items": follow}, "warnings": warnings, "in_progress": wip,
             "unpushed": ahead, "queue_checked": bool(queue.get("checked")), "unlabelled": queue.get("unlabelled") or []}
 
 
@@ -213,6 +224,10 @@ def show(data):
             print("  %s pull request #%s waits for a merge" % (r["task"], r["number"]))
     for w in data["warnings"]:
         print("warning: %s" % w)
+    fu = data["follow_ups"]
+    print("open follow-ups: %d, %d need a task" % (fu["open_items"], len(fu["needs_task"])))
+    for i in fu["items"]:
+        print("  %s%s" % (i["text"], "  [needs a task]" if i["needs_task"] else ""))
     print("candidates: %d" % len(data["candidates"]))
     for c in data["candidates"]:
         print("  %s %s %s %s/%s %s" % (c["id"], c["effective_priority"], c["status"], c["type"] or "-",

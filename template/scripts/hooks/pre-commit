@@ -20,6 +20,9 @@
 #    platform token) is always high unless the line marks it as an example/fake.
 # False positive: put `teamwright:allow-secret` (or `gitleaks:allow`) on the line.
 # Deliberate bypass (human, rare): git commit --no-verify — and say why in review.
+# Before handing over: scripts/hooks/pre-commit --check-tree [BASE] runs the same scan over
+# everything changed since BASE (default HEAD), staged or not, untracked files included, and
+# changes nothing. An agent finds a value the commit would refuse while it can still fix it.
 # Tests: TEAMWRIGHT_NO_GITLEAKS=1 forces the fallback scanner; --scan-stdin scans
 # any unified diff given on stdin (used by `make scan` without gitleaks).
 set -uo pipefail
@@ -146,6 +149,31 @@ if [ "${1:-}" = "--scan-stdin" ]; then scan_diff; exit $?; fi
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT" || exit 0
 fail=0
+
+if [ "${1:-}" = "--check-tree" ]; then
+  base="${2:-HEAD}"
+  idx="$(mktemp "${TMPDIR:-/tmp}/tw-secrets.XXXXXX")" || exit 2
+  rm -f "$idx"
+  trap 'rm -f "$idx"' EXIT
+  if git rev-parse -q --verify "$base^{tree}" >/dev/null; then
+    GIT_INDEX_FILE="$idx" git read-tree "$base"
+  else
+    base="$(git hash-object -t tree /dev/null)"
+  fi
+  GIT_INDEX_FILE="$idx" git add -A . || exit 2
+  if [ -z "${TEAMWRIGHT_NO_GITLEAKS:-}" ] && command -v gitleaks >/dev/null 2>&1 && gitleaks help stdin >/dev/null 2>&1; then
+    cfg=()
+    [ -f .gitleaks.toml ] && cfg=(--config .gitleaks.toml)
+    GIT_INDEX_FILE="$idx" git diff --cached --unified=0 "$base" | grep '^+' | grep -v '^+++ ' | sed 's/^+//' \
+      | gitleaks stdin --redact --no-banner ${cfg[@]+"${cfg[@]}"} >&2
+    rc=${PIPESTATUS[4]}
+  else
+    GIT_INDEX_FILE="$idx" git diff --cached "$base" | scan_diff
+    rc=${PIPESTATUS[1]}
+  fi
+  [ "$rc" -eq 0 ] && echo "secrets: clean"
+  exit "$rc"
+fi
 
 # ---- 1. forbidden files ------------------------------------------------------
 while IFS= read -r f; do

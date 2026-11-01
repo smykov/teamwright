@@ -2,6 +2,22 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.16.1] - 2026-11-01
+
+### Changed
+- **Follow-ups live in the task's own record**, `docs/tasks/<ID>.follow-ups/`, not in a shared sprint task, so parallel branches no longer conflict over them. Older `review-follow-up` tasks are still counted.
+- **A follow-up at Medium or higher gets a task of its own**: at once on the default branch; on a task branch `/teamwright:sprint` asks for it after the merge, because task ids can collide between branches.
+- **`/teamwright:sprint` shows open follow-ups** and warns about those with no task.
+- **Review and verify go on when the context tool is down**, headless too, and say so in the record; a role stops calling a tool that timed out once.
+
+### Added
+- **`scripts/hooks/pre-commit --check-tree [BASE]`**: the commit's secret scan over everything changed, without touching the index. The test-writer and the red-tests stage run it before the commit.
+- **Value-level exemptions in the `.gitleaks.toml` template** for a translation key, a test variable and a counter. Nothing is exempted by path. Existing projects add these by hand.
+- **`no_checks` on task pull requests**: sprint, blockers and progress say when no CI ran on a chain's branch. `docs/process/plugin.md` says how to make it run; the kit ships no workflow.
+
+### Fixed
+- **"Issue without the label" is not reported for a task already `DONE`.**
+
 ## [0.16.0] - 2026-11-01
 
 ### Added

@@ -19,6 +19,8 @@ mk T-6 DONE "" "" "" "works"
 mk T-7 TODO "" "" "" "checked on a real device"
 mk T-8 TODO "" "" "" "queued already"
 mk T-9 TODO "" "" "app/c.py" "has an Issue without the label"
+mkdir -p docs/tasks/T-6.follow-ups
+printf -- '- [ ] T-6 r1#1 Medium docs-drift: stale text (a.md)\n- [ ] T-6 r1#2 Medium naming: linked (b.py) -> T-1\n- [ ] T-6 r1#3 Low style: nit (c.py)\n- [x] T-6 r1#4 Low style: fixed (d.py)\n- [ ] T-6 v1 mutant 03-log: changed a log\n' > docs/tasks/T-6.follow-ups/r1.md
 printf '| ID | Q | Status |\n|---|---|---|\n| OQ-01 | q | open |\n' > docs/open-questions.md
 git add -A; git -c user.name=t -c user.email=t@t commit -qm init
 git update-ref refs/remotes/origin/main HEAD
@@ -84,4 +86,7 @@ export TW_GH="$TMP/bin/no-such-gh"
 python3 "$S" issues T-1 --project . >/dev/null 2>&1; rc=$?
 expect_rc "without GitHub nothing is created" 2 "$rc"
 q '" ".join(d["warnings"])' | grep -q "GitHub not checked" && ok "not checked is said" || bad "not checked" ""
+fq() { TW_GH="$TMP/bin/gh" python3 "$S" --project . --json | python3 -c "import json,sys; d=json.load(sys.stdin)['follow_ups']; print($1)"; }
+expect_rc "open follow-ups are counted from the task's own record" "4" "$(fq 'd["open_items"]')"
+expect_rc "a Medium line with no task needs one; linked, Low and mutant lines do not" "T-6 r1#1 Medium docs-drift: stale text (a.md)" "$(fq '" ".join(i["text"] for i in d["needs_task"])')"
 finish

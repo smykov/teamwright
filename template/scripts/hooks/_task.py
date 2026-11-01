@@ -300,6 +300,52 @@ def findings(text):
             return rows
     return tables[0][1] if tables else []
 
+FOLLOW_UP_SUFFIX = ".follow-ups"
+FOLLOW_UP_CLASS = "review-follow-up"
+_FU_SEVERITY = re.compile(r"\b(Critical|High|Medium|Low)\b")
+_FU_LINK = re.compile(r"(?:\u2192|->)\s*(%s)\s*$" % TASK_ID)
+
+
+def _fu_items(text, task, where):
+    out = []
+    for line in text.splitlines():
+        m = re.match(r"\s*- \[ \]\s+(.+)$", line)
+        if not m:
+            continue
+        item = m.group(1).strip()
+        sev = _FU_SEVERITY.search(item.split(":", 1)[0])
+        severity = sev.group(1) if sev else None
+        linked = _FU_LINK.search(item)
+        out.append({"task": task, "file": where, "text": item, "severity": severity,
+                    "linked": linked.group(1) if linked else None,
+                    "needs_task": severity in ("Medium", "High", "Critical") and not linked})
+    return out
+
+
+def follow_ups(tasks_dir):
+    """Open follow-ups: each task's own docs/tasks/<ID>.follow-ups/*.md, plus the unchecked
+    lines of older review-follow-up tasks. A line naming `-> T-NNN` at its end is tracked by
+    that task; a Medium or higher finding without one still needs its own task."""
+    items = []
+    try:
+        names = sorted(os.listdir(tasks_dir))
+    except OSError:
+        return items
+    for name in names:
+        path = os.path.join(tasks_dir, name)
+        if name.endswith(FOLLOW_UP_SUFFIX) and os.path.isdir(path):
+            for f in sorted(os.listdir(path)):
+                if f.endswith(".md"):
+                    items += _fu_items(read(os.path.join(path, f)) or "", name[:-len(FOLLOW_UP_SUFFIX)],
+                                       "docs/tasks/%s/%s" % (name, f))
+        elif is_task_file(name):
+            text = read(path) or ""
+            rec = parse(text)
+            if str(rec.get("class") or "").strip() == FOLLOW_UP_CLASS and status(rec) not in ("DONE", "DEFERRED"):
+                items += _fu_items(text, name[:-3], "docs/tasks/" + name)
+    return items
+
+
 def read(path):
     if path == "-":
         return sys.stdin.read()

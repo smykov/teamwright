@@ -28,7 +28,11 @@ paths = [
   '''(^|/)\.env\.(example|sample|template)$''',
   '''(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|go\.sum)$''',
 ]
+# By value, not by path: a path exemption would also hide a real secret in that file.
 regexes = [
+  '''^password[A-Z]\)''',  # a test variable: signIn(email: emailA, password: passwordA)
+  '''^(strings|s)\.[A-Za-z]+$''',  # a translation key: 'password_protected': strings.filePasswordProtected
+  '''^(usage\(|dict\.fromkeys\(|shlex\.split\(|json\.loads\()''',  # `tokens = usage(...)`: a counter or parsed arguments
   '''(?i)(changeme|change_me|example|placeholder|dummy|redacted|your[_-][a-z_]+)''',
   '''<[^>]+>''',
   '''\$\{?[A-Z_][A-Z0-9_]*\}?''',

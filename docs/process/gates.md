@@ -289,16 +289,16 @@ rca_task: T-050             # required with REJECT_RECURRENCE
    the threshold, when it is Critical, or when its Category is `secret-leak`,
    `security`, `weakened-test`, `done-not-working` or `recurrence` — at any threshold.
    Severities other than Critical | High | Medium | Low are refused. Rows below the
-   threshold are follow-ups: the task is approved and the flow collects them into one
-   `review-follow-up` task per sprint. Without the key nothing here is checked (every
+   threshold are follow-ups: the task is approved and the flow writes them to the task's
+   own `docs/tasks/<ID>.follow-ups/`; Medium or higher also gets a task of its own. Without the key nothing here is checked (every
    finding may send the task back, as before settings existed).
 7. **A review that spawns more than two tasks** (`lifecycle.md` §6: one reviewed task
    spawns at most two new tasks; more goes into one umbrella task). Creating a new
    `docs/tasks/<ID>.md` counts toward the review of task R when the session's latest
    spawn by its main agent was a `code-reviewer` naming R (the journal); a later spawn
    of another role closes that window, a reviewer's own helper spawns do not. Both the
-   reviewer (an rca task) and the orchestrator (the sprint's follow-up task) count. The
-   third new record is refused — append to an existing record (the follow-up task, one
+   reviewer (an rca task) and the orchestrator (a task from a follow-up) count. The
+   third new record is refused — leave it as a line in the follow-ups (one
    umbrella task) instead, or ask the owner. Counted per reviewed task and spawn in
    `.teamwright/sessions/<R>.new-tasks.jsonl`; re-creating the same id is not a new
    task. In `gate-first` the third one warns and is counted. A record created outside

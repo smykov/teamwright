@@ -247,7 +247,7 @@ More on onboarding, gate modes, the flow router, Docker runners, configuration c
 | journal | `.teamwright/logs/*.jsonl`: tool calls, agent starts and session outcomes logged by a hook; no file contents or prompts |
 | process settings | `process:` in `.teamwright/config.yml`: review blocking threshold, tasks per pass (per priority), batches, thresholds and model per stage, task selection (`router.select`), test guard, parallel worktrees, autonomy; parameters of fixed steps, set by you through `/teamwright:settings` |
 | pass | one `/teamwright:flow` run that takes tasks one after another, up to the cap in the settings |
-| follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the sprint's `review-follow-up` task |
+| follow-up | a review finding below the blocking threshold: the task is approved, the finding goes to the task's own `docs/tasks/<ID>.follow-ups/`; Medium or higher also gets its own task |
 
 ## What gets installed
 

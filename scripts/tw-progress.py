@@ -248,6 +248,7 @@ def report(project):
     tw = _router()
     task, config = tw._load_helpers(project)
     st = tw.state_of(project, config)
+    follow_items = getattr(task, "follow_ups", lambda _d: [])(os.path.join(project, "docs", "tasks"))
     base = tw.load_tasks(project, task)
     if base is None:
         return {"installed": False, "reason": "no docs/tasks/ - run /teamwright:adopt or /teamwright:init first"}
@@ -373,9 +374,9 @@ def report(project):
                   "pending_forks": [{"sprint": s["sprint"], "fork": f} for s in by_sprint for f in s["pending_forks"]]},
         "risks": risks,
         "github": _github(project),
-        # review findings below the blocking threshold, collected per sprint by the flow
-        "follow_ups": {"open_items": sum((extra.get(t["id"]) or {}).get("open_items", 0) for t in open_
-                                         if (extra.get(t["id"]) or {}).get("class") == "review-follow-up"),
+        # review findings below the blocking threshold: each task's own record, older sprint tasks
+        "follow_ups": {"open_items": len(follow_items),
+                       "needs_task": sum(1 for i in follow_items if i["needs_task"]),
                        "tasks": [t["id"] for t in open_ if (extra.get(t["id"]) or {}).get("class") == "review-follow-up"]},
         "git": {"branch": st.get("branch"), "head": g("log", "-1", "--format=%h %s (%cr)"),
                 "recent": g("log", "-5", "--format=%h %s").splitlines(),
@@ -434,7 +435,8 @@ def human(r):
             lines.append("  #%d %s %s%s" % (i["number"], i["task"] or "-", i["state"],
                                             " (%s)" % i["stage"] if i["stage"] else ""))
         for p in g["pull_requests"]:
-            lines.append("  pull request #%d %s waits for the owner" % (p["number"], p["task"]))
+            lines.append("  pull request #%d %s waits for the owner%s" % (
+                p["number"], p["task"], ": no CI ran on it" if p.get("no_checks") else ""))
     elif g.get("applicable"):
         lines += ["", "autonomous queue: not checked - " + g.get("reason", "")]
     return "\n".join(lines)
