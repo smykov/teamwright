@@ -9,6 +9,9 @@ All notable changes to teamwright, in the [Keep a Changelog](https://keepachange
 - **Metrics: first-pass acceptance** (by task type, with undecided and skipped tasks shown beside the denominator), **cost and tokens per accepted task** (median, p75, the share spent on tasks not `DONE`, with `--prices`), **escaped defects** (`--escape-window-days`, default 30). `docs/process/metrics.md`, section 4.
 - **`escaped_from:`**, an optional field in the task template: the task a bug's defect came from. No gate reads it; a field nobody uses prints `no data`.
 
+### Fixed
+- **The journal no longer stores a flag, URL or login as a command's "subcommand"** (TM-05): the second word is kept only when it looks like one (letters, digits, dashes, up to 24 characters). `git status` stays; `mysql -p...` is journaled as `mysql`. A short bare token still looks like a subcommand: the row stays `partial`.
+
 ## [0.15.1] - 2026-10-31
 
 ### Fixed
