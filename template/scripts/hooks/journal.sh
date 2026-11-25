@@ -21,7 +21,8 @@
 #       (front-matter enums and the sha only - never the command or the body).
 #   Stop / SubagentStop                           -> outcomes.jsonl
 #       session (or subagent) outcome: the `Outcome: barrier|idle|escalate|
-#       interrupted` line of the final message, the active task and its status,
+#       interrupted` line of the final message (also at the end of its last line, as in
+#       `Stage: review · Batch: T-3 · Outcome: barrier`; `done` is read as barrier), the active task and its status,
 #       and the number of tool calls this agent made. The final message is taken
 #       from `last_assistant_message`; when the runtime does not send it (or it
 #       has no Outcome line), from the last assistant text in the transcript
@@ -157,7 +158,22 @@ elif ev in ("PermissionRequest", "PermissionDenied"):
     io.append_jsonl(os.path.join(logdir, "perms.jsonl"), rec)
 
 elif ev in ("Stop", "SubagentStop"):
-    OUT_RE = re.compile(r"(?im)^\W*outcome\W*[:=]\s*\W*(barrier|idle|escalate|interrupted)\b")
+    OUT_RE = re.compile(r"(?im)^\W*outcome\W*[:=]\s*\W*(barrier|idle|escalate|interrupted|done)\b")
+    # the same word inside the last non-empty line: `Stage: review · Batch: T-3 · Outcome: done`
+    OUT_IN_LINE_RE = re.compile(r"(?i)\boutcome\W*[:=]\s*\W*(barrier|idle|escalate|interrupted|done)\W*$")
+    # `done` is what models write for a clean stop at a barrier
+    OUT_SYNONYMS = {"done": "barrier"}
+
+    def outcome_of(text):
+        """The session's outcome word, or '' when the message has none: an `Outcome: <word>`
+        line, else `Outcome: <word>` ending the last non-empty line (inside a line, only
+        at its end: `the Outcome: barrier rule says ...` is prose, not an outcome)."""
+        m = OUT_RE.search(text or "")
+        if not m:
+            lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+            m = OUT_IN_LINE_RE.search(lines[-1]) if lines else None
+        w = m.group(1).lower() if m else ""
+        return OUT_SYNONYMS.get(w, w)
     # the stage the session ran (`Stage: implement` in the end block of a stage command,
     # `Stage: flow` for a flow run of several stages)
     STAGE_RE = re.compile(r"(?im)^\W*stage\W*[:=]\s*\W*(analyze|red-tests|implement|review|verify|flow)\b")
@@ -195,7 +211,7 @@ elif ev in ("Stop", "SubagentStop"):
         return ""
 
     src, text = "none", data.get("last_assistant_message") or ""
-    m = OUT_RE.search(text)
+    m = outcome_of(text)
     if m:
         src = "message"
     else:
@@ -203,7 +219,7 @@ elif ev in ("Stop", "SubagentStop"):
         tp = tp or (data.get("transcript_path") if ev == "Stop" else None)
         if tp and not WAIT_RE.search(text):
             text = last_text(os.path.expanduser(str(tp))) or text
-            m = OUT_RE.search(text)
+            m = outcome_of(text)
             if m:
                 src = "transcript"
     cur, st = "", ""
@@ -227,7 +243,7 @@ elif ev in ("Stop", "SubagentStop"):
             launched[t] = launched.get(t, 0) + 1
     if ev == "SubagentStop" and not base["agent_type"] and who["agent_id"]:
         base["agent_type"] = seen_type
-    outcome = m.group(1).lower() if m else "none"
+    outcome = m or "none"
     if ev == "Stop" and not m and WAIT_RE.search(text):
         # the turn ended on the flow's waiting line: a clean wait, whatever the hook can
         # or cannot see of the background agent (its spawn may not be journaled as returned)

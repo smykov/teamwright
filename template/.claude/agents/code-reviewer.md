@@ -87,7 +87,7 @@ No third patch: when the two previous records are `REQUEST_CHANGES`, the only ve
 
 ## Report — append to the task file before returning
 
-Write the review record first, before anything else: `docs/tasks/<id>.reviews/<N>.md` (N = round) from `docs/tasks/_review-template.md`. The review gate accepts this file only from the `code-reviewer` agent and reads its front matter (`verdict`, `reviewer`, `rca_task`), so keep the front matter exact. On `REJECT_RECURRENCE`, first create the rca task file `docs/tasks/<rca id>.md` from `docs/tasks/_task-template.md` (`type: rca`, `status: TODO`, `recurrence_of: [...]`, the invariant in its acceptance) — the gate checks that `rca_task` points to it. Then add one line to the `## Review` section of `docs/tasks/<id>.md`: `Round N — <verdict> — reviews/<N>.md`. Never rewrite earlier rounds.
+Write the review record first, before anything else: `docs/tasks/<id>.reviews/<N>.md` (N = round) from `docs/tasks/_review-template.md`. The review gate accepts this file only from the `code-reviewer` agent and reads its front matter (`verdict`, `reviewer`, `rca_task`), so keep the front matter exact. On `REJECT_RECURRENCE`, first create the rca task file `docs/tasks/<rca id>.md` from `docs/tasks/_task-template.md` (`type: rca`, `status: TODO`, `recurrence_of: [...]`, the invariant in its acceptance) — the gate checks that `rca_task` points to it. Then add one line to the `## Review` section of `docs/tasks/<id>.md`: `Round N — <verdict> — reviews/<N>.md`. Never rewrite earlier rounds. Every one of these files is created and changed with Edit/Write, never through the shell (`sed`, a redirect, `tee`, a heredoc): the review gate refuses it.
 
 Body of the record:
 

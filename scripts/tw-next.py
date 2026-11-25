@@ -6,7 +6,8 @@ the journal (.teamwright/logs/outcomes.jsonl), the gate mode, TEAMWRIGHT_PAUSE a
 state, and prints the next action. The skill talks to the owner; this script only
 decides, so the same project state always gives the same answer.
 
-  python3 tw-next.py [--project PATH] [--json [--brief]] [--pass T-1,T-2] [--stage STAGE [--task IDS]]
+  python3 tw-next.py [--project PATH] [--json [--brief]] [--pass T-1,T-2] [--worked T-1,T-2]
+                     [--stage STAGE [--task IDS]]
 
 --brief (implies --json) prints what a stage session needs and nothing else: `request`
 first, the action, stage, batch, model, command, candidates (at most max(8, 2 x the batch
@@ -19,6 +20,10 @@ never lists closed tasks (DONE, DEFERRED) in `tasks` - `counts` counts every sta
 `process.batch` from .teamwright/config.yml: when the pass is at its cap, `start` becomes
 `stop` (end the pass at this barrier). `process.autonomy.start: auto` makes `start`
 need no owner answer.
+
+--worked names the tasks this flow session has worked on, at any stage. Once they reach
+`process.flow.max_tasks_per_session` (default 2, 0 = off), work on another task becomes
+`stop`: the session ends and the flow continues in a fresh one.
 
 Decision order (first match wins):
   0. paused      TEAMWRIGHT_PAUSE exists: the team is stopped, report only
@@ -112,6 +117,20 @@ CLOSED = ("DONE", "DEFERRED")
 PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 OQ_RE = re.compile(r"\bOQ-\d+\b")
 OQ_RESOLVED = ("answered", "closed", "resolved", "dropped", "done")
+# A Status cell that starts with one of these stems is closed, whatever the project's
+# language: {canonical word: stems}. Words in other languages come from
+# `process.questions.closed_patterns`.
+OQ_CLOSED_STEMS = {
+    "answered": ("answered", "\u043e\u0442\u0432\u0435\u0447\u0435\u043d", "\u043e\u0442\u0432\u0435\u0442 \u0434\u0430\u043d"),  # en, ru
+    "closed": ("closed", "\u0437\u0430\u043a\u0440\u044b\u0442"),
+    "resolved": ("resolved", "decided", "\u0440\u0435\u0448\u0435\u043d", "\u0440\u0435\u0448\u0451\u043d"),
+    "dropped": ("dropped", "\u0441\u043d\u044f\u0442", "\u043e\u0442\u043c\u0435\u043d\u0435\u043d", "\u043e\u0442\u043c\u0435\u043d\u0451\u043d"),
+    "done": ("done",),
+}
+# `... -> decisions.md #N` (or the arrow) links the row to its decision: answered, unless
+# the cell starts by saying it is still open.
+OQ_OPEN_STEMS = ("open", "pending", "waiting", "\u043e\u0442\u043a\u0440\u044b\u0442", "\u043e\u0436\u0438\u0434\u0430")
+OQ_DECISION_LINK = re.compile(r"(\u2192|->)\s*`?(docs/)?decisions\.md", re.I)
 OWNER_RE = re.compile(r"(?i)\b(owner|decision|decide|approv\w*|question|OQ-\d+|choose|confirm)\b")
 STAGES = ("analyze", "red-tests", "implement", "review", "verify")
 TASK_STAGES = ("red-tests", "implement")
@@ -119,6 +138,9 @@ TASK_STAGES = ("red-tests", "implement")
 WORK = ("resume", "continue", "review", "verify", "reanalyze", "start", "merge")
 STAGE_ROLE = {"analyze": "problem-investigator", "red-tests": "test-writer", "implement": "developer",
               "review": "code-reviewer", "verify": "task-validator"}
+# A stage that ended `escalate` this many times in a row for the same task, with no commit
+# on the task since, is not started again for it: the refusal needs a person (#35).
+ESCALATE_STOP = 2
 URGENT = 1  # effective priority rank at or above which a waiting task runs its stage now (P0, P1)
 
 
@@ -452,17 +474,42 @@ def _num(tid):
     return int(m.group(1)) if m else 0
 
 
+def oq_status(cell, patterns=()):
+    """The status word of an open-questions row: a closed status in English, Russian, or
+    matching one of `patterns` (`process.questions.closed_patterns`, regular expressions
+    matched at the start of the cell, any case) becomes its canonical English word (one of
+    OQ_RESOLVED); a link to decisions.md is `answered`; anything else is its first word."""
+    s = re.sub(r"[*_`~]", "", cell or "").strip().lower()
+    for word, stems in OQ_CLOSED_STEMS.items():
+        if s.startswith(stems):
+            return word
+    for pat in patterns:
+        try:
+            if re.match(pat, s, re.I):
+                return "closed"
+        except re.error:
+            continue
+    if OQ_DECISION_LINK.search(s) and not s.startswith(OQ_OPEN_STEMS):
+        return "answered"
+    words = re.findall(r"\w+", s)
+    return words[0] if words else ""
+
+
 def open_questions(project):
-    """{OQ-NN: status word} from the table in docs/open-questions.md."""
+    """{OQ-NN: status word} from the table in docs/open-questions.md (see oq_status)."""
     out = {}
+    try:
+        kc = kit_config()
+        patterns = kc.read_process(os.path.join(project, kc.CONFIG))["questions"]["closed_patterns"]
+    except Exception:  # an unreadable config must not hide the questions
+        patterns = []
     try:
         with open(os.path.join(project, "docs", "open-questions.md"), encoding="utf-8",
                   errors="replace") as fh:
             for line in fh:
                 cells = [c.strip() for c in line.strip().strip("|").split("|")]
                 if len(cells) >= 2 and re.fullmatch(r"OQ-\d+", cells[0]):
-                    words = re.findall(r"[a-z]+", cells[-1].lower())
-                    out[cells[0]] = words[0] if words else ""
+                    out[cells[0]] = oq_status(cells[-1], patterns)
     except OSError:
         pass
     return out
@@ -577,6 +624,100 @@ def _sorted(ts):
     return sorted(ts, key=lambda t: (PRIO.get(t["priority"], 9), _num(t["id"]), t["id"]))
 
 
+def log_dir(project):
+    """The journal directory: $TEAMWRIGHT_LOG_DIR (an autonomous runner keeps it across
+    jobs), else <project>/.teamwright/logs - the same rule as the hooks that write it."""
+    return os.environ.get("TEAMWRIGHT_LOG_DIR") or os.path.join(project, ".teamwright", "logs")
+
+
+def stop_records(project):
+    """The Stop records of outcomes.jsonl, oldest first."""
+    out = []
+    try:
+        with open(os.path.join(log_dir(project), "outcomes.jsonl"), encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and r.get("event") == "Stop":
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
+def _epoch(ts):
+    try:
+        return int(time.mktime(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ")) - time.timezone)
+    except (ValueError, OverflowError):
+        return None
+
+
+def task_commit_since(project, tid, since):
+    """Is there a commit after `since` (epoch seconds) that touches the task's records or
+    names the task in its message? Unknown (no git) counts as yes: never stop on a guess."""
+    rc, out = git(project, "log", "--since=@%d" % since, "--format=%x00%ct %s", "--name-only")
+    if rc != 0:
+        return True
+    name = re.compile(r"(?<![\w-])%s(?![\w])" % re.escape(tid))
+    for chunk in out.split("\0")[1:]:
+        head, _, files = chunk.partition("\n")
+        ct, _, subject = head.partition(" ")
+        if not ct.isdigit() or int(ct) <= since:
+            continue
+        if name.search(subject) or any(f.startswith(("docs/tasks/%s.md" % tid, "docs/tasks/%s." % tid))
+                                       for f in files.split()):
+            return True
+    return False
+
+
+def escalation_stops(project, records=None):
+    """{(task, stage): {"count", "since", "last"}} for every task and stage whose last
+    ESCALATE_STOP stage sessions all ended `escalate`, with no commit on the task since the
+    first of them. A session's task is its batch, else its current task; a stage session
+    of that task and stage with any other outcome ends the run of escalations."""
+    runs = {}
+    for r in stop_records(project) if records is None else records:
+        stage = r.get("stage") or ""
+        if stage not in STAGES:
+            continue
+        ids = [x for x in (r.get("batch") or []) if isinstance(x, str)] or \
+            ([r["current_task"]] if r.get("current_task") else [])
+        for tid in ids:
+            k = (tid, stage)
+            if r.get("outcome") == "escalate":
+                runs.setdefault(k, []).append(r.get("ts"))
+            else:
+                runs.pop(k, None)
+    out = {}
+    for k, stamps in runs.items():
+        if len(stamps) < ESCALATE_STOP:
+            continue
+        since = _epoch(stamps[-ESCALATE_STOP])
+        if since is None or task_commit_since(project, k[0], since):
+            continue
+        out[k] = {"count": len(stamps), "since": stamps[-ESCALATE_STOP], "last": stamps[-1]}
+    return out
+
+
+def apply_escalation_stops(cands, stops):
+    """A candidate that would start the stuck stage again becomes an owner decision."""
+    out = []
+    for c in cands:
+        s = stops.get((c["task"], c.get("stage"))) if _thresholded(c) else None
+        if s:
+            d = _d("decide", c["task"], "stopped: %s ended `escalate` %d times in a row for %s (last %s), "
+                   "with no commit on the task since %s - read the last session's refusal and fix its "
+                   "cause; a commit on the task lets the stage run again" % (
+                       c["stage"], s["count"], c["task"], s["last"], s["since"]), ask=True)
+            d["stopped"] = {"stage": c["stage"], "count": s["count"], "since": s["since"], "last": s["last"]}
+            out.append(d)
+        else:
+            out.append(c)
+    return out
+
+
 def state_of(project, config):
     st = {"mode": config.read_mode(os.path.join(project, config.CONFIG))
           if os.path.isfile(os.path.join(project, config.CONFIG)) else None}
@@ -587,19 +728,8 @@ def state_of(project, config):
             st["current_task"] = (fh.read().split() or [""])[0] or None
     except OSError:
         st["current_task"] = None
-    last = None
-    try:
-        with open(os.path.join(project, ".teamwright", "logs", "outcomes.jsonl"),
-                  encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                try:
-                    r = json.loads(line)
-                except ValueError:
-                    continue
-                if r.get("event") == "Stop":
-                    last = r
-    except OSError:
-        pass
+    stops = stop_records(project)
+    last = stops[-1] if stops else None
     st["interrupted_task"] = (last.get("current_task") or None) \
         if last and last.get("outcome") == "interrupted" else None
     rc, out = git(project, "rev-parse", "--is-inside-work-tree")
@@ -1196,7 +1326,20 @@ def request_for(res, cands, tasks, stage, ids):
     return out
 
 
-def decide(project, taken=None, stage=None, ids=None):
+def session_cap(cands, worked, cap):
+    """A flow session that has worked `cap` tasks ends before the next task (#36): its
+    context is re-read on every turn. The same tasks may still move on."""
+    if worked is None or not cap or len(set(worked)) < cap:
+        return cands
+    nxt = next((c for c in cands if is_work(c)), None)
+    if nxt is None or nxt["task"] in worked:
+        return cands
+    return [_d("stop", None, "this session worked %d task(s) (%s), process.flow.max_tasks_per_session is %d - "
+               "end here and continue in a fresh session with /teamwright:flow (next: %s %s)"
+               % (len(set(worked)), ", ".join(sorted(set(worked), key=_num)), cap, nxt["action"], nxt["task"] or ""))] + cands
+
+
+def decide(project, taken=None, stage=None, ids=None, worked=None):
     task, config = _load_helpers(project)
     st = state_of(project, config)
     kc = kit_config()
@@ -1237,6 +1380,7 @@ def decide(project, taken=None, stage=None, ids=None):
         at = next((i for i, c in enumerate(cands) if c["action"] == "start" or
                    (c["action"] == "decide" and c["task"] is None and "unpushed" in c["reason"])), len(cands))
         cands = cands[:at] + merges + cands[at:]
+    cands = apply_escalation_stops(cands, escalation_stops(project))
     auto = proc["autonomy"]["start"] == "auto"
     budget = None
     if taken is not None:
@@ -1257,6 +1401,7 @@ def decide(project, taken=None, stage=None, ids=None):
                                        "the lowest priority cap in the pass wins) - end the pass at "
                                        "this barrier" % (len(taken), budget["limit"])))
         cands = kept
+    cands = session_cap(cands, worked, proc["flow"]["max_tasks_per_session"])
     for c in cands:
         if c["action"] == "start" and auto:
             c["ask_owner"] = False
@@ -1445,6 +1590,9 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--pass", dest="taken", default=None,
                     help="tasks this pass already took, comma-separated (applies process.batch)")
+    ap.add_argument("--worked", default=None,
+                    help="tasks this flow session has worked on at any stage, comma-separated "
+                         "(applies process.flow.max_tasks_per_session)")
     ap.add_argument("--stage", choices=STAGES, default=None,
                     help="answer a stage command: may this stage run now, on which tasks (`request`)")
     ap.add_argument("--task", dest="ids", default=None,
@@ -1463,7 +1611,8 @@ def main(argv=None):
     if ids and not args.stage:
         print("tw-next: --task needs --stage", file=sys.stderr)
         return 2
-    res = decide(project, taken, args.stage, ids)
+    worked = None if args.worked is None else [x.strip() for x in args.worked.split(",") if x.strip()]
+    res = decide(project, taken, args.stage, ids, worked)
     try:
         if args.json:
             print(json.dumps(brief(res) if args.brief else ordered(res), indent=None if args.brief else 2,

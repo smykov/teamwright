@@ -615,4 +615,43 @@ expect_rc "select: agent - the stage and ok, but no candidates, no batch, a bare
 expect_rc "select: agent - named tasks are still checked and kept" "True T-2" \
   "$(python3 "$NEXT" --project . --brief --stage review --task T-2 | python3 -c 'import json,sys; r=json.load(sys.stdin)["request"]; print(r["ok"], " ".join(r["batch"]))')"
 
+# ---- a stage that keeps refusing at its start is not started again (#35) ----------------
+fresh escstop
+printf 'process:\n  autonomy:\n    start: auto\n' >> .teamwright/config.yml
+mk T-1 TODO; mk T-2 TODO
+GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" git add -A
+GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" git commit -qm tasks
+mkdir -p .teamwright/logs; OUT=.teamwright/logs/outcomes.jsonl
+stop_rec() { printf '{"event":"Stop","ts":"%s","stage":"%s","batch":["%s"],"outcome":"%s"}\n' "$1" "$2" "$3" "$4" >> "$OUT"; }
+hl() { j | python3 -c 'import json,sys; d=json.load(sys.stdin); h=d["headless"]; print(h["run"], h["task"], h["stage"], len([x for x in h["decisions"] if x["task"]=="T-1" and x["reason"].startswith("stopped")]))'; }
+stop_rec 2021-01-01T00:00:00Z analyze T-1 escalate
+expect_rc "one escalate: the stage runs again" "True T-1 analyze 0" "$(hl)"
+stop_rec 2021-01-01T00:01:00Z analyze T-1 escalate
+expect_rc "two escalates in a row, no commit: the job takes the next task, T-1 is a decision" "True T-2 analyze 1" "$(hl)"
+expect_rc "interactively the stopped task is an owner decision" "decide T-1" \
+  "$(j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"])')"
+expect_rc "the stage session's candidates leave it out" "T-2" \
+  "$(python3 "$NEXT" --project . --brief --stage analyze | python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(sys.stdin)["request"]["candidates"]))')"
+stop_rec 2021-01-01T00:02:00Z analyze T-1 barrier
+expect_rc "another outcome of that stage ends the run of escalations" "True T-1 analyze 0" "$(hl)"
+stop_rec 2021-01-01T00:03:00Z analyze T-1 escalate; stop_rec 2021-01-01T00:04:00Z implement T-1 escalate
+expect_rc "escalates at two different stages are not a run" "True T-1 analyze 0" "$(hl)"
+stop_rec 2021-01-01T00:05:00Z analyze T-1 escalate
+expect_rc "the stop also holds through TEAMWRIGHT_LOG_DIR" "True T-2 analyze 1" \
+  "$(mkdir -p "$TMP/esclogs" && mv "$OUT" "$TMP/esclogs/" && TEAMWRIGHT_LOG_DIR="$TMP/esclogs" hl; mv "$TMP/esclogs/outcomes.jsonl" "$OUT")"
+printf '\nnote\n' >> docs/tasks/T-1.md; git commit -qam "docs: T-1 the refusal's cause fixed"
+expect_rc "a commit on the task lets the stage run again" "True T-1 analyze 0" "$(hl)"
+
+# ---- a flow session ends after process.flow.max_tasks_per_session tasks (#36) ------------
+rm -f "$OUT"
+wk() { python3 "$NEXT" --project . --json "$@" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["action"], d["task"])'; }
+expect_rc "without --worked nothing changes" "start T-1" "$(wk)"
+expect_rc "one task worked of the default 2: go on" "start T-1" "$(wk --worked T-7)"
+expect_rc "two tasks worked: the next task ends the session" "stop None" "$(wk --worked T-7,T-8)"
+python3 "$NEXT" --project . --json --worked T-7,T-8 | grep -q 'continue in a fresh session with /teamwright:flow' \
+  && ok "the stop says to continue in a fresh session" || bad "the stop says to continue in a fresh session"
+expect_rc "a task already worked in this session may move on" "start T-1" "$(wk --worked T-1,T-8)"
+printf '  flow:\n    max_tasks_per_session: 0\n' >> .teamwright/config.yml
+expect_rc "max_tasks_per_session: 0 turns the limit off" "start T-1" "$(wk --worked T-7,T-8,T-9)"
+
 finish

@@ -77,6 +77,28 @@ printf -- '- [ ] T-5 r1#1 Medium naming: x (a.py)\n' > docs/tasks/T-5.follow-ups
 out="$(python3 "$BL" --project . --json)"
 echo "$out" | grep -q '"kind": "follow-up"' && ok "a Medium follow-up with no decision is listed" || bad "a Medium follow-up with no decision is listed" "$out"
 echo "$out" | grep -q '"kind": "degraded"' && ok "a review without the context tool is listed" || bad "a review without the context tool is listed" "$out"
+# closed questions in the project's own language, a decision link, and configured words
+B3="$TMP/b3"; mkdir -p "$B3/docs" "$B3/.teamwright"; cd "$B3" || exit 1; git init -q -b main .
+cat > docs/open-questions.md <<'MD'
+| ID | Question | Status |
+|---|---|---|
+| OQ-01 | a | Закрыт — решение 12 |
+| OQ-02 | b | **Решено** |
+| OQ-03 | c | → decisions.md #4 |
+| OQ-04 | d | Erledigt |
+| OQ-05 | e | open → decisions.md #5 |
+| OQ-06 | f | Открыт |
+MD
+for i in 1 2 3 4 5 6; do mk "T-$i" TODO P2 "blocked_on: OQ-0$i" "depends_on: []"; done
+oq_ids() { python3 "$BL" --project . --json | python3 -c 'import json,sys; print(sorted(i["id"] for i in json.load(sys.stdin)["items"] if i["kind"]=="question"))'; }
+expect_rc "Russian closed statuses and a bare decision link are not open questions" "['OQ-04', 'OQ-05', 'OQ-06']" "$(oq_ids)"
+printf 'process:\n  questions:\n    closed_patterns: ["erledigt"]\n' > .teamwright/config.yml
+expect_rc "process.questions.closed_patterns closes a word in another language" "['OQ-05', 'OQ-06']" "$(oq_ids)"
+# a stage that keeps refusing at its start is listed for the owner (#35)
+mkdir -p .teamwright/logs; git add -A; git commit -qm tasks
+for m in 01 02; do printf '{"event":"Stop","ts":"2099-01-01T00:%s:00Z","stage":"implement","batch":["T-6"],"outcome":"escalate"}\n' "$m" >> .teamwright/logs/outcomes.jsonl; done
+expect_rc "repeated escalations at one stage are a refused item" "refused implement T-6" \
+  "$(python3 "$BL" --project . --json | python3 -c 'import json,sys; print(" ".join(" ".join((i["kind"], i["stage"], i["id"])) for i in json.load(sys.stdin)["items"] if i["kind"]=="refused"))')"
 cd "$KIT" || exit 1
 
 finish

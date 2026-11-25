@@ -548,6 +548,30 @@ def _is_task_record(tok, in_tasks):
     return in_tasks and "/" not in t and bool(re.fullmatch(r"(?:%s)\.md" % TASK_ID, t))
 
 
+def record_edit_hint(cmd):
+    """One step to retry a refused shell write of a record with the tools the gates see: the
+    record files the command names, and - for a status or stage the command sets - the line
+    to put there. Empty when the command names no record path."""
+    text = cmd or ""
+    paths = []
+    for p in re.findall(r"docs/tasks/[A-Za-z0-9_.\-/]+", text):
+        p = p.rstrip(".,;:)'\"")
+        if p not in paths:
+            paths.append(p)
+    if not paths:
+        return ""
+    sets = []
+    for key in ("status", "stage"):
+        m = re.findall(r"\b%s:\s*([A-Za-z_-]+)" % key, text)
+        if m:
+            sets.append("`%s: %s`" % (key, m[-1]))
+    files = ", ".join("`%s`" % p for p in paths[:3]) + (" ..." if len(paths) > 3 else "")
+    how = "Retry in one step: Edit %s" % files
+    if sets:
+        how += ", replacing the old line with %s" % " and ".join(sets)
+    return how + " (Write for a new file). Records are created and changed only with Edit/Write, in every role."
+
+
 def shell_rewrites_task_record(cmd, root=None):
     """See _shell_rewrites_task_record; plus dd, git checkout/restore/stash/apply and
     interpreter one-liners that write a record."""

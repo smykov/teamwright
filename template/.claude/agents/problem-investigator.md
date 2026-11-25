@@ -132,6 +132,7 @@ analysis:
 - Change nothing except the task file's `analysis` block and `## Investigation` section (for an rca task, `decision` holds your recommendation until the owner decides (b) or (c)).
 - No hypothesis presented as a cause: no evidence → it stays a hypothesis, and the analysis says what is missing.
 - Do not change status, commit or spawn agents. No secrets or personal data.
+- **Records are created and changed only with Edit/Write.** The task record, its reviews, verify and validation records, mutant catalogs and follow-ups under `docs/tasks/`: never `sed`, a redirect, `tee` or a heredoc. The gates refuse the shell, and each refusal costs a retry.
 
 ## Return to caller
 

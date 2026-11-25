@@ -118,6 +118,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: ${{ steps.route.outputs.prompt }}
           claude_args: --model ${{ steps.route.outputs.model }} --plugin-dir ${{ env.TEAMWRIGHT_KIT }}
+          allowed_bots: "github-actions[bot]"   # the next stage is dispatched by the chain itself
       - name: Keep the work, start the next stage
         if: steps.route.outputs.run == 'true'
         env: { GH_TOKEN: "${{ github.token }}", BEFORE: "${{ steps.route.outputs.head }}" }
@@ -134,7 +135,7 @@ jobs:
           echo "router: $REASON"
 ```
 
-Two additions for a real contour. Install gitleaks on the runner: without it `scripts/tw-scan` exits 3, because the fallback scanner is weaker than a scan of your own after the stage. A branch pushed with the default `GITHUB_TOKEN` starts no CI, so end the chain with `gh workflow run <your-ci>.yml --ref "task/<ID>"`, with `workflow_dispatch` in that workflow. This step is an example and has not been tried on a live contour: check that the run shows on the pull request.
+Two additions for a real contour. Install gitleaks on the runner: without it `scripts/tw-scan` exits 3, because the fallback scanner is weaker than a scan of your own after the stage. A branch pushed with the default `GITHUB_TOKEN` starts no CI, so end the chain with `gh workflow run <your-ci>.yml --ref "task/<ID>"`, with `workflow_dispatch` in that workflow. This step is an example and has not been tried on a live contour: check that the run shows on the pull request. A pull request the chain opens with the job's token comes from `github-actions`, so its own `pull_request` run waits in `action_required`: the check that counts is the run the chain dispatched on `task/<ID>`. `allowed_bots` is there because every stage after the first is started by the chain (a bot); without it `claude-code-action` refuses the run.
 
 `concurrency` keeps one stage running per repository (reviewers one at a time); when only owner decisions are left (push, an escalation, `NEEDS_OWNER`), `run` is false and the chain stops until a person acts.
 
@@ -149,7 +150,7 @@ Before running a chain, read the [threat model](security/threat-model.md): this 
 
 ### A queue of tasks from GitHub
 
-A chain can also take tasks one after another from open Issues with the label `teamwright`, named after the task (`T-12: …`): when one chain finishes or stops for you, the next labelled Issue starts. Labels say where each one is: `tw:<stage>`, `tw:finish`, `tw:stop`, `tw:failed`. The wiring is your workflow's. Stop the queue on a failed stage, or a broken key spends nothing but fails every task in turn; a label is what approves the spend, so cap it with a limit on the API key.
+A chain can also take tasks one after another from open Issues with the label `teamwright`, named after the task (`T-12: …`): when one chain finishes or stops for you, the next labelled Issue starts. Labels say where each one is: `tw:<stage>`, `tw:finish`, `tw:stop`, `tw:failed`. The wiring is your workflow's. Stop the queue on a failed stage, or a broken key spends nothing but fails every task in turn; a label is what approves the spend, so cap it with a limit on the API key. To restart a chain that stopped or failed, fix the cause, remove `tw:stop` or `tw:failed` and the `teamwright` label, then set `teamwright` again: a dispatcher listens for the `labeled` event, and a label that is still on the Issue sends none. When a stage keeps ending `escalate` for the same task with no commit in between, the router stops offering it after the second time and `/teamwright:blockers` lists it as `refused`: the router reads the journal, so keep `.teamwright/logs` (or `TEAMWRIGHT_LOG_DIR`) from job to job, as the cache step above does.
 
 Such work lives outside the repository, so `/teamwright:progress` and `/teamwright:blockers` read it through `gh`: a stopped or failed chain, a chain that died with no run alive (`stalled`), a pull request waiting for you. When GitHub cannot be read they say so instead of showing an empty queue.
 

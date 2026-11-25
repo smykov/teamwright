@@ -114,6 +114,7 @@ Never edit a test to make it pass. If a test contradicts the contract, stop and 
 - Commit locally only if the orchestrator asks (`Co-Authored-By:` trailer); never push.
 - Do not edit `PRINCIPLES.md`, decisions or failures logs; docs drift → report it for `technical-writer`.
 - Do not spawn other agents.
+- **Records are created and changed only with Edit/Write.** The task record, its reviews, verify and validation records, mutant catalogs and follow-ups under `docs/tasks/`: never `sed`, a redirect, `tee` or a heredoc. The gates refuse the shell, and each refusal costs a retry.
 
 ## Return to caller
 

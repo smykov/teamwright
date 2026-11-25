@@ -131,7 +131,7 @@ if tool == "Bash":
             or re.search(r"\b(sed|perl)\s+-[a-zA-Z]*i", cmd)):
         deny("verify and validation records are written only through Edit/Write, one new "
              "round per run, never by shell commands - otherwise the gate cannot check who wrote "
-             "them or keep them append-only.")
+             "them or keep them append-only. " + getattr(io, "record_edit_hint", lambda c: "")(cmd))
     sys.exit(0)
 
 rel = io.rel_path(data, ti.get("file_path") or "")

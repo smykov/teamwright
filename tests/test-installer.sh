@@ -879,6 +879,16 @@ has "a bad selection mode is refused" "$TMP/out" "process.router.select must be 
 cp "$TMP/ps.yml" "$TMP/ps-st2.yml"
 printf 'process:\n  stages:\n    review:\n      batch: 3\n      min: 2\n      max_wait_hours: 4\n    red-tests:\n      batch: 2\n  models:\n    red-tests: sonnet\n    review: claude-opus-4-1\n  router:\n    select: agent\n' >> "$TMP/ps-st2.yml"
 tw plan --project "$PS" --config "$TMP/ps-st2.yml" > "$TMP/out" 2>&1; expect_rc "stages, models and router.select accepted" 0 "$?"
+# flow session cap and closed-question words (0.17)
+cp "$TMP/ps.yml" "$TMP/ps-fq.yml"
+printf 'process:\n  flow:\n    max_tasks_per_session: 99\n  questions:\n    closed_patterns: ["("]\n' >> "$TMP/ps-fq.yml"
+tw plan --project "$PS" --config "$TMP/ps-fq.yml" > "$TMP/out" 2>&1
+expect_rc "invalid flow and questions settings: plan fails" 1 "$?"
+has "a session cap out of range is refused" "$TMP/out" "process.flow.max_tasks_per_session must be 0..50"
+has "a pattern that does not compile is refused" "$TMP/out" "process.questions.closed_patterns must be a list of regular expressions"
+cp "$TMP/ps.yml" "$TMP/ps-fq2.yml"
+printf 'process:\n  flow:\n    max_tasks_per_session: 0\n  questions:\n    closed_patterns: ["erledigt", "geschlossen"]\n' >> "$TMP/ps-fq2.yml"
+tw plan --project "$PS" --config "$TMP/ps-fq2.yml" > "$TMP/out" 2>&1; expect_rc "flow and questions settings accepted" 0 "$?"
 grep -q "review_blocking" "$PS/.teamwright/config.yml" && bad "rendered helper keys are not written back" || ok "rendered helper keys are not written back"
 
 # render drift (#6): a settings change does not reach a locally edited role file

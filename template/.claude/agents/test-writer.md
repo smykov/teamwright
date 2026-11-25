@@ -180,6 +180,7 @@ Exit 75 (`RUNNING: …`): the copy is kept and named; call `scripts/tw-mutants <
 - No implementation code in the working tree, not even stubs to make tests compile. In the copy, wrong implementations are minimal sketches, never a full implementation. The wrong implementations of the bite check and the failure-branch mutations are applied only in the throwaway worktree and die with it (the catalog in `docs/tasks/<ID>.mutants/` holds them as text); in the second spawn you change tests and the catalog only.
 - Never weaken an existing test; a contradiction with the contract → report it.
 - Do not commit or spawn agents.
+- **Records are created and changed only with Edit/Write.** The task record, its reviews, verify and validation records, mutant catalogs and follow-ups under `docs/tasks/`: never `sed`, a redirect, `tee` or a heredoc. The gates refuse the shell, and each refusal costs a retry.
 
 ## Return to caller
 
