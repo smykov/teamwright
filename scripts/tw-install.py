@@ -17,8 +17,11 @@ this script does the parts that must be repeatable and reviewable:
               modifies tracked files inside its area's workdir; changes elsewhere
               are notes). Run it in the foreground and edit nothing meanwhile.
   next        the flow router's decision (same as scripts/tw-next.py)
+  doctor      what the project and its autonomous contour still need: one check per
+              requirement, with its class and the fix (same as scripts/tw-doctor.py; read-only)
   update      update the plugin (claude plugin marketplace update, claude plugin update), then plan -
-              or --apply - the kit files from the updated install; --no-fetch skips the update
+              or --apply - the kit files from the updated install, then the doctor with the manual
+              steps of the versions crossed; --no-fetch skips the update
 
 Common options: --project PATH (default: cwd), --dry-run (write nothing), --json.
 plan/apply/check-commands read --config FILE (default: <project>/.teamwright/config.yml).
@@ -1461,6 +1464,14 @@ def update(project, apply_it, fetch, as_json):
     cmd = [sys.executable, os.path.join(kit_path, "scripts", "tw-install.py"), "--project", project, "--kit", kit_path,
            "apply" if apply_it else "plan"] + (["--json"] if as_json else [])
     rc = subprocess.run(cmd, cwd=project).returncode
+    doctor = os.path.join(kit_path, "scripts", "tw-doctor.py")
+    if rc == 0 and os.path.isfile(doctor):
+        # the gaps after the update, with the manual steps of every version it crossed: the
+        # kit version in installed.json is the new one after apply, so `before` is passed
+        if not as_json:
+            print("doctor (the steps of the versions after %s, and what the project still lacks):" % (before or "none"))
+        subprocess.run([sys.executable, doctor, "--project", project]
+                       + (["--since", before] if before else []) + (["--json"] if as_json else []), cwd=project)
     if apply_it and rc == 0 and not as_json:
         print("restart Claude Code to load the new commands and skills of %s %s" % (pid, version))
     return rc
@@ -1487,6 +1498,10 @@ def main(argv=None):
             sp.add_argument("--timeout", type=int, default=900, help="seconds per command (default 900)")
             sp.add_argument("--area", help="only this area")
     sub.add_parser("next", parents=[common], help="flow router decision (see scripts/tw-next.py)")
+    dp = sub.add_parser("doctor", parents=[common],
+                        help="what the project and its contour still need (read-only, see scripts/tw-doctor.py)")
+    dp.add_argument("--scope", action="append", choices=("repo", "contour", "runner"))
+    dp.add_argument("--since", help="manual steps of the versions after this one")
     up = sub.add_parser("update", parents=[common],
                         help="update the plugin (claude plugin update), then plan - or --apply - the kit from it")
     up.add_argument("--apply", action="store_true", help="apply the kit files (default: plan only)")
@@ -1513,6 +1528,15 @@ def main(argv=None):
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod.main(["--project", project] + (["--json"] if as_json else []))
+
+    if args.cmd == "doctor":
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tw_doctor", os.path.join(kit, "scripts", "tw-doctor.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.main(["--project", project] + (["--json"] if as_json else [])
+                        + [a for sc in (args.scope or []) for a in ("--scope", sc)]
+                        + (["--since", args.since] if args.since else []))
 
     if args.cmd == "enforce":
         changed = enforce(project, dry)

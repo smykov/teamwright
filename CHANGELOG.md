@@ -2,6 +2,16 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.19.0] - 2026-11-26
+
+### Added
+- **`scripts/tw-doctor.py`, also `tw-install.py doctor`: what the project and its autonomous contour still need** (#31). Read-only. Each requirement is one check, with its state (`ok`, `missing`, `warn`, `unknown` with the reason, `manual`), who fixes it (an agent, the owner, or the owner's decision), why it matters and the exact fix. `repo`: the kit version, git hooks, settings left below the recommended values, gitleaks and the docker images of the areas, and the CHANGELOG's manual steps of each version the project crossed. `contour`: a workflow that asks the router, and in it the kit path, the git hooks step, `allowed_bots`, the CI dispatch on the task branch, an env scrub that breaks docker areas; through `gh`, the model key secret, the labels, branch protection (not available on the plan: TM-16 stays open, said as a decision), an online runner with the workflow's labels, a runner shared with other workflows and their secrets. `runner`, run on the runner host: `TEAMWRIGHT_KIT`, gitleaks, the docker images. `gh` missing gives `unknown`, never `ok`.
+- **adopt, status, update and sprint show the gaps, not only "in sync"** (#31). `/teamwright:status` has a doctor row and a contour row, `/teamwright:adopt` lists the checks in its report, `/teamwright:update` runs the new copy's doctor with the version the project had and lists the manual steps of every version it crossed, and `/teamwright:sprint` shows a missing contour check before it offers a sprint.
+
+### What to do by hand
+- `/teamwright:update`, then restart Claude Code.
+- An autonomous contour: run `tw-install.py doctor --scope contour` in the project and `--scope runner` on the runner host, and fix what they list.
+
 ## [0.18.0] - 2026-11-26
 
 ### Added

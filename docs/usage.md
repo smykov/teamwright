@@ -137,6 +137,8 @@ jobs:
 
 Two additions for a real contour. Install gitleaks on the runner: without it `scripts/tw-scan` exits 3, because the fallback scanner is weaker than a scan of your own after the stage. A branch pushed with the default `GITHUB_TOKEN` starts no CI, so end the chain with `gh workflow run <your-ci>.yml --ref "task/<ID>"`, with `workflow_dispatch` in that workflow. This step is an example and has not been tried on a live contour: check that the run shows on the pull request. A pull request the chain opens with the job's token comes from `github-actions`, so its own `pull_request` run waits in `action_required`: the check that counts is the run the chain dispatched on `task/<ID>`. `allowed_bots` is there because every stage after the first is started by the chain (a bot); without it `claude-code-action` refuses the run.
 
+Before the first run, and after each update, `python3 "$TEAMWRIGHT_KIT/scripts/tw-install.py" doctor --scope contour` (or `/teamwright:status`) lists what the contour still lacks, one check per requirement with who fixes it and how: the workflow and its steps (kit path, git hooks, `allowed_bots`, the CI dispatch, an env scrub that breaks docker areas), the model key secret, the labels, branch protection, an online runner with the workflow's labels and a runner shared with other workflows. On the runner host, `--scope runner` checks `TEAMWRIGHT_KIT`, gitleaks and the docker images of the areas.
+
 `concurrency` keeps one stage running per repository (reviewers one at a time); when only owner decisions are left (push, an escalation, `NEEDS_OWNER`), `run` is false and the chain stops until a person acts.
 
 What survives between jobs, and why:
