@@ -1465,7 +1465,7 @@ def update(project, apply_it, fetch, as_json):
            "apply" if apply_it else "plan"] + (["--json"] if as_json else [])
     rc = subprocess.run(cmd, cwd=project).returncode
     doctor = os.path.join(kit_path, "scripts", "tw-doctor.py")
-    if rc == 0 and os.path.isfile(doctor):
+    if os.path.isfile(doctor):  # also after a failed plan: the manual steps matter most then
         # the gaps after the update, with the manual steps of every version it crossed: the
         # kit version in installed.json is the new one after apply, so `before` is passed
         if not as_json:

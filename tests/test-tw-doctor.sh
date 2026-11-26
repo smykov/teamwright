@@ -38,10 +38,75 @@ expect_rc "--since moves the start" "False" \
   "$(python3 "$D" --project . --json --since 0.17.0 | python3 -c "import json,sys; print(any(c['id'].startswith('manual:0.17.0:') for c in json.load(sys.stdin)['checks']))")"
 expect_rc "a line that only says to run /teamwright:update is left out" "0" \
   "$(python3 "$D" --project . --json | python3 -c "import json,sys; print(sum(c['fix'].startswith('\`/teamwright:update\`') for c in json.load(sys.stdin)['checks']))")"
-printf '#!/bin/sh\n[ "$1 $2 $3" = "image inspect img:1" ] && exit "${DOCKER_RC:-1}"\nexit 9\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
+cat > "$TMP/bin/docker" <<'SH'
+#!/bin/sh
+[ "$1 $2 $3" = "image inspect img:1" ] || exit 9
+[ "${DOCKER_RC:-1}" = 0 ] && exit 0
+echo "${DOCKER_ERR:-Error: No such image: img:1}" >&2; exit 1
+SH
+chmod +x "$TMP/bin/docker"
 export TW_DOCKER="$TMP/bin/docker"
 expect_rc "a docker area's image missing on this host" "missing" "$(st docker-image:img:1)"
 expect_rc "a docker area's image present" "ok" "$(DOCKER_RC=0 st docker-image:img:1)"
+expect_rc "docker itself failing is not a missing image" "unknown" \
+  "$(DOCKER_ERR="Cannot connect to the Docker daemon at unix:///var/run/docker.sock" st docker-image:img:1)"
+mv .teamwright/installed.json "$TMP/installed.json"
+expect_rc "no installed kit: not ok" "missing" "$(st kit-version)"
+mv "$TMP/installed.json" .teamwright/installed.json
+
+# the parsers, directly
+cat > "$TMP/CHANGELOG.md" <<'MD'
+## [Unreleased]
+### What to do by hand
+- unreleased step
+## [1.1.0-rc1] - x
+### What to do by hand
+- pre-release step
+## [1.0.0] - x
+### What to do by hand
+- a step wrapped
+  over two lines
+MD
+cat > "$TMP/wf-forms.yml" <<'YML'
+jobs:
+  a:
+    runs-on: self-hosted
+  b:
+    runs-on: [Self-Hosted, Linux]   # c
+  c:
+    runs-on:
+      - self-hosted
+      - linux
+    steps: []
+  d:
+    runs-on:
+      group: pool
+      labels:
+        - self-hosted
+        - tw
+  e:
+    runs-on: { group: pool, labels: [self-hosted, gpu] }
+  f:
+    runs-on: [self-hosted, "${{ inputs.x }}"]
+  g:
+    runs-on: ${{ matrix.os }}
+  h:
+    runs-on:
+      group: only-a-group
+YML
+cat > "$TMP/parse.py" <<'PY'
+import importlib.util, sys
+s = importlib.util.spec_from_file_location("d", sys.argv[1]); m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+if sys.argv[2] == "steps":
+    print(m.manual_steps("0.9.0", "1.2.0", sys.argv[3]))
+else:
+    print([sorted(x) for x in m.runs_on(open(sys.argv[3]).read())])
+PY
+expect_rc "a wrapped bullet is one step; a pre-release or Unreleased heading owns its lines" \
+  "[('1.0.0', 'a step wrapped over two lines')]" "$(python3 "$TMP/parse.py" "$D" steps "$TMP/CHANGELOG.md")"
+expect_rc "runs-on: scalar, flow, block list, group labels (block and flow), a templated element, ignoring case" \
+  "[['self-hosted'], ['linux', 'self-hosted'], ['linux', 'self-hosted'], ['self-hosted', 'tw'], ['gpu', 'self-hosted'], ['self-hosted']]" \
+  "$(python3 "$TMP/parse.py" "$D" runs "$TMP/wf-forms.yml")"
 
 # contour: no workflow
 cat > "$TMP/bin/gh" <<'SH'
@@ -49,7 +114,15 @@ cat > "$TMP/bin/gh" <<'SH'
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"acme/widget","defaultBranchRef":{"name":"main"}}' ;;
-  "secret list") echo "${GH_SECRETS:-[]}" ;;
+  "secret list")
+    case "$3" in
+      --org) [ -n "${GH_ORG_SECRETS:-}" ] && echo "$GH_ORG_SECRETS" || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; } ;;
+      *) echo "${GH_SECRETS:-[]}" ;;
+    esac ;;
+  "api repos/acme/widget/rules/branches/main") echo "${GH_RULES:-[]}" ;;
+  "api orgs/acme/actions/runners?per_page=100")
+    [ -n "${GH_ORG_RUNNERS:-}" ] && { echo "gh: Must have admin rights to Repository. (HTTP 403)" >&2; exit 1; }
+    echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   "label list") echo '[{"name":"teamwright"},{"name":"bug"}]' ;;
   "api repos/acme/widget/branches/main/protection")
     case "${GH_PROT:-404}" in
@@ -57,7 +130,7 @@ case "$1 $2" in
       403) echo "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)" >&2; exit 1 ;;
       *) echo "gh: Branch not protected (HTTP 404)" >&2; exit 1 ;;
     esac ;;
-  "api repos/acme/widget/actions/runners") echo "{\"runners\":[{\"name\":\"box\",\"status\":\"${GH_RUNNER:-online}\",\"labels\":[{\"name\":\"self-hosted\"},{\"name\":\"linux\"}]}]}" ;;
+  "api repos/acme/widget/actions/runners?per_page=100") echo "{\"runners\":[{\"name\":\"box\",\"status\":\"${GH_RUNNER:-online}\",\"labels\":[{\"name\":\"self-hosted\"},{\"name\":\"Linux\"},{\"name\":\"X64\"}]}]}" ;;
   *) echo "unexpected: $*" >&2; exit 1 ;;
 esac
 SH
@@ -77,6 +150,13 @@ expect_rc "the sketch: the kit, the hooks step and allowed_bots are there" "ok o
 expect_rc "the sketch alone dispatches no CI on the chain's branch" "missing" "$(st workflow-ci-dispatch)"
 sedi 's/^          gh workflow run teamwright-stage.yml$/          gh workflow run teamwright-stage.yml; gh workflow run ci.yml --ref "task\/T-1"/' .github/workflows/teamwright-stage.yml
 expect_rc "a CI dispatch on the task branch" "ok" "$(st workflow-ci-dispatch)"
+W=.github/workflows/teamwright-stage.yml; cp "$W" "$TMP/wf.yml"
+swap() { python3 -c 'import sys; p=sys.argv[1]; s=open(p).read(); open(p,"w").write(s.replace(sys.argv[2], sys.argv[3]))' "$W" "$1" "$2"; }
+swap 'gh workflow run ci.yml --ref "task/T-1"' 'gh workflow run ci.yml --ref main'
+expect_rc "a CI dispatch on main is not on the task branch" "missing" "$(st workflow-ci-dispatch)"
+swap 'gh workflow run ci.yml --ref main' $'gh workflow run ci.yml \\\n            --ref "$BRANCH"'
+expect_rc "a dispatch wrapped over two lines" "ok" "$(st workflow-ci-dispatch)"
+cp "$TMP/wf.yml" "$W"
 sedi 's/allowed_bots: .*$/prompt_extra: x/' .github/workflows/teamwright-stage.yml
 expect_rc "claude-code-action without allowed_bots" "missing" "$(st workflow-allowed-bots)"
 sedi 's/      TEAMWRIGHT_KIT: \/opt\/teamwright/      TEAMWRIGHT_KIT: \/opt\/teamwright\n      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"/' .github/workflows/teamwright-stage.yml
@@ -90,15 +170,21 @@ expect_rc "no branch protection: TM-16" "missing" "$(st branch-protection)"
 expect_rc "protection not on this plan: a decision, TM-16 stays open" "warn owner-decision" \
   "$(GH_PROT=403 st branch-protection) $(GH_PROT=403 field branch-protection class)"
 expect_rc "protected" "ok" "$(GH_PROT=200 st branch-protection)"
+expect_rc "protected by a ruleset only" "ok" "$(GH_RULES='[{"type":"deletion"},{"type":"pull_request"}]' st branch-protection)"
+expect_rc "a ruleset that does not stop a push is not protection" "missing" "$(GH_RULES='[{"type":"deletion"}]' st branch-protection)"
+expect_rc "an organisation secret counts" "ok" "$(GH_ORG_SECRETS='[{"name":"ANTHROPIC_API_KEY"}]' st model-secret)"
 expect_rc "an online runner with the workflow's labels" "ok" "$(st runner-online)"
 expect_rc "an offline runner" "missing" "$(GH_RUNNER=offline st runner-online)"
+expect_rc "organisation runners not listed: unknown, not missing" "unknown" "$(GH_RUNNER=offline GH_ORG_RUNNERS=1 st runner-online)"
+swap 'runs-on: self-hosted' 'runs-on: [self-hosted, linux]'
+expect_rc "a runner registered as Linux serves runs-on linux" "ok" "$(st runner-online)"
 expect_rc "no other workflow on the contour's runner" "ok" "$(st runner-shared)"
 printf 'on: push\njobs:\n  deploy:\n    runs-on: [self-hosted, linux]\n    steps:\n      - run: ./deploy\n        env: { KEY: "${{ secrets.DEPLOY_KEY }}" }\n' > .github/workflows/deploy.yml
 expect_rc "a deploy workflow on the same runner, with its secret named" "warn .github/workflows/deploy.yml (secrets: DEPLOY_KEY)" \
   "$(st runner-shared) $(field runner-shared evidence)"
-printf -- '- run: gh issue edit 1 --add-label tw:stop\n' >> .github/workflows/teamwright-stage.yml
+printf -- '- run: gh issue edit 1 --add-label tw:stop --add-label "tw:at-${STAGE}"\n' >> .github/workflows/teamwright-stage.yml
 expect_rc "a tw: label the workflow sets and nobody created" "missing" "$(st labels)"
-expect_rc "the fix creates it" "gh label create tw:stop" "$(field labels fix)"
+expect_rc "the fix creates it; a label built at run time is not asked for" "gh label create tw:stop" "$(field labels fix)"
 expect_rc "gh missing: unknown, not ok" "unknown" "$(TW_GH="$TMP/bin/no-such-gh" st github)"
 
 # runner

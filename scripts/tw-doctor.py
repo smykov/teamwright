@@ -44,9 +44,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(HERE)
 CONFIG = os.path.join(".teamwright", "config.yml")
 TIMEOUT = 20
-VERSION_RE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]")
+VERSION_RE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)")
 SECRET_RE = re.compile(r"\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-LABEL_RE = re.compile(r"\btw:[a-z][a-z-]*")
+LABEL_RE = re.compile(r"\btw:[a-z][a-z-]*(?![a-z0-9_${-])")  # tw:stage-${X} is built at run time
 RUNS_ON_RE = re.compile(r"^\s*runs-on:\s*(.+?)\s*$", re.M)
 MODEL_SECRETS = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
 STATES = ("missing", "warn", "unknown", "manual", "ok", "n/a")
@@ -111,20 +111,27 @@ def manual_steps(since, until, changelog=None):
     only says to run /teamwright:update is left out: that is how the reader got here."""
     text = read(changelog or os.path.join(KIT, "CHANGELOG.md")) or ""
     lo, hi = vtuple(since), vtuple(until)
-    out, ver, inside = [], None, False
+    items, ver, inside = [], None, False
     for line in text.splitlines():
-        m = VERSION_RE.match(line)
-        if m:
-            ver, inside = tuple(int(x) for x in m.groups()), False
+        if line.startswith("## "):
+            m = VERSION_RE.match(line)
+            # a heading that is not a plain release (Unreleased, a pre-release) owns its lines
+            ver = tuple(int(x) for x in m.groups()) if m and line[m.end():m.end() + 1] == "]" else None
+            inside = False
             continue
         if line.startswith("### "):
             inside = line.strip() == "### What to do by hand"
             continue
-        if not inside or ver is None or not line.startswith("- "):
+        if not inside or ver is None:
             continue
+        if line.startswith("- "):
+            items.append([ver, line[2:].strip()])
+        elif line[:1] in (" ", "\t") and line.strip() and items and items[-1][0] == ver:
+            items[-1][1] += " " + line.strip()  # a bullet wrapped over several lines
+    out = []
+    for ver, item in items:
         if (lo is not None and ver <= lo) or (hi is not None and ver > hi):
             continue
-        item = line[2:].strip()
         if re.fullmatch(r"`/teamwright:update`(, then restart Claude Code)?\.?", item):
             continue
         out.append(("%d.%d.%d" % ver, item))
@@ -183,6 +190,10 @@ def tool_checks(project, cfg, scope):
             if rc is None:
                 out.append(check("docker-image:" + img, scope, "unknown", "a docker area runs its commands in this image",
                                  "owner-action", "install docker, then `docker pull %s`" % img, "docker: %s" % err[:200]))
+            elif rc != 0 and not re.search(r"(?i)no such (image|object)", err):
+                out.append(check("docker-image:" + img, scope, "unknown", "a docker area runs its commands in this image",
+                                 "owner-action", "start docker, or give this user access to it",
+                                 (err.strip().splitlines() or ["docker failed"])[0][:200]))
             else:
                 out.append(check("docker-image:" + img, scope, "ok" if rc == 0 else "missing",
                                  "a docker area runs its commands in this image; a host clean-up removes images no "
@@ -191,13 +202,21 @@ def tool_checks(project, cfg, scope):
     return out
 
 
-def repo_checks(project, cfg, kc, since):
+def repo_checks(project, cfg, kc, since, cfg_ok=True):
     out = []
     have, kit = installed_version(project), kit_version()
-    if have and kit and vtuple(have) and vtuple(kit) and vtuple(have) < vtuple(kit):
+    if not vtuple(have):
+        out.append(check("kit-version", "repo", "missing", "no kit version in .teamwright/installed.json: the installer "
+                         "has not applied the kit here, so the hooks and role files may be missing",
+                         "agent", "/teamwright:update (or tw-install.py apply)", "kit %s, plugin %s" % (have or "none", kit or "?")))
+    elif vtuple(kit) and vtuple(have) < vtuple(kit):
         out.append(check("kit-version", "repo", "missing", "the project's kit is older than the plugin: the hooks and "
                          "role files here are the old ones, and a contour job refuses to run on install drift",
                          "agent", "/teamwright:update", "kit %s, plugin %s" % (have, kit)))
+    elif vtuple(kit) and vtuple(have) > vtuple(kit):
+        out.append(check("kit-version", "repo", "warn", "the project's kit is newer than this plugin: the commands of this "
+                         "session are older than the hooks they drive", "agent", "/teamwright:update",
+                         "kit %s, plugin %s" % (have, kit)))
     else:
         out.append(check("kit-version", "repo", "ok", "the project's kit matches the plugin", "agent", "",
                          "kit %s, plugin %s" % (have or "?", kit or "?")))
@@ -205,7 +224,8 @@ def repo_checks(project, cfg, kc, since):
     out.append(check("git-hooks", "repo", "ok" if hooks == "scripts/hooks" else "missing",
                      "without core.hooksPath the secret scan, patch-guard and the push gate never run on this clone",
                      "agent", "bash scripts/install-hooks.sh", "core.hooksPath=%s" % (hooks or "unset")))
-    out += settings_checks(cfg, kc)
+    if cfg_ok:
+        out += settings_checks(cfg, kc)
     out += tool_checks(project, cfg, "repo")
     seen = {}
     for ver, item in (manual_steps(since, kit) if since else []):
@@ -228,17 +248,47 @@ def workflows(project):
     return out
 
 
+def _labels(raw):
+    """Labels of a flow list or a scalar; an element built at run time is left out."""
+    raw = raw.split(" #")[0].strip().strip("[]")
+    return [x.strip().strip("'\"").lower() for x in raw.split(",") if x.strip() and "${{" not in x]
+
+
 def runs_on(text):
-    """Label sets of each job's `runs-on` (a list, a scalar or `labels:` of a group)."""
+    """Label sets of each job's `runs-on`, lower-cased (GitHub matches labels ignoring case): a
+    scalar, a flow list, a block list, or a group mapping's `labels:` (block or flow). A group
+    with no labels, or a value built at run time, gives no set: it cannot be matched here."""
+    lines = text.splitlines()
     sets = []
-    for raw in RUNS_ON_RE.findall(text):
-        raw = raw.split(" #")[0].strip()
-        if not raw or "${{" in raw:
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)runs-on:\s*(.*?)\s*$", line)
+        if not m:
             continue
-        raw = raw.strip("[]")
-        labels = frozenset(x.strip().strip("'\"") for x in raw.split(",") if x.strip())
+        indent, value = len(m.group(1)), m.group(2).split(" #")[0].strip()
+        labels = []
+        if value.startswith("{"):
+            lm = re.search(r"labels:\s*(\[[^\]]*\]|[^,}]+)", value)
+            labels = _labels(lm.group(1)) if lm else []
+        elif value:
+            labels = _labels(value)
+        else:
+            block = []
+            for nxt in lines[i + 1:]:
+                if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+                    break
+                block.append(nxt)
+            in_labels = False
+            for b in block:
+                t = b.strip()
+                if t.startswith("- ") and (in_labels or not any(x.strip().startswith(("group:", "labels:")) for x in block)):
+                    labels += _labels(t[2:])
+                elif t.startswith("labels:"):
+                    in_labels = True
+                    labels += _labels(t[len("labels:"):]) if t[len("labels:"):].strip() else []
+                elif t and not t.startswith("- "):
+                    in_labels = False
         if labels:
-            sets.append(labels)
+            sets.append(frozenset(labels))
     return sets
 
 
@@ -274,7 +324,8 @@ def workflow_checks(project, cfg, flows):
              "every stage after the first is dispatched by the chain (a bot); claude-code-action refuses a run a bot "
              "started unless allowed_bots names it",
              'add `allowed_bots: "github-actions[bot]"` to the claude-code-action step')
-    need("workflow-ci-dispatch", re.search(r"gh workflow run (?!teamwright)\S+.*--ref", text) is not None,
+    joined = re.sub(r"\\\n\s*", " ", text)  # a command wrapped over lines with a backslash
+    need("workflow-ci-dispatch", re.search(r"gh workflow run \S+[^\n]*--ref[ =]+[\"']?(?!(main|master|wip/)[\"'\s])", joined) is not None,
          "a branch pushed with the job's token starts no CI, and a pull request the chain opens waits in "
          "action_required: the chain's code reaches the owner unchecked",
          'end the chain with `gh workflow run <your-ci>.yml --ref "task/<ID>"` (workflow_dispatch in that workflow)')
@@ -304,7 +355,8 @@ def gh(project, *args):
 
 
 def has_github_remote(project):
-    return "github.com" in run(["git", "remote", "-v"], project)[1]
+    """Any remote: gh itself says whether it is GitHub (github.com or an Enterprise host)."""
+    return bool(run(["git", "remote"], project)[1].strip())
 
 
 def github_checks(project, flows):
@@ -317,22 +369,32 @@ def github_checks(project, flows):
     branch = (repo.get("defaultBranchRef") or {}).get("name") or "main"
     tw_text = "\n".join(t for _, t, is_tw in flows if is_tw)
 
-    # the model key
-    wanted = sorted({s for s in SECRET_RE.findall(tw_text) if s != "GITHUB_TOKEN"})
-    secrets, status, why = gh(project, "secret", "list", "--json", "name")
-    if why:
-        out.append(check("model-secret", "contour", "unknown", "the job needs the model key as a secret", "owner-action",
-                         "gh secret set ANTHROPIC_API_KEY", why))
+    # the model key: repository secrets, then the job's environments, then the organisation's
+    owner = name.split("/")[0]
+    wanted = sorted({x for x in SECRET_RE.findall(tw_text) if x != "GITHUB_TOKEN"}) or None
+    envs = sorted(set(re.findall(r"^\s*environment:\s*['\"]?([A-Za-z0-9_.-]+)", tw_text, re.M)))
+    have, unseen = set(), []
+    for args in [()] + [("--env", e) for e in envs] + [("--org", owner)]:
+        found, status, why = gh(project, "secret", "list", *args, "--json", "name")
+        if why:
+            if not (args and args[0] == "--org" and status == 404):  # 404: the owner is a user, not an org
+                unseen.append("%s: %s" % (" ".join(args) or "repository", why))
+            continue
+        have |= {x.get("name") for x in found or []}
+    lack = [x for x in wanted if x not in have] if wanted else ([] if have & set(MODEL_SECRETS) else [MODEL_SECRETS[0]])
+    if lack and unseen:
+        out.append(check("model-secret", "contour", "unknown", "the job needs the model key as a secret; with none every "
+                         "stage fails", "owner-action", " && ".join("gh secret set %s" % x for x in lack),
+                         "not found: %s; not listed: %s" % (", ".join(lack), "; ".join(unseen))))
     else:
-        have = {s.get("name") for s in secrets or []}
-        lack = [s for s in wanted if s not in have] if wanted else ([] if have & set(MODEL_SECRETS) else [MODEL_SECRETS[0]])
         out.append(check("model-secret", "contour", "missing" if lack else "ok",
                          "the job needs the model key as a secret; with none every stage fails", "owner-action",
-                         " && ".join("gh secret set %s" % s for s in lack),
-                         "missing: %s" % ", ".join(lack) if lack else "set: %s" % ", ".join(wanted or sorted(have & set(MODEL_SECRETS)))))
+                         " && ".join("gh secret set %s" % x for x in lack),
+                         "missing: %s" % ", ".join(lack) if lack
+                         else "set: %s" % ", ".join(wanted or sorted(have & set(MODEL_SECRETS)))))
 
     # labels
-    labels, status, why = gh(project, "label", "list", "--limit", "200", "--json", "name")
+    labels, status, why = gh(project, "label", "list", "--limit", "1000", "--json", "name")
     need_labels = sorted({"teamwright"} | set(LABEL_RE.findall(tw_text)))
     if why:
         out.append(check("labels", "contour", "unknown", "the queue lives in labels", "agent",
@@ -346,11 +408,13 @@ def github_checks(project, flows):
                          "agent", " && ".join("gh label create %s" % l for l in lack),
                          "missing: %s" % ", ".join(lack) if lack else "present: %s" % ", ".join(need_labels)))
 
-    # branch protection (TM-16)
+    # branch protection (TM-16): classic protection, or a ruleset that requires a pull request
     _, status, why = gh(project, "api", "repos/%s/branches/%s/protection" % (name, branch))
-    if not why:
+    rules, _, rwhy = gh(project, "api", "repos/%s/rules/branches/%s" % (name, branch))
+    ruled = sorted({x.get("type") for x in (rules or []) if isinstance(x, dict)} & {"pull_request", "update"})
+    if not why or ruled:
         out.append(check("branch-protection", "contour", "ok", "the job cannot push to the main branch", "owner-action",
-                         "", "%s is protected" % branch))
+                         "", "%s is protected%s" % (branch, " by a ruleset (%s)" % ", ".join(ruled) if ruled and why else "")))
     elif status == 404:
         out.append(check("branch-protection", "contour", "missing",
                          "the job's token has contents: write; without protection it can push to %s (TM-16)" % branch,
@@ -369,19 +433,27 @@ def github_checks(project, flows):
     tw_sets = [s for _, t, is_tw in flows if is_tw for s in runs_on(t)]
     hosted = [s for s in tw_sets if "self-hosted" in s]
     if hosted:
-        data, status, why = gh(project, "api", "repos/%s/actions/runners" % name)
-        if why:
-            out.append(check("runner-online", "contour", "unknown", "the contour runs on a self-hosted runner",
-                             "owner-action", "", why + (" (listing runners needs admin rights)" if status == 403 else "")))
-        else:
-            runners = (data or {}).get("runners") or []
-            fit = [r for r in runners if r.get("status") == "online"
-                   and all(s <= {l.get("name") for l in r.get("labels") or []} for s in hosted)]
-            out.append(check("runner-online", "contour", "ok" if fit else "missing",
-                             "no online runner has the labels the workflow asks for: jobs queue forever",
-                             "owner-action", "start a self-hosted runner with labels %s" % ", ".join(sorted(set().union(*hosted))),
-                             ", ".join(r.get("name", "?") for r in fit) if fit
-                             else "%d runner(s), none online with those labels" % len(runners)))
+        runners, unseen = [], []
+        for path, is_org in (("repos/%s/actions/runners?per_page=100" % name, False),
+                             ("orgs/%s/actions/runners?per_page=100" % owner, True)):
+            data, status, why = gh(project, "api", path)
+            if why:
+                if not (is_org and status == 404):  # 404: the owner is a user, not an org
+                    unseen.append("%s runners: %s%s" % ("organisation" if is_org else "repository", why,
+                                                        " (listing runners needs admin rights)" if status == 403 else ""))
+                continue
+            runners += (data or {}).get("runners") or []
+        online = [(r.get("name", "?"), {str(l.get("name", "")).lower() for l in r.get("labels") or []})
+                  for r in runners if r.get("status") == "online"]
+        unmet = [sorted(x) for x in dict.fromkeys(hosted) if not any(x <= labels for _, labels in online)]
+        fit = sorted({n for n, labels in online if any(x <= labels for x in hosted)})
+        state = "ok" if not unmet else ("unknown" if unseen else "missing")
+        out.append(check("runner-online", "contour", state,
+                         "no online runner has the labels a job asks for: those jobs queue forever",
+                         "owner-action", "; ".join("start a self-hosted runner with labels %s" % ", ".join(u) for u in unmet),
+                         ("online: %s" % ", ".join(fit) if fit else "%d runner(s) listed" % len(runners))
+                         + ("; no runner for %s" % " | ".join(", ".join(u) for u in unmet) if unmet else "")
+                         + ("; not listed: %s" % "; ".join(unseen) if unseen else "")))
         shared = []
         for path, text, is_tw in flows:
             if is_tw:
@@ -425,10 +497,11 @@ def doctor(project, scopes=None, since=None):
         kc = None
     else:
         kc = kit_config()
+        cfg_ok = True
         try:
             cfg = kc.parse_yaml(cfg_text)
         except ValueError as e:
-            cfg = {}
+            cfg, cfg_ok = {}, False
             checks.append(check("config", "repo", "missing", "the config does not parse", "agent",
                                 "fix %s" % CONFIG, str(e)[:200]))
         if not isinstance(cfg, dict):
@@ -436,7 +509,7 @@ def doctor(project, scopes=None, since=None):
     if since is None:
         since = installed_version(project)
     if "repo" in scopes and kc is not None:
-        checks += repo_checks(project, cfg, kc, since)
+        checks += repo_checks(project, cfg, kc, since, cfg_ok)
     if "contour" in scopes:
         flows = workflows(project)
         checks += workflow_checks(project, cfg, flows)
