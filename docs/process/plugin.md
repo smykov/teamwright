@@ -18,7 +18,8 @@ scripts/tw-github.py              read-only: the autonomous queue on GitHub, Iss
 scripts/tw-context.py             read-only: does the context tool index the areas' languages, is it used (status)
 scripts/tw-process.py             read-only: review findings, send-backs, settings history and render drift, DRAIN exceptions, record sizes; --since / --split-date (improve)
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, context index per worktree, headless stage runs, status, journal merge
-scripts/tw-sprint.py              candidates for the autonomous queue (dependencies, seams, what could stop a chain), their Issues and label
+scripts/tw-sprint.py              candidates for the autonomous queue (dependencies, seams, what could stop a chain, user-value group), their Issues and label
+scripts/tw-groom.py               read-only: facts about the open backlog (possibly done, stale seams, settled blocks, plan stages with no task)
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -192,6 +193,21 @@ open task depending on them, directly or not. Items are ordered by the highest p
 unblock, then how many. Task state and question status come from the router's readers
 (`tw-next.py`), so both agree. `/teamwright:blockers` renders it and records the owner's answers.
 
+## tw-groom.py: facts about the open backlog
+
+`python3 scripts/tw-groom.py [--project PATH] [--json] [--old-days N]` is read-only. It flags the
+open records worth reading before a sprint, each with its evidence: `possibly-done` (a `TODO` or
+`BLOCKED` task named by a commit after its record last changed), `seam-changed` (its seam's files
+changed since), `missing-path` (a path in backticks in `## Context` or the seam is gone), `no-seam`,
+`settled` (`blocked_on` names only answered questions and closed tasks), `inherits-priority`, `old`
+(the record unchanged for N days, default 90), `too-large` (a `from-follow-up` task over 10 open
+items), `duplicate` (same title, or same class and an overlapping seam) and `absorbed-done` (a
+`DEFERRED` task whose `absorbed_by` is `DONE`). Per stage of `docs/plan.md` (tasks belong to a
+stage by the FR-NN they name): `stage-empty`, `release-stage-empty`, `frs-without-tasks`,
+`plan-status-stale`, and `milestone-stage-missing` for a `.teamwright/progress.json` milestone
+stage the plan no longer has. `tw-sprint.py` shows each candidate's findings (`groom`) and warns,
+never excludes. It decides nothing: the owner says what happens to each record.
+
 ## tw-github.py: the autonomous queue
 
 `python3 scripts/tw-github.py [--project PATH] [--json]` is read-only and calls `gh`. Open Issues
@@ -234,7 +250,7 @@ older than the plugin would run without the gates it documents. First match wins
 | 4 | `CODE_COMPLETE` / `DEPLOYED` without a PASS verify — a `CODE_COMPLETE` task that deploys only once its code is on the delivery branch (`<remote>/HEAD`, else `/main` / `/master` of the remote the current branch's upstream names, else the only remote, else `origin`; no such ref = nothing to wait for) — its last code commit merged, or its changes there after a rebase, cherry-pick or squash merge (same patch id, or every file the commit touches has there its content in the commit or at `HEAD`) — i.e. after DRAIN | `verify` (task-validator); PASS → `continue`; `deploys: false` and surface `none` → `continue` (close); `VERIFY_FAIL` → `reanalyze` |
 | 5 | `BLOCKED` with `blocked_on` naming the owner, a decision or an open question (or empty) | `decide` |
 | 5a | (main tree) a task in another worktree on a branch that names it — `tw/<ID>` (`/teamwright:parallel`) or `task/<ID>[-…]`, pattern `$TEAMWRIGHT_TASK_BRANCH_RE` — whose record in that worktree is `CODE_COMPLETE` or later | `merge` (`/teamwright:parallel` for `tw/`, else the branch and the worktree path); tasks in worktrees are otherwise skipped, and their state in `tasks` comes from the worktree's record (`in_worktree`, `branch`) |
-| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED (or also CODE_COMPLETE / DEPLOYED with `process.ready.after: code_complete`), and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`; `process.autonomy.start: auto` → `ask_owner: false`) |
+| 6 | ready `TODO`: `depends_on` all DONE or VERIFIED (or also CODE_COMPLETE / DEPLOYED with `process.ready.after: code_complete`), and `blocked_on` empty or naming only open questions marked `answered` / `dropped` (or `closed` / `resolved` / `done`) in `docs/open-questions.md`; ordered by effective priority, then (with `process.ready.sprint_first`) the tasks of the active sprint file, then the number of open tasks it unblocks, then id | `start` (owner picks; others in `alternatives`; `process.autonomy.start: auto` → `ask_owner: false`) |
 | 6a | with `--pass IDS`: no ready task fits the pass cap (`process.batch.max_tasks`, lowered by the `by_priority` cap of every task in the pass) | `stop` (end the pass); `budget` reports taken / limit / left |
 | 7 | unpushed commits — on the delivery branch: ahead of its upstream; on any other branch (a `wip/` branch of an autonomous run, a task branch): not on the delivery branch (`state.delivery_ref`), since that branch's own upstream is even after every push | `decide` (push; the reason names the tasks that deploy and wait for it to be verified); otherwise `idle` |
 
@@ -286,6 +302,7 @@ Example with every field: `template/.teamwright/config.example.yml`.
 | `process.autonomy.start` | `ask` \| `auto` | no (default `ask`) | `auto`: the router's `start` needs no owner answer. `{{AUTONOMY_START}}` |
 | `process.autonomy.continue` | bool | no (default `false`) | the flow takes the next task after a barrier; push is asked once at the end of the pass. `{{AUTONOMY_CONTINUE}}` |
 | `process.ready.after` | `verified` \| `code_complete` | no (default `verified`) | when a `depends_on` counts as finished for readiness: `VERIFIED`/`DONE`, or already `CODE_COMPLETE`/`DEPLOYED` (`tw-next.py`) |
+| `process.ready.sprint_first` | bool | no (default `false`) | among ready tasks of equal effective priority, those in the `## Tasks` table of the active sprint file (the highest-numbered `docs/sprints/<N>.md`) start first; the router output's `sprint` names the file and its tasks (`tw-next.py` `active_sprint`) |
 | `process.stages.<stage>.batch` | 1–10 | no (default 1) | `<stage>`: `analyze`, `red-tests`, `implement`, `review`, `verify`. Tasks one stage session takes, one after another (`tw-next.py` `batch_cap`) |
 | `process.stages.<stage>.min` | 1–10 | no (default 1) | tasks waiting at the stage before the router runs it while other work is due; P0/P1 tasks and "nothing else to do" run it at once |
 | `process.stages.<stage>.max_wait_hours` | 0–168 | no (default 0 = off) | the stage runs anyway once its oldest waiting task's record is this old |

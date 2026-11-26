@@ -275,6 +275,24 @@ expect_rc "ready.after code_complete: a dependency still in ANALYSIS blocks" Fal
 cfg_ready deployed
 expect_rc "an invalid ready.after falls back to verified" verified "$(field '["settings"]["ready"]["after"]')"
 
+# ---- process.ready.sprint_first: the active sprint's tasks start first (#38) -------------
+fresh sprint-first
+mk T-1 TODO; mk T-2 TODO; mk T-3 TODO "priority: P1"; mk T-4 TODO; mkdir -p docs/sprints
+printf '# Sprint 1\n\n## Tasks\n\n| ID | Title |\n|---|---|\n| T-1 | old |\n' > docs/sprints/1.md
+printf '# Sprint 2\n\n## Goal\n\nT-2 is not here.\n\n## Tasks\n\n| ID | Title |\n|---|---|\n| T-4 | a |\n| `T-3` | b |\n\n## Out of sprint\n\n| ID | Why |\n|---|---|\n| T-2 | frozen |\n' > docs/sprints/2.md
+commit_all
+order() { j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(" ".join([d["task"]] + [a["task"] for a in d["alternatives"] if a["action"]=="start"]))'; }
+expect_rc "sprint_first off (default): priority, then id; sprint files are not read for the order" "T-3 T-1 T-2 T-4" "$(order)"
+expect_rc "the active sprint is reported with its Tasks table only" "2 ['T-4', 'T-3'] False" \
+  "$(j | python3 -c 'import json,sys; s=json.load(sys.stdin)["sprint"]; print(s["number"], s["tasks"], s["first"])')"
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  ready:\n    sprint_first: true\n' > .teamwright/config.yml
+expect_rc "sprint_first: the sprint's task first at equal priority, a higher priority still wins" "T-3 T-4 T-1 T-2" "$(order)"
+j | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["alternatives"] if x["task"]=="T-4"][0]; assert "in the active sprint" in a["reason"], a' \
+  && ok "sprint_first: the reason names the sprint" || bad "sprint_first: the reason names the sprint"
+printf 'version: 1\nmode: gate-first\nprocess:\n  ready:\n    sprint_first: maybe\n' > "$TMP/sf.yml"
+python3 -c "import sys; sys.path.insert(0,'$HOOKS'); import _config as c; print(c.process_errors(c.parse_yaml(open('$TMP/sf.yml').read())))" \
+  | grep -q "sprint_first must be true or false" && ok "an invalid sprint_first is refused" || bad "an invalid sprint_first is refused"
+
 # ---- stages (0.12): the stage field against the evidence ----------------------------------
 tests_md() { printf '\n## Tests\n\n- guarantee 1: test_one (red: AssertionError)\n'; }
 fresh stages

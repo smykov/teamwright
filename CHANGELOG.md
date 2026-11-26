@@ -2,6 +2,17 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.18.0] - 2026-11-26
+
+### Added
+- **`process.ready.sprint_first`** (default `false`, recommended `true`; #38). Among ready tasks of equal effective priority, the router starts those in the `## Tasks` table of the active sprint file (the highest-numbered `docs/sprints/<N>.md`) first, and says so in the reason. A sprint goal then steers `/teamwright:flow` with no priority edits, and taking a task out of the table undoes it; a higher priority still wins. `tw-next.py --json` reports the active sprint as `sprint`.
+- **User-value groups in `/teamwright:sprint`** (#38). `tw-sprint.py --json` gives each candidate a `value`: `feature` (grouped by `design_ref`, then FR-NN, then area), `invisible` (a chore, a follow-up task, a seam only in tests, CI, guards or process) or `owner` (acceptance needs a person or a device), with the reason, and `value_groups` names the invisible tasks other tasks wait on. The goal **user value** shows the value table, asks the goal and whether to freeze the invisible tasks, and writes the sprint file.
+- **`scripts/tw-groom.py`: facts about the open backlog** (#26, merged into #38). Read-only, one finding per record with its evidence: possibly done (a later commit names the task), its seam changed, a path in Context gone, no seam, a block already settled, an inherited priority, an old record, a follow-up task too large for one chain, a likely duplicate, a `DEFERRED` task whose `absorbed_by` is `DONE`. Per plan stage: a stage or a release stage with no task, FR-NN with no task, a plan status left at "not started", a milestone stage the plan no longer has. `/teamwright:sprint` shows the findings on each candidate and warns; it never excludes.
+
+### What to do by hand
+- `/teamwright:update`, then restart Claude Code.
+- To let a sprint goal steer the router: `ready.sprint_first: true` with `/teamwright:settings`.
+
 ## [0.17.0] - 2026-11-25
 
 ### Added

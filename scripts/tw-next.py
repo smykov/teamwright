@@ -52,7 +52,8 @@ Decision order (first match wins):
                  names only open questions (OQ-NN) already answered or dropped in
                  docs/open-questions.md. Order: effective priority (a task inherits
                  the highest priority of the open tasks that depend on it, directly or
-                 not), then the number of open tasks it unblocks, then id.
+                 not), then (process.ready.sprint_first) the tasks in the Tasks table of
+                 the active sprint file, then the number of open tasks it unblocks, then id.
   7. decide      unpushed commits - not on the delivery branch: against its upstream on that
                  branch, against the delivery branch on any other (a wip/ or task branch; a
                  commit whose changes are there - squash, rebase, cherry-pick - is not counted) -
@@ -824,13 +825,47 @@ def drift_warnings(project):
                 d["file"], d["setting"], d["found"] or "<line rewritten>", d["expected"]) for d in drift]
 
 
-def candidates(tasks, st, oqs=None, after="verified", own=None):
+def active_sprint(project, task=None):
+    """The active sprint: the highest-numbered docs/sprints/<N>.md and the task ids in the
+    first column of its `## Tasks` table, {"number", "path", "tasks"}; None when there is no
+    sprint file. Ids mentioned elsewhere in the file (an out-of-sprint list) do not count."""
+    d = os.path.join(project, "docs", "sprints")
+    try:
+        nums = [int(m.group(1)) for m in (re.fullmatch(r"(\d+)\.md", f) for f in os.listdir(d)) if m]
+    except OSError:
+        return None
+    if not nums:
+        return None
+    n = max(nums)
+    path = os.path.join(d, "%d.md" % n)
+    tid_re = re.compile(r"(?:%s)" % getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"))
+    ids, inside = [], False
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        if re.match(r"^#{1,6}\s", line):
+            inside = bool(re.match(r"^#{1,6}\s+Tasks\b", line, re.I))
+            continue
+        if inside and line.strip().startswith("|"):
+            cell = re.sub(r"[`*\[\]]", "", line.strip().strip("|").split("|")[0]).strip()
+            if tid_re.fullmatch(cell) and cell not in ids:
+                ids.append(cell)
+    return {"number": n, "path": "docs/sprints/%d.md" % n, "tasks": ids}
+
+
+def candidates(tasks, st, oqs=None, after="verified", own=None, sprint=None):
     """Every applicable decision in router order (the first one is the answer).
 
     `own`: this tree is the per-task worktree of that task. Its branch carries the other
     tasks' records as they were when it was cut - their IN_PROGRESS belongs to another
-    tree, so this tree's own work (the WIP rule, uncommitted changes) is `own` only."""
+    tree, so this tree's own work (the WIP rule, uncommitted changes) is `own` only.
+    `sprint`: ids of the active sprint (process.ready.sprint_first); among ready tasks of
+    equal effective priority they start first. None or empty = the order ignores sprints."""
     oqs = oqs or {}
+    sprint = set(sprint or ())
     ts = list(tasks.values())
     by = lambda *sts: _sorted([t for t in ts if t["status"] in sts])  # noqa: E731
     here = lambda *sts: [t for t in by(*sts) if not own or t["id"] == own]  # noqa: E731
@@ -930,15 +965,18 @@ def candidates(tasks, st, oqs=None, after="verified", own=None):
             out.append(_d("decide", t["id"], "BLOCKED: %s" % (t["blocked_on"] or "no reason recorded"),
                           ask=True))
 
-    # 6. ready TODO, by effective priority, then how much it unblocks, then id
+    # 6. ready TODO, by effective priority, then (sprint_first) the active sprint's tasks,
+    # then how much it unblocks, then id
     eff = effective_priority(tasks)
     ready = sorted([t for t in ts if is_ready(t, tasks, oqs, after)],
-                   key=lambda t: (eff[t["id"]][0], -eff[t["id"]][2], _num(t["id"]), t["id"]))
+                   key=lambda t: (eff[t["id"]][0], t["id"] not in sprint, -eff[t["id"]][2], _num(t["id"]), t["id"]))
     for t in ready:
         rank, src, _n = eff[t["id"]]
         why = "%s %s is ready: %s" % (t["priority"], t["id"], t["title"])
         if src:
             why += " (inherits %s from %s, which depends on it)" % (tasks[src]["priority"], src)
+        if t["id"] in sprint:
+            why += " (in the active sprint)"
         out.append(_d("start", t["id"], why, role="problem-investigator", ask=True))
 
     # 7. push or idle
@@ -1366,13 +1404,16 @@ def decide(project, taken=None, stage=None, ids=None, worked=None):
         if stage:
             res["request"] = {"stage": stage, "tasks": ids or [], "ok": False, "batch": [], "model": None,
                               "hint": res["reason"], "candidates": []}
-        res["candidates"], res["batch_cap"], res["counts"] = [], 0, {}
+        res["candidates"], res["batch_cap"], res["counts"], res["sprint"] = [], 0, {}, None
         return res
     oqs = open_questions(project)
     mark_delivered(project, tasks, st)
     own, wts = with_worktrees(project, task, tasks)
     elsewhere = {tid: wt["status"] for tid, wt in wts.items()}
-    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"], own)
+    sprint = active_sprint(project, task)
+    first_ids = sprint["tasks"] if sprint and proc["ready"].get("sprint_first") else None
+    cands = candidates({k: v for k, v in tasks.items() if k not in elsewhere}, st, oqs, proc["ready"]["after"], own,
+                       first_ids)
     if own:
         # a worktree session works its own task only, and never pushes
         cands = [c for c in cands if c["task"] == own]
@@ -1453,6 +1494,7 @@ def decide(project, taken=None, stage=None, ids=None, worked=None):
                            blockers=blockers(t, oqs),
                            effective_priority="P%d" % eff[t["id"]][0] if eff[t["id"]][0] < 9 else t["priority"])
                       for t in _sorted(tasks.values()) if t["status"] not in CLOSED]
+    first["sprint"] = dict(sprint, first=bool(first_ids)) if sprint else None
     first["counts"] = {}
     for t in tasks.values():
         first["counts"][t["status"]] = first["counts"].get(t["status"], 0) + 1
