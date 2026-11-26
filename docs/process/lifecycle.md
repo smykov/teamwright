@@ -235,7 +235,9 @@ The body lists the scenarios checked and must contain a `Failure branch: …` li
 
 ## 8. Sprints
 
-A sprint is a planning unit, not a gate: a goal and the list of tasks planned for it, in `docs/sprints/<N>.md` (template `docs/sprints/_sprint-template.md`). No hook reads sprint files, and the router (`/teamwright:flow`) ranks every open task record whatever its sprint; metrics count tasks per sprint from the `sprint:` field.
+A sprint is a planning unit, not a gate: a goal and the list of tasks planned for it, in `docs/sprints/<N>.md` (template `docs/sprints/_sprint-template.md`). No hook reads sprint files; metrics count tasks per sprint from the `sprint:` field.
+
+- **How a goal reaches the router.** The router (`/teamwright:flow`) ranks every open task record whatever its sprint: effective priority, then what a task unblocks. With `process.ready.sprint_first: true` it reads the `## Tasks` table of the active sprint file and, among ready tasks of equal effective priority, starts those first. A sprint goal set in `/teamwright:sprint` therefore steers the queue without priority edits, and taking a task out of the table undoes it. Ids elsewhere in the file (an out-of-sprint list) do not count. A higher priority still wins: a P1 outside the sprint starts before a P2 in it. Off (the default), the order is priority only, and a goal steers the router only through priorities.
 
 - **Active sprint** = the highest-numbered `docs/sprints/<N>.md`. A new task gets that `N` in `sprint:`, and the field never changes.
 - **Opening.** Sprint 1 is created by `/teamwright:adopt` or `/teamwright:init`. The next one is planned when the router reports `idle` ("plan the next sprint") or the owner asks: in the main session the orchestrator proposes a goal and tasks (from the backlog list in the previous sprint file, `docs/open-questions.md`, `docs/failures.md`, the metrics), the owner agrees or changes it, and the orchestrator writes `docs/sprints/<N+1>.md` and the task records and commits them (`docs(sprint<N+1>): plan`). There is no separate planning session type.

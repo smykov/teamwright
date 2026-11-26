@@ -27,6 +27,8 @@ pq() { python3 "$PAR" "$@" --project . | python3 -c "import json,sys; d=json.loa
 Q='" ".join(g["id"] for g in d["group"])'; expect_rc "disjoint analysed tasks form the group" "T-1 T-2" "$(pq plan)"
 Q='"; ".join(s["task"]+": "+s["why"] for s in d["skipped"])'
 pq plan | grep -q "T-3: seam overlaps T-1" && ok "nested path overlaps" || bad "nested path overlaps" "$(pq plan)"
+expect_rc "a seam keeps a dotfile's dot and drops only ./ and :line" "['.github/ci.yml', 'app/a.py']" \
+  "$(python3 -c "import importlib.util as u; s=u.spec_from_file_location('p','$PAR'); m=u.module_from_spec(s); s.loader.exec_module(m); print(sorted(m.seam_paths('./app/a.py:12 \\\`.github/ci.yml\\\`')))")"
 pq plan | grep -q "T-4: seam names no path" && ok "seam without a path runs alone" || bad "seam without a path runs alone"
 Q='" ".join(d["analysis_incomplete"])'; expect_rc "incomplete analysis is not grouped" "T-5" "$(pq plan)"
 

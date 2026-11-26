@@ -62,7 +62,7 @@ def seam_paths(seam):
     """Path-like tokens of a seam, normalised (no backticks, no leading ./, no :line)."""
     out = set()
     for tok in PATH_RE.findall(str(seam or "").replace("`", " ")):
-        tok = re.sub(r":\d+.*$", "", tok).lstrip("./").rstrip("/")
+        tok = re.sub(r"^(\./)+", "", re.sub(r":\d+.*$", "", tok)).lstrip("/").rstrip("/")
         if tok and not re.fullmatch(r"\d+(\.\d+)*", tok):
             out.add(tok)
     return out

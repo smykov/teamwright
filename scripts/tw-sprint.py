@@ -28,6 +28,12 @@ sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(HERE)
 LABEL = "teamwright"
+# a seam entirely in these paths gives the end user nothing new: tests, CI, guards, process
+INVISIBLE_PATH_RE = re.compile(r"(^|/)(tests?|spec|__tests__|e2e)(/|$)|(^|/)test_[^/]*$|_test\.[a-z]+$|\.(spec|test)\.[a-z]+$|"
+                               r"^\.github/|^\.gitlab-ci|^ci/|^\.teamwright/|^scripts/hooks/|^docs/process/|"
+                               r"(^|/)(Makefile|\.pre-commit-config\.yaml|\.gitleaks\.toml)$")
+INVISIBLE_TITLE_RE = re.compile(r"(?i)\b(flaky|flake|tests?|ci|lint|guard|gate|hook|contour|refactor)\b")
+FR_RE = re.compile(r"\bFR-\d+\b")
 PERSON_RE = re.compile(r"(?i)\b(real device|physical device|real phone|on a phone|android|ios|manual(ly)?|by hand|"
                        r"production|api key|credentials?)\b|телефон|устройств|вручную|на проде|боев")
 
@@ -60,6 +66,56 @@ def unpushed(project, ref):
     return int(out) if rc == 0 and out.isdigit() else None
 
 
+def value_of(t, rec, text, areas, paths, owner_risk):
+    """The user-value group of a candidate, {kind, group, reason}: `owner` when its acceptance
+    needs a person or a device, `invisible` when it gives the end user nothing new (a chore,
+    a follow-up, a seam in tests, CI, guards or process only), else `feature`, grouped by
+    design_ref, then FR-NN, then area. A heuristic: the orchestrator reads the record and
+    corrects it."""
+    s = lambda k: rec.get(k).strip() if isinstance(rec.get(k), str) else ""  # noqa: E731
+    if owner_risk:
+        return {"kind": "owner", "group": "owner checks", "reason": "acceptance names a person, a device or production"}
+    if s("class") == "from-follow-up":
+        return {"kind": "invisible", "group": "invisible", "reason": "class: from-follow-up"}
+    if t["type"] == "chore":
+        return {"kind": "invisible", "group": "invisible", "reason": "type: chore"}
+    if paths and all(INVISIBLE_PATH_RE.search(p) for p in paths):
+        return {"kind": "invisible", "group": "invisible", "reason": "seam only in tests, CI, guards or process: %s"
+                % ", ".join(paths[:3])}
+    if not paths and INVISIBLE_TITLE_RE.search(t["title"]):
+        return {"kind": "invisible", "group": "invisible", "reason": "title names %s, no seam yet"
+                % INVISIBLE_TITLE_RE.search(t["title"]).group(0)}
+    ref = re.split(r"[#\s]", s("design_ref"))[0] if s("design_ref") else ""
+    if ref:
+        return {"kind": "feature", "group": ref, "reason": "design_ref"}
+    frs = sorted(set(FR_RE.findall(text)), key=lambda x: int(x[3:]))
+    if frs:
+        return {"kind": "feature", "group": ", ".join(frs), "reason": "names %s" % ", ".join(frs)}
+    hit = [n for n, dirs in areas if any(p == d or p.startswith(d + "/") for p in paths for d in dirs)]
+    if hit:
+        return {"kind": "feature", "group": "area %s" % hit[0], "reason": "seam in area %s" % hit[0]}
+    return {"kind": "feature", "group": "unassigned", "reason": "no design_ref, FR-NN or area: read the record"}
+
+
+def value_groups(candidates):
+    """Candidates by value group: features first (by their best effective priority, then size),
+    then invisible, then owner checks. Invisible tasks that unblock others are accelerators."""
+    groups = {}
+    for c in candidates:
+        v = c["value"]
+        g = groups.setdefault((v["kind"], v["group"]), {"kind": v["kind"], "group": v["group"], "tasks": [],
+                                                       "best": "P9", "accelerators": []})
+        g["tasks"].append(c["id"])
+        g["best"] = min(g["best"], c["effective_priority"])
+        if v["kind"] == "invisible" and c["unblocks"]:
+            g["accelerators"].append(c["id"])
+    order = {"feature": 0, "invisible": 1, "owner": 2}
+    out = sorted(groups.values(), key=lambda g: (order[g["kind"]], g["best"], -len(g["tasks"]), g["group"]))
+    for g in out:
+        del g["best"]
+    return out
+
+
 def collect(project):
     nxt, par, gh = _load("tw-next"), _load("tw-parallel"), _load("tw-github")
     sys.path.insert(0, os.path.join(KIT, "template", "scripts", "hooks"))
@@ -74,6 +130,11 @@ def collect(project):
     queued = {i["task"]: i for i in queue.get("issues") or [] if i.get("task")}
     open_ids = {t["id"] for t in tasks.values() if t["status"] not in nxt.CLOSED}
 
+    try:
+        g = _load("tw-groom").collect(project) or {}
+    except Exception as e:  # the facts help the choice; their failure never blocks it
+        g = {"error": str(e)}
+    groomed = {r["id"]: r["findings"] for r in g.get("records") or []}
     candidates, excluded = [], []
     for t in nxt._sorted(tasks.values()):
         tid = t["id"]
@@ -100,7 +161,8 @@ def collect(project):
         risks = []
         text = _record_text(project, tid)
         acceptance = task.section(text, "Acceptance") if hasattr(task, "section") else ""
-        if PERSON_RE.search("%s\n%s" % (t["title"], acceptance)):
+        owner_risk = bool(PERSON_RE.search("%s\n%s" % (t["title"], acceptance)))
+        if owner_risk:
             risks.append("Acceptance may need a person, a device or production")
         pending = [q for q in t["mentions_oq"] if not nxt.oq_resolved(oqs, q)]
         if pending:
@@ -120,6 +182,9 @@ def collect(project):
             "areas": [n for n, dirs in areas if any(p == d or p.startswith(d + "/") for p in paths for d in dirs)],
             "acceptance_items": t.get("acceptance_items", 0), "risks": risks, "overlaps": [],
             "issue": queued[tid]["number"] if tid in queued else None,
+            "value": value_of(t, task.parse(text) if text else {}, text, areas, paths, owner_risk),
+            # backlog facts (tw-groom.py) other than no-seam, which `risks` already names
+            "groom": [f for f in groomed.get(tid, []) if f["kind"] != "no-seam"],
         })
     for a in candidates:
         for b in candidates:
@@ -153,11 +218,19 @@ def collect(project):
         if p.get("no_checks"):
             warnings.append("pull request #%s (%s): no CI ran on it, nothing has checked this branch"
                             % (p["number"], p["task"]))
+    flagged = [c["id"] for c in candidates if c["groom"]]
+    if flagged:
+        warnings.append("%d candidate(s) have backlog findings (tw-groom.py): %s - read them before choosing"
+                        % (len(flagged), ", ".join(flagged)))
+    warnings += g.get("warnings") or []
+    if g.get("error"):
+        warnings.append("backlog facts not collected: %s" % g["error"])
     current = [{"task": i["task"], "issue": i["number"], "state": i["state"], "stage": i.get("stage"),
                 "note": i.get("note"), "url": i.get("url")} for i in queue.get("issues") or []]
     prs = queue.get("pull_requests") or []
     return {"current_sprint": {"active": bool(current or prs), "issues": current, "pull_requests": prs},
-            "candidates": candidates, "excluded": excluded,
+            "candidates": candidates, "excluded": excluded, "value_groups": value_groups(candidates),
+            "plan_stages": [sg for sg in g.get("stages") or [] if sg["findings"]],
             "follow_ups": {"open_items": len(follow), "needs_task": needs, "items": follow}, "warnings": warnings, "in_progress": wip,
             "unpushed": ahead, "queue_checked": bool(queue.get("checked")), "unlabelled": queue.get("unlabelled") or []}
 
@@ -232,7 +305,9 @@ def show(data, all_follow_ups=False):
     for c in data["candidates"]:
         print("  %s %s %s %s/%s %s" % (c["id"], c["effective_priority"], c["status"], c["type"] or "-",
                                        c["surface"] or "-", c["title"]))
-        for label, value in (("waits for", c["waits_for"]), ("overlaps", c["overlaps"]), ("risk", c["risks"])):
+        print("    value: %s %s (%s)" % (c["value"]["kind"], c["value"]["group"], c["value"]["reason"]))
+        for label, value in (("waits for", c["waits_for"]), ("overlaps", c["overlaps"]), ("risk", c["risks"]),
+                             ("backlog", ["%s: %s" % (f["kind"], f["detail"]) for f in c["groom"]])):
             if value:
                 print("    %s: %s" % (label, "; ".join(value)))
     print("excluded: %d" % len(data["excluded"]))

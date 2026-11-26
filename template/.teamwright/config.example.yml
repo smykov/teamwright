@@ -56,6 +56,9 @@ process:                       # parameters of the fixed pipeline; absent keys =
   autonomy:
     start: auto                # ask | auto: start the router's ready task without asking
     continue: true             # after a barrier, take the next task; push is still asked
+  ready:
+    after: verified            # verified | code_complete: when a depends_on counts as finished
+    sprint_first: true         # ready tasks of equal priority: the active sprint file's Tasks table first
   test_guard: block            # block | warn | off: tests only via scripts/tw-test, gates via tw-gate (own switch, not mode)
   stages:                      # one stage per session (/teamwright:router); absent = batch 1, min 1, no age rule
     review:

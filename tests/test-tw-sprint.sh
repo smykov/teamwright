@@ -101,4 +101,46 @@ expect_rc "a done link closes the line, closed and non-section lines are not cou
 expect_rc "only undecided Medium or higher need a decision" "no such task|lower case|from a section" "$(fu '"|".join(i["text"].split(":")[1].split("(")[0].strip() for i in r if i["needs_task"])')"
 expect_rc "a mutant line has no severity" "None" "$(fu '[i["severity"] for i in r if "mutant" in i["text"]][0]')"
 expect_rc "a link to no task is marked" "1" "$(fu 'sum(i["link_broken"] for i in r)')"
+
+# user-value groups and backlog facts per candidate (#38, #26)
+V="$TMP/value"; mkdir -p "$V/docs/tasks" "$V/.teamwright" "$V/web" "$V/tests"; cd "$V" || exit 1; git init -q -b main .
+printf 'version: 1\nmode: gate-first\nareas:\n  - name: web\n    source_dirs: [web]\n' > .teamwright/config.yml
+vk() {  # id type class design_ref seam title [body]
+  printf -- '---\nid: %s\ntitle: %s\ntype: %s\nstatus: TODO\npriority: P2\ndeploys: false\nsurface: none\nclass: "%s"\ndesign_ref: "%s"\ndepends_on: []\nanalysis:\n  seam: "%s"\n---\n\n## Acceptance\n- [ ] %s\n' \
+    "$1" "$6" "$2" "$3" "$4" "$5" "${7:-works}" > "docs/tasks/$1.md"
+}
+vk T-1 feature "" "specs/001-export/spec.md#csv" "web/a.py" "export to csv"
+vk T-2 feature "" "" "web/b.py" "list view" "FR-03 shown"
+vk T-3 feature "" "" "web/c.py" "dark mode"
+vk T-4 chore "" "" "web/d.py" "bump deps"
+vk T-5 bug from-follow-up "" "web/e.py" "review leftovers"
+vk T-6 bug "" "" "tests/test_x.py" "x is checked"
+vk T-7 feature "" "" "" "fix flaky upload test"
+vk T-8 feature "" "" "web/f.py" "sign in" "checked on a real phone"
+vk T-9 feature "" "" "web/g.py" "share"
+vk T-11 feature "" "" ".github/workflows/ci.yml" "faster pipeline"
+printf -- '---\nid: T-10\ntitle: needs T-6\ntype: feature\nstatus: TODO\npriority: P1\ndeploys: false\nsurface: none\ndepends_on: [T-6]\nanalysis:\n  seam: "web/h.py"\n---\n' > docs/tasks/T-10.md
+touch web/a.py web/b.py web/c.py web/d.py web/e.py web/f.py web/h.py tests/test_x.py
+git add -A; git commit -qm init; git commit -q --allow-empty -m "fix(T-9): shared already"
+vq() { TW_GH="$TMP/bin/no-such-gh" python3 "$S" --project . --json | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+vv() { vq "' '.join((lambda v: (v['kind'], v['group']))(next(c for c in d['candidates'] if c['id']=='$1')['value']))"; }
+expect_rc "design_ref: a feature grouped by its spec" "feature specs/001-export/spec.md" "$(vv T-1)"
+expect_rc "FR-NN in the record: a feature grouped by it" "feature FR-03" "$(vv T-2)"
+expect_rc "only an area: a feature grouped by the area" "feature area web" "$(vv T-3)"
+expect_rc "type chore: invisible" "invisible invisible" "$(vv T-4)"
+expect_rc "class from-follow-up: invisible" "invisible invisible" "$(vv T-5)"
+expect_rc "a seam only in tests: invisible" "invisible invisible" "$(vv T-6)"
+expect_rc "a seam only in .github: invisible (the dot is kept)" "invisible invisible" "$(vv T-11)"
+expect_rc "no seam, a test in the title: invisible" "invisible invisible" "$(vv T-7)"
+expect_rc "a device in the acceptance: owner" "owner owner checks" "$(vv T-8)"
+expect_rc "every value has a reason" "True" "$(vq 'all(c["value"]["reason"] for c in d["candidates"])')"
+expect_rc "an invisible task that unblocks another is an accelerator" "['T-6']" \
+  "$(vq 'next(g for g in d["value_groups"] if g["kind"]=="invisible")["accelerators"]')"
+expect_rc "groups: features first, invisible, then owner" "feature invisible owner" \
+  "$(vq '" ".join(dict.fromkeys(g["kind"] for g in d["value_groups"]))')"
+expect_rc "a backlog finding is shown on the candidate" "['possibly-done', 'missing-path']" \
+  "$(vq '[f["kind"] for f in next(c for c in d["candidates"] if c["id"]=="T-9")["groom"]]')"
+vq '" ".join(d["warnings"])' | grep -q "backlog findings (tw-groom.py): T-6, T-9" && ok "flagged candidates are a warning, not an exclusion" \
+  || bad "flagged candidates are a warning" "$(vq 'd["warnings"]')"
+cd "$KIT" || exit 1
 finish

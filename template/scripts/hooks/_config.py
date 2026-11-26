@@ -203,7 +203,9 @@ PROCESS_DEFAULTS = {
     "review": {"blocking": "low"},
     "batch": {"max_tasks": 1, "by_priority": {"P0": 1, "P1": 1, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "ask", "continue": False},
-    "ready": {"after": "verified"},
+    # sprint_first: among ready tasks of equal effective priority, those listed in the active
+    # sprint file (the highest-numbered docs/sprints/<N>.md, its Tasks table) start first
+    "ready": {"after": "verified", "sprint_first": False},
     "test_guard": "block",
     # one stage per session (`/teamwright:router`, the stage commands): how many tasks a
     # stage session takes, and when the router runs a stage whose queue is short
@@ -225,7 +227,7 @@ PROCESS_RECOMMENDED = {
     "review": {"blocking": "medium"},
     "batch": {"max_tasks": 3, "by_priority": {"P0": 1, "P1": 2, "P2": 3, "P3": 3}, "parallel": 1},
     "autonomy": {"start": "auto", "continue": True},
-    "ready": {"after": "verified"},
+    "ready": {"after": "verified", "sprint_first": True},
     "models": {"analyze": "opus", "red-tests": "sonnet", "implement": "opus", "review": "opus",
                "verify": "opus"},
 }
@@ -291,7 +293,7 @@ def process_errors(cfg):
         return ["process must be a mapping"]
     errs = []
     allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
-               "autonomy": ("start", "continue"), "ready": ("after",), "test_guard": None,
+               "autonomy": ("start", "continue"), "ready": ("after", "sprint_first"), "test_guard": None,
                "stages": STAGES, "models": STAGES, "router": ("select",),
                "questions": ("closed_patterns",), "flow": ("max_tasks_per_session",)}
     for k, v in p.items():
@@ -332,6 +334,8 @@ def process_errors(cfg):
     rd = p.get("ready") if isinstance(p.get("ready"), dict) else {}
     if "after" in rd and str(rd["after"]).lower() not in READY_AFTER:
         errs.append("process.ready.after must be one of %s" % ", ".join(READY_AFTER))
+    if "sprint_first" in rd and str(rd["sprint_first"]).strip().lower() not in ("true", "false", "yes", "no"):
+        errs.append("process.ready.sprint_first must be true or false")
     sg = p.get("stages") if isinstance(p.get("stages"), dict) else {}
     for st, v in sg.items():
         if st not in STAGES:
@@ -377,7 +381,7 @@ def _patterns(v):
 
 def process_of(cfg):
     """Effective settings: {review: {blocking}, batch: {max_tasks, by_priority},
-    autonomy: {start, continue}, ready: {after}, test_guard, stages: {stage: {batch, min,
+    autonomy: {start, continue}, ready: {after, sprint_first}, test_guard, stages: {stage: {batch, min,
     max_wait_hours}}, models: {stage: model or None}, router: {select},
     questions: {closed_patterns}, flow: {max_tasks_per_session}, explicit: [dotted keys set in the config]}.
     Invalid values fall back to the defaults (the installer refuses them on apply)."""
@@ -409,6 +413,9 @@ def process_of(cfg):
     if str(rd.get("after", "")).lower() in READY_AFTER:
         out["ready"]["after"] = str(rd["after"]).lower()
         explicit.append("ready.after")
+    if "sprint_first" in rd:
+        out["ready"]["sprint_first"] = _bool(rd["sprint_first"])
+        explicit.append("ready.sprint_first")
     tg = str(p.get("test_guard", "")).strip().lower()
     if tg in TEST_GUARD:
         out["test_guard"] = tg
