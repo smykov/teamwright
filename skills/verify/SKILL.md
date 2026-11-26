@@ -30,3 +30,5 @@ A candidate whose verdict is already recorded (the router's `continue` with role
    - verify `PASS`, acceptance `FAIL` → back to `IN_PROGRESS` with the findings and `stage: implement` (or `red-tests` when a test is missing or toothless), then a new review;
    - `NEEDS_OWNER` → decision point with the exact action needed.
    Survivors listed under `Follow-ups` go to the task's own record, `docs/tasks/T-NNN.follow-ups/v<round>.md` (`- [ ] T-NNN v<round> mutant <name>: <what it changed>`), whatever the verdict.
+
+**End** — the summary, then the end block (`docs/process/stage-protocol.md` §4): `Stage: verify`, `Batch: <ids> - <why>`, and `Outcome:` with exactly one of `barrier`, `idle`, `escalate`, `interrupted`, alone on the last line, nothing after it. A stage that did its work ends `barrier`, never `done`.

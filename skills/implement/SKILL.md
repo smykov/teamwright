@@ -32,3 +32,5 @@ Everything below is one stage: when a check fails, fix it here with the same rol
 6. **Commit and hand over** — local commit `<type>(<scope>): T-NNN <what>`; then `IN_PROGRESS → NEEDS_REVIEW` with `implemented_by:` set in the same edit — the role file that implemented (`developer`, `developer-<area>`), or `human:<name>` when a person wrote the code; commit `chore(task): T-NNN IN_PROGRESS→NEEDS_REVIEW`. The stage gate allows this move only at `stage: implement`, with `## Tests` filled and — when the task changes code — the `### Failure branches` table of step 2. **No push.**
 
 Review is the next stage, in a new session with a fresh reviewer.
+
+**End** — the summary, then the end block (`docs/process/stage-protocol.md` §4): `Stage: implement`, `Batch: <ids> - <why>`, and `Outcome:` with exactly one of `barrier`, `idle`, `escalate`, `interrupted`, alone on the last line, nothing after it. A stage that did its work ends `barrier`, never `done`.

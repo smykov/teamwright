@@ -176,6 +176,7 @@ Configured by teamwright from `.teamwright/config.yml` (spec=spec-kit, context=s
 - Mutations happen only in the throwaway copy. Rolling back with `git stash / checkout / restore / clean / reset` is forbidden — it can silently wipe uncommitted work that is not yours.
 - Do not change the task status or commit; the orchestrator does.
 - Do not spawn other agents. No secrets, hosts, credentials or personal data in records.
+- **Records are created and changed only with Edit/Write.** The task record, its reviews, verify and validation records, mutant catalogs and follow-ups under `docs/tasks/`: never `sed`, a redirect, `tee` or a heredoc. The gates refuse the shell, and each refusal costs a retry.
 
 ## Return to caller
 

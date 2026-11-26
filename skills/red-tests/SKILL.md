@@ -28,3 +28,5 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage red-tests [--
 5. Before the commit, `scripts/tw-scan`; a flagged test value goes back to the test-writer, a stage does not end on a commit the hook will refuse. Exit 3 is no finding, only the weak fallback scanner: note it in the report and go on. Commit the tests, the catalog and the record together, with `stage: implement` set in the same edit of the record that finishes `## Tests`: `test(<scope>): T-NNN red tests` (the record change in the same commit, or `chore(task): T-NNN red tests recorded, stage implement` right after). The stage gate allows `red-tests → implement` only; the router checks `## Tests` is filled.
 
 A task whose change has no code (an rca exit (b) or (c)) has no red tests: write that in `## Tests` (`none — rca exit (b), decision #N`) and set `stage: implement`.
+
+**End** — the summary, then the end block (`docs/process/stage-protocol.md` §4): `Stage: red-tests`, `Batch: <ids> - <why>`, and `Outcome:` with exactly one of `barrier`, `idle`, `escalate`, `interrupted`, alone on the last line, nothing after it. A stage that did its work ends `barrier`, never `done`.

@@ -30,10 +30,10 @@ Read `tools.context` (and `tools.docs`) in `.teamwright/config.yml`. When it nam
 ## 1. Ask the router
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --pass "<ids this run has started, comma-separated; empty at first>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --pass "<ids this run has started, comma-separated; empty at first>" --worked "<ids this session ran any stage on>"
 ```
 
-`--pass` makes the router apply the project's process settings (`settings` in its output): the pass cap from `process.batch` (`budget`: taken, limit, left — lowered further by `--tasks`), and `autonomy.start` (`ask_owner: false` on `start` when it is `auto`). Count only tasks this run moved `TODO → ANALYSIS`.
+`--pass` makes the router apply the project's process settings (`settings` in its output): the pass cap from `process.batch` (`budget`: taken, limit, left — lowered further by `--tasks`), and `autonomy.start` (`ask_owner: false` on `start` when it is `auto`). Count only tasks this run moved `TODO → ANALYSIS`. `--worked` is every task this session ran a stage on (any stage, started here or not): once they reach `process.flow.max_tasks_per_session` (default 2, 0 = off) the router answers `stop` before another task, because a long session re-reads its whole context on every turn.
 
 It reads `docs/tasks/*.md` (with their `.reviews/` and `.verify/` records), the journals in `.teamwright/logs/`, `.teamwright/current-task`, the gate mode, `TEAMWRIGHT_PAUSE`, and git state (dirty tree, unpushed commits), and prints one decision:
 
@@ -65,7 +65,7 @@ Router order (the helper applies it; you do not re-derive it):
 | 5 | `BLOCKED` with an owner decision pending | `decide` | ask the owner the pending question (decision point) |
 | 6 | Ready `TODO` (every `depends_on` `VERIFIED` or `DONE`, or also `CODE_COMPLETE` / `DEPLOYED` with `process.ready.after: code_complete`; `blocked_on` empty or naming only answered/dropped `OQ-NN`), by effective priority — a task inherits the highest priority of the open tasks waiting on it — then how many tasks it unblocks, then id | `start` | stage `analyze` — §3 |
 | 7 | Unpushed commits and nothing else to do | `decide` | push is a decision point (§3, Push) |
-| — | The pass took as many tasks as `process.batch` allows (only with `--pass`) | `stop` | end the pass: §3, Next |
+| — | The pass took as many tasks as `process.batch` allows (only with `--pass`), or this session worked `process.flow.max_tasks_per_session` tasks and the next is another (only with `--worked`) | `stop` | end the pass: §3, Next; for the session cap, `Next:` says to continue in a fresh session with `/teamwright:flow` |
 | — | A task worked in its own worktree (`tw/<ID>`, or `task/<ID>` made by hand) is approved there | `merge` | `/teamwright:parallel merge <ID>` for `tw/`; otherwise merge the branch the reason names and remove that worktree |
 
 A stage held back by its threshold (`process.stages.<stage>.min`, `max_wait_hours`) moves behind the work that is due; its candidates say `(held: …)`. When nothing else is due, it runs.
@@ -146,7 +146,7 @@ Stop at the next safe point (after the current commit, never mid-edit) when any 
 
 - **Escalation** — a decision point the owner has not answered, a `BLOCKED` task with nothing else ready, two `REQUEST_CHANGES` records in a row on the task, an rca task that shows a recurrence itself.
 - **Pause** — `TEAMWRIGHT_PAUSE` appears at the repository root: finish the current local commit, push nothing, stop.
-- **Budget** — the router answers `stop` (the pass used its `process.batch` cap, or `--tasks`), or the session context is getting long (large diffs, many tool outputs): stop at the next barrier rather than continuing on a crowded context; the next `/teamwright:flow` resumes cleanly.
+- **Budget** — the router answers `stop` (the pass used its `process.batch` cap, or `--tasks`, or the session its `process.flow.max_tasks_per_session`), or the session context is getting long (large diffs, many tool outputs): stop at the next barrier rather than continuing on a crowded context; the next `/teamwright:flow` resumes cleanly.
 - **Gate infrastructure broken** — a command that worked before is now `not runnable` (image missing, toolchain gone): report it; fixing the config goes through `config.next.yml` + `apply --config` with the owner.
 - **Idle** — the router returns `idle`.
 - **Interrupted** — a tool or the runtime fails mid-step in a way you cannot recover from in this session (the owner interrupts, a role agent crashes without a result, the context limit is near mid-edit): commit nothing half-done, say exactly where the task stands, and end with `Outcome: interrupted`; the next `/teamwright:flow` resumes from evidence (§4).

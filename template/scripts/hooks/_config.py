@@ -213,6 +213,12 @@ PROCESS_DEFAULTS = {
     # who picks the tasks of a stage: the router script (tw-next.py, deterministic, no task
     # files read by the model) or the session agent reading the records itself
     "router": {"select": "script"},
+    # extra words for a closed question, as regular expressions matched at the start of
+    # the Status cell in docs/open-questions.md (English and Russian are built in)
+    "questions": {"closed_patterns": []},
+    # how many tasks one /teamwright:flow session works before it ends with "continue in a
+    # fresh session" (its context is re-read on every turn); 0 = no limit
+    "flow": {"max_tasks_per_session": 2},
 }
 # Recommended for new projects (offered by adopt, init and /teamwright:settings).
 PROCESS_RECOMMENDED = {
@@ -235,6 +241,7 @@ TEST_GUARD = ("block", "warn", "off")
 ALWAYS_BLOCKING = ("secret-leak", "security", "weakened-test", "done-not-working", "recurrence")
 MAX_BATCH = 5
 MAX_PARALLEL = 10
+MAX_FLOW_TASKS = 50
 # Stages of a task, in pipeline order. analyze covers TODO -> ANALYSIS -> IN_PROGRESS (and a
 # re-analysis after VERIFY_FAIL); red-tests and implement are the two sub-stages of
 # IN_PROGRESS (the task field `stage:`); review covers NEEDS_REVIEW; verify covers
@@ -285,7 +292,8 @@ def process_errors(cfg):
     errs = []
     allowed = {"review": ("blocking",), "batch": ("max_tasks", "by_priority", "parallel"),
                "autonomy": ("start", "continue"), "ready": ("after",), "test_guard": None,
-               "stages": STAGES, "models": STAGES, "router": ("select",)}
+               "stages": STAGES, "models": STAGES, "router": ("select",),
+               "questions": ("closed_patterns",), "flow": ("max_tasks_per_session",)}
     for k, v in p.items():
         if k not in allowed:
             errs.append("process.%s: unknown key (known: %s)" % (k, ", ".join(allowed)))
@@ -339,6 +347,12 @@ def process_errors(cfg):
     ro = p.get("router") if isinstance(p.get("router"), dict) else {}
     if "select" in ro and str(ro["select"]).strip().lower() not in ROUTER_SELECT:
         errs.append("process.router.select must be one of %s" % ", ".join(ROUTER_SELECT))
+    fl = p.get("flow") if isinstance(p.get("flow"), dict) else {}
+    if "max_tasks_per_session" in fl and not _in_range(fl["max_tasks_per_session"], 0, MAX_FLOW_TASKS):
+        errs.append("process.flow.max_tasks_per_session must be 0..%d (0 = no limit)" % MAX_FLOW_TASKS)
+    qs = p.get("questions") if isinstance(p.get("questions"), dict) else {}
+    if "closed_patterns" in qs and _patterns(qs["closed_patterns"]) is None:
+        errs.append("process.questions.closed_patterns must be a list of regular expressions")
     md = p.get("models") if isinstance(p.get("models"), dict) else {}
     for st, v in md.items():
         if st in STAGES and not model_ok(v):
@@ -347,10 +361,25 @@ def process_errors(cfg):
     return errs
 
 
+def _patterns(v):
+    """A list of valid regular expressions (a single string is a list of one), else None."""
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+        return None
+    try:
+        for x in v:
+            re.compile(x)
+    except re.error:
+        return None
+    return [x.strip() for x in v]
+
+
 def process_of(cfg):
     """Effective settings: {review: {blocking}, batch: {max_tasks, by_priority},
     autonomy: {start, continue}, ready: {after}, test_guard, stages: {stage: {batch, min,
-    max_wait_hours}}, models: {stage: model or None}, router: {select}, explicit: [dotted keys set in the config]}.
+    max_wait_hours}}, models: {stage: model or None}, router: {select},
+    questions: {closed_patterns}, flow: {max_tasks_per_session}, explicit: [dotted keys set in the config]}.
     Invalid values fall back to the defaults (the installer refuses them on apply)."""
     p = cfg.get("process") if isinstance(cfg, dict) and isinstance(cfg.get("process"), dict) else {}
     out = json.loads(json.dumps(PROCESS_DEFAULTS))
@@ -400,6 +429,14 @@ def process_of(cfg):
     if str(ro.get("select", "")).strip().lower() in ROUTER_SELECT:
         out["router"]["select"] = str(ro["select"]).strip().lower()
         explicit.append("router.select")
+    fl = p.get("flow") if isinstance(p.get("flow"), dict) else {}
+    if "max_tasks_per_session" in fl and _in_range(fl["max_tasks_per_session"], 0, MAX_FLOW_TASKS):
+        out["flow"]["max_tasks_per_session"] = int(fl["max_tasks_per_session"])
+        explicit.append("flow.max_tasks_per_session")
+    qs = p.get("questions") if isinstance(p.get("questions"), dict) else {}
+    if _patterns(qs.get("closed_patterns")) is not None:
+        out["questions"]["closed_patterns"] = _patterns(qs["closed_patterns"])
+        explicit.append("questions.closed_patterns")
     out["explicit"] = explicit
     return out
 

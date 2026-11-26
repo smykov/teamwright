@@ -2,6 +2,26 @@
 
 All notable changes to teamwright, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Versions follow [semantic versioning](https://semver.org/); while in 0.x, a minor version may change behaviour. `/plugin update` compares the `version` in `.claude-plugin/plugin.json`, so every change to what the plugin ships comes with a bump here (`make release-check`).
 
+## [0.17.0] - 2026-11-25
+
+### Added
+- **The router stops a stage that keeps refusing** (#35). After two `escalate` outcomes in a row for the same task and stage, with no commit on the task since the first (an escalation counts against a batch of one, or the session's current task), `tw-next.py` offers that stage for the task no more: interactively it is an owner decision, a headless job takes the next piece of work, a stage session leaves it out of its candidates, and `/teamwright:blockers` lists it as `refused` with the journal to read. A commit on the task (its record, or a message naming it) lets the stage run again. The router now reads the journal from `TEAMWRIGHT_LOG_DIR` too, like the hooks that write it.
+- **`process.flow.max_tasks_per_session`** (default 2, 0 = off; #36). `/teamwright:flow` passes the tasks it has worked on at any stage (`tw-next.py --worked`); once they reach the cap, work on another task is `stop`, and the session ends with a line to continue in a fresh one. A long flow session re-reads its whole context on every turn. **Behaviour change:** a flow session that went on past two tasks now ends there; set 0 to keep the old behaviour.
+- **`process.questions.closed_patterns`**: more status words of a closed question, as regular expressions matched at the start of the Status cell in `docs/open-questions.md`.
+
+### Fixed
+- **Closed questions in a language other than English were counted as open** (#21, item 7). A Status cell starting with a closed word in English or Russian (`answered`, `closed`, `resolved`, `dropped`, `done`, `закрыт`, `решено`, `снят` ...; whole words, so `решение` stays open), or that is only a link to its decision (`→ decisions.md #N`), is closed for the router, `/teamwright:blockers`, `/teamwright:sprint` and `/teamwright:progress`.
+- **Stage sessions that end `Outcome: done` were journaled with no outcome** (#34). The journal reads `done` as `barrier`, and also takes `Outcome: <word>` and `Batch:` from a one-line end block (`Stage: review · Batch: T-3 · Outcome: barrier`). A sentence after `Outcome:` and the word inside prose stay `none`. The stage commands name the four words and say the line ends the message.
+
+### Changed
+- **A refused shell write of a task record says how to retry in one step** (#33): the analysis gate names the record files from the command and, for a status or stage it sets, the line to put there with Edit (Write for a new file). Review, verify and validation records keep their message: only their own agent may write them. The role files and `AGENTS.md` state the rule up front: records under `docs/tasks/` are created and changed only with Edit/Write, in every role.
+- **The autonomous sketch in `docs/usage.md`** passes `allowed_bots` to `claude-code-action`, because every stage after the first is started by the chain itself. The docs and `/teamwright:blockers` say how to restart a stopped or failed chain (remove `tw:stop` / `tw:failed` and `teamwright`, set `teamwright` again) and why a chain's pull request shows `action_required` (#31, first part).
+
+### What to do by hand
+- `/teamwright:update`, then restart Claude Code.
+- An autonomous workflow written from the sketch: add `allowed_bots` to the `claude-code-action` step, and keep `.teamwright/logs` (or `TEAMWRIGHT_LOG_DIR`) from job to job so the router sees repeated refusals.
+- Closed questions written in another language: add their words to `process.questions.closed_patterns` with `/teamwright:settings`.
+
 ## [0.16.2] - 2026-11-01
 
 ### Fixed

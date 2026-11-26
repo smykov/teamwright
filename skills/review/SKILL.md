@@ -29,3 +29,5 @@ A candidate whose verdict is already recorded (the router's `continue` with role
    - `REQUEST_CHANGES` → `NEEDS_REVIEW → IN_PROGRESS` with `stage: implement` in the same edit (`stage: red-tests` when the findings are about the tests themselves); the next implement session takes it with the findings. After two send-backs in a row the third record is `ESCALATE` or `REJECT_RECURRENCE` (the review gate refuses an `APPROVE` there).
    - `REJECT_RECURRENCE` → `DEFERRED` with `absorbed_by: <rca id>`; the rca task enters the queue; the investigator's recommended exit (b) or (c) is a decision point.
    - `ESCALATE` → `BLOCKED`, decision point: ask the owner, go on with the next task of the batch.
+
+**End** — the summary, then the end block (`docs/process/stage-protocol.md` §4): `Stage: review`, `Batch: <ids> - <why>`, and `Outcome:` with exactly one of `barrier`, `idle`, `escalate`, `interrupted`, alone on the last line, nothing after it. A stage that did its work ends `barrier`, never `done`.

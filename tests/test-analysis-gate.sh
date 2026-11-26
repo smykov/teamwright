@@ -117,6 +117,14 @@ stage: red-tests")"
 # shell rewrites of status
 out="$(run Bash s1 "command=sed -i 's/status: TODO/status: IN_PROGRESS/' docs/tasks/T-1.md")"
 expect_deny "sed -i on a task status is denied" "$out" "Edit/Write"
+expect_deny "the refusal names the file and the line to put there (#33)" "$out" \
+  'Retry in one step: Edit `docs/tasks/T-1.md`, replacing the old line with `status: IN_PROGRESS`'
+out="$(run Bash s1 "command=cat > docs/tasks/T-9.md <<'EOF'
+---
+id: T-9
+---
+EOF")"
+expect_deny "a new record through a heredoc: the refusal says Write for a new file" "$out" '(Write for a new file)'
 out="$(run Bash s1 "command=grep status docs/tasks/T-1.md")"
 expect_allow "reading task status via shell is allowed" "$out"
 out="$(run Bash s1 "command=printf '%s\\n' '- note: status of the build checked' >> docs/tasks/T-1.md")"

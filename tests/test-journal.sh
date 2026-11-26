@@ -176,6 +176,21 @@ Outcome: barrier" | bash "$J"
 expect_rc "several Stage/Batch lines: the last (the end block) is recorded" "implement T-9|the end block" \
   "$(python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["stage"], ",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
 
+# outcome forms models write (0.17): the word inside the end line, and `done`
+hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=Reviewed.
+Stage: review · Batch: T-3 · Outcome: escalate" | bash "$J"
+expect_rc "Outcome at the end of a Stage · Batch line is read" "escalate message" "$(last_out)"
+expect_rc "the one-line end block keeps its batch and reason" "review T-3|the only one waiting" \
+  "$(hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=Stage: review · Batch: T-3 - the only one waiting · Outcome: barrier" | bash "$J"; python3 -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1])][-1]; print(r["stage"], ",".join(r["batch"]) + "|" + r["batch_reason"])' "$L/outcomes.jsonl")"
+hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=Outcome: done" | bash "$J"
+expect_rc "Outcome: done is read as barrier" "barrier message" "$(last_out)"
+hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=Stage: review · Outcome: **done**" | bash "$J"
+expect_rc "done at the end of the last line is barrier" "barrier message" "$(last_out)"
+hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=Outcome: the review found two issues" | bash "$J"
+expect_rc "a sentence after Outcome: stays none" "none none" "$(last_out)"
+hook_json "" s14 "@hook_event_name=Stop" "@last_assistant_message=The Outcome: barrier rule says stop here, then continue." | bash "$J"
+expect_rc "Outcome inside prose, not at the line's end: none" "none none" "$(last_out)"
+
 out="$(printf '{bad' | bash "$J")"; expect_allow "garbage input is ignored" "$out"
 chmod 000 "$L"; out="$(j Read s1 file_path=x @hook_event_name=PreToolUse)"; chmod 755 "$L"
 expect_allow "unwritable log dir fails silently" "$out"

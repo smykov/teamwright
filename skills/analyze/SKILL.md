@@ -28,3 +28,5 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" --brief --stage analyze [--ta
 3. **Into IN_PROGRESS** — only when no other task of this working tree is `IN_PROGRESS` (one per tree: the router holds the rest, `state.wip_waiting`); otherwise commit the analysis (`chore(task): T-NNN analysis, waits for T-MMM`), leave the task in `ANALYSIS` and go on with the batch. In **one edit** of the task record: `status: IN_PROGRESS` and `stage: red-tests` (the analysis gate checks the block; the stage gate refuses `stage: implement` here). Commit the analysis with it: `chore(task): T-NNN ANALYSIS→IN_PROGRESS`.
 
 The next stage is `red-tests`, in a new session (`/teamwright:router`, or the flow when it loops). Do not write tests here.
+
+**End** — the summary, then the end block (`docs/process/stage-protocol.md` §4): `Stage: analyze`, `Batch: <ids> - <why>`, and `Outcome:` with exactly one of `barrier`, `idle`, `escalate`, `interrupted`, alone on the last line, nothing after it. A stage that did its work ends `barrier`, never `done`.

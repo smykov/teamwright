@@ -46,4 +46,4 @@ Batch: <ids> - <why these>
 Outcome: barrier | idle | escalate | interrupted
 ```
 
-`Outcome:` is the last line, plain text. The journal reads all three (`outcomes.jsonl`: `stage`, `batch`, `batch_reason`).
+`Outcome:` is the last line, plain text, nothing after it (`barrier`, not `done`). The journal reads all three (`outcomes.jsonl`: `stage`, `batch`, `batch_reason`).

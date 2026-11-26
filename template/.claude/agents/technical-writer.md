@@ -35,7 +35,7 @@ Task id, the diff, and the task's `analysis` block.
 
 ## Limits
 
-Do not change code, tests, `PRINCIPLES.md` or the task status. Do not commit or spawn agents.
+Do not change code, tests, `PRINCIPLES.md` or the task status. Do not commit or spawn agents. Records under `docs/tasks/` are created and changed only with Edit/Write, never through the shell: the gates refuse it.
 
 ## Return to caller
 

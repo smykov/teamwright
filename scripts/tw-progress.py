@@ -199,15 +199,16 @@ def sprints_of(project):
     return out
 
 
-def open_question_rows(project):
-    """Unresolved rows of docs/open-questions.md: [{id, question}]."""
+def open_question_rows(project, oqs=None):
+    """Unresolved rows of docs/open-questions.md: [{id, question}]. Closed is the router's
+    rule (tw-next.py oq_status: any language, a decisions.md link, closed_patterns)."""
+    tw = _router()
+    oqs = tw.open_questions(project) if oqs is None else oqs
     out = []
     for line in _read(os.path.join(project, "docs", "open-questions.md")).splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) >= 2 and re.fullmatch(r"OQ-\d+", cells[0]):
-            words = re.findall(r"[a-z]+", cells[-1].lower())
-            if not words or words[0] not in ("answered", "closed", "resolved", "dropped", "done"):
-                out.append({"id": cells[0], "question": cells[1][:160]})
+        if len(cells) >= 2 and re.fullmatch(r"OQ-\d+", cells[0]) and not tw.oq_resolved(oqs, cells[0]):
+            out.append({"id": cells[0], "question": cells[1][:160]})
     return out
 
 
@@ -370,7 +371,7 @@ def report(project):
         "in_flight": [{"task": t["id"], "status": t["status"], "title": t["title"]} for t in open_
                       if t["status"] not in ("TODO", "BLOCKED")],
         "owner": {"decisions": owner,
-                  "open_questions": open_question_rows(project),
+                  "open_questions": open_question_rows(project, oqs),
                   "pending_forks": [{"sprint": s["sprint"], "fork": f} for s in by_sprint for f in s["pending_forks"]]},
         "risks": risks,
         "github": _github(project),

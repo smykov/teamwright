@@ -21,6 +21,8 @@ item the team cannot move by itself:
   merge        a pull request from task/T-NNN waits for the owner
   follow-up    findings at Medium or higher with no decision: a task, or closed with a reason
   degraded     the latest review or acceptance of an open task ran without the context tool
+  refused      a stage ended `escalate` again and again for one task with no commit on it: the
+               router no longer starts that stage for the task until a commit on it
 
 Each item carries a class read from its text (credentials, infrastructure, external
 service, device or manual check, decision, other), the open tasks it unblocks (its
@@ -211,6 +213,15 @@ def report(project):
                 status=t["status"], title=t["title"])
         elif t["status"] == "TODO" and free:
             add("held", free, [tid], ["docs/tasks/%s.md" % tid], status=t["status"], title=t["title"])
+
+    for (tid, stage), s in sorted(tw.escalation_stops(project).items(), key=lambda kv: (_num(kv[0][0]), kv[0][1])):
+        if tid not in open_:
+            continue
+        add("refused", "%s ended `escalate` %d times in a row for %s (last %s), no commit on the task since: "
+            "read the last session's refusal (its log, or the Issue's run report) and fix the cause; a commit "
+            "on the task lets the stage run again" % (stage, s["count"], tid, s["last"]), [tid],
+            ["docs/tasks/%s.md" % tid, os.path.join(os.path.relpath(tw.log_dir(project), project), "outcomes.jsonl")],
+            cls="decision", stage=stage, title=tasks[tid]["title"])
 
     stale = [w for w in tw.warnings_for(tasks, oqs) if "already" in w]
     if st.get("dirty"):
