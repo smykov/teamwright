@@ -88,12 +88,15 @@ cat > docs/open-questions.md <<'MD'
 | OQ-04 | d | Erledigt |
 | OQ-05 | e | open → decisions.md #5 |
 | OQ-06 | f | Открыт |
+| OQ-07 | g | Решение за владельцем |
+| OQ-08 | h | Needs owner → decisions.md #6 |
+| OQ-09 | i | 2026-11-01: answered |
 MD
-for i in 1 2 3 4 5 6; do mk "T-$i" TODO P2 "blocked_on: OQ-0$i" "depends_on: []"; done
+for i in 1 2 3 4 5 6 7 8 9; do mk "T-$i" TODO P2 "blocked_on: OQ-0$i" "depends_on: []"; done
 oq_ids() { python3 "$BL" --project . --json | python3 -c 'import json,sys; print(sorted(i["id"] for i in json.load(sys.stdin)["items"] if i["kind"]=="question"))'; }
-expect_rc "Russian closed statuses and a bare decision link are not open questions" "['OQ-04', 'OQ-05', 'OQ-06']" "$(oq_ids)"
+expect_rc "Russian closed statuses and a bare decision link are not open questions; a noun, a link after other words and a leading date do not close one" "['OQ-04', 'OQ-05', 'OQ-06', 'OQ-07', 'OQ-08']" "$(oq_ids)"
 printf 'process:\n  questions:\n    closed_patterns: ["erledigt"]\n' > .teamwright/config.yml
-expect_rc "process.questions.closed_patterns closes a word in another language" "['OQ-05', 'OQ-06']" "$(oq_ids)"
+expect_rc "process.questions.closed_patterns closes a word in another language" "['OQ-05', 'OQ-06', 'OQ-07', 'OQ-08']" "$(oq_ids)"
 # a stage that keeps refusing at its start is listed for the owner (#35)
 mkdir -p .teamwright/logs; git add -A; git commit -qm tasks
 for m in 01 02; do printf '{"event":"Stop","ts":"2099-01-01T00:%s:00Z","stage":"implement","batch":["T-6"],"outcome":"escalate"}\n' "$m" >> .teamwright/logs/outcomes.jsonl; done

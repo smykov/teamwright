@@ -91,4 +91,12 @@ q '"\n".join(d["errors"])' | grep -q "progress.json" && ok "a broken progress.js
   || bad "a broken progress.json is reported"
 python3 "$PROG" --project . | grep -q "^teamwright progress" && ok "human output" || bad "human output"
 
+# open questions waiting for the owner: the router's rule for closed (any language, a link)
+PQ="$TMP/pq"; mkdir -p "$PQ/docs"; cd "$PQ" || exit 1; git init -q -b main .
+mk T-1 TODO
+printf '| ID | Q | Status |\n|---|---|---|\n| OQ-01 | a | Закрыт |\n| OQ-02 | b | → decisions.md #3 |\n| OQ-03 | c | open |\n| OQ-04 | d | Решение за владельцем |\n' > docs/open-questions.md
+git add -A; git commit -qm init
+expect_rc "progress lists only the questions the router counts as open" "OQ-03 OQ-04" \
+  "$(q '" ".join(x["id"] for x in d["owner"]["open_questions"])')"
+
 finish

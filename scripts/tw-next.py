@@ -99,6 +99,7 @@ owner), a prompt without ids, and run=false only when no such work is left or a 
 dirty tree of no task or a used pass stops everything.
 """
 import argparse
+import calendar
 import json
 import os
 import re
@@ -117,20 +118,20 @@ CLOSED = ("DONE", "DEFERRED")
 PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 OQ_RE = re.compile(r"\bOQ-\d+\b")
 OQ_RESOLVED = ("answered", "closed", "resolved", "dropped", "done")
-# A Status cell that starts with one of these stems is closed, whatever the project's
-# language: {canonical word: stems}. Words in other languages come from
-# `process.questions.closed_patterns`.
-OQ_CLOSED_STEMS = {
-    "answered": ("answered", "\u043e\u0442\u0432\u0435\u0447\u0435\u043d", "\u043e\u0442\u0432\u0435\u0442 \u0434\u0430\u043d"),  # en, ru
-    "closed": ("closed", "\u0437\u0430\u043a\u0440\u044b\u0442"),
-    "resolved": ("resolved", "decided", "\u0440\u0435\u0448\u0435\u043d", "\u0440\u0435\u0448\u0451\u043d"),
-    "dropped": ("dropped", "\u0441\u043d\u044f\u0442", "\u043e\u0442\u043c\u0435\u043d\u0435\u043d", "\u043e\u0442\u043c\u0435\u043d\u0451\u043d"),
-    "done": ("done",),
+# A Status cell that starts with one of these words is closed, whatever the project's
+# language: {canonical word: regular expression matched at the start, whole words only -
+# `решение` (a decision still to take) is not `решено`}. Words in other languages come
+# from `process.questions.closed_patterns`.
+OQ_CLOSED_WORDS = {
+    "answered": r"(answered|\u043e\u0442\u0432\u0435\u0447\u0435\u043d[\u043e\u0430\u044b]?|\u043e\u0442\u0432\u0435\u0442 \u0434\u0430\u043d)\b",
+    "closed": r"(closed|\u0437\u0430\u043a\u0440\u044b\u0442[\u043e\u0430\u044b]?)\b",
+    "resolved": r"(resolved|decided|\u0440\u0435\u0448\u0435\u043d[\u043e\u0430\u044b]?|\u0440\u0435\u0448\u0451\u043d)\b",
+    "dropped": r"(dropped|\u0441\u043d\u044f\u0442[\u043e\u0430\u044b]?|\u043e\u0442\u043c\u0435\u043d[\u0435\u0451]\u043d[\u043e\u0430\u044b]?)\b",
+    "done": r"done\b",
 }
-# `... -> decisions.md #N` (or the arrow) links the row to its decision: answered, unless
-# the cell starts by saying it is still open.
-OQ_OPEN_STEMS = ("open", "pending", "waiting", "\u043e\u0442\u043a\u0440\u044b\u0442", "\u043e\u0436\u0438\u0434\u0430")
-OQ_DECISION_LINK = re.compile(r"(\u2192|->)\s*`?(docs/)?decisions\.md", re.I)
+# A cell that is only a link to its decision (`-> decisions.md #N`, or the arrow) is
+# answered; a link after other words ("needs owner -> decisions.md") is not.
+OQ_DECISION_LINK = re.compile(r"^(\u2192|->)\s*`?(docs/)?decisions\.md", re.I)
 OWNER_RE = re.compile(r"(?i)\b(owner|decision|decide|approv\w*|question|OQ-\d+|choose|confirm)\b")
 STAGES = ("analyze", "red-tests", "implement", "review", "verify")
 TASK_STAGES = ("red-tests", "implement")
@@ -478,10 +479,11 @@ def oq_status(cell, patterns=()):
     """The status word of an open-questions row: a closed status in English, Russian, or
     matching one of `patterns` (`process.questions.closed_patterns`, regular expressions
     matched at the start of the cell, any case) becomes its canonical English word (one of
-    OQ_RESOLVED); a link to decisions.md is `answered`; anything else is its first word."""
+    OQ_RESOLVED); a cell that is only a link to decisions.md is `answered`; anything else
+    is its first word of letters (a leading date is skipped, as before)."""
     s = re.sub(r"[*_`~]", "", cell or "").strip().lower()
-    for word, stems in OQ_CLOSED_STEMS.items():
-        if s.startswith(stems):
+    for word, rx in OQ_CLOSED_WORDS.items():
+        if re.match(rx, s):
             return word
     for pat in patterns:
         try:
@@ -489,9 +491,14 @@ def oq_status(cell, patterns=()):
                 return "closed"
         except re.error:
             continue
-    if OQ_DECISION_LINK.search(s) and not s.startswith(OQ_OPEN_STEMS):
+    if OQ_DECISION_LINK.match(s):
         return "answered"
-    words = re.findall(r"\w+", s)
+    words = re.findall(r"[^\W\d_]+", s)
+    if words and words[0] in OQ_RESOLVED:
+        return words[0]
+    for word, rx in OQ_CLOSED_WORDS.items():   # "2026-11-01: закрыт" - a closed word after a date
+        if words and re.match(rx, " ".join(words)):
+            return word
     return words[0] if words else ""
 
 
@@ -649,7 +656,7 @@ def stop_records(project):
 
 def _epoch(ts):
     try:
-        return int(time.mktime(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ")) - time.timezone)
+        return calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
     except (ValueError, OverflowError):
         return None
 
@@ -675,21 +682,24 @@ def task_commit_since(project, tid, since):
 def escalation_stops(project, records=None):
     """{(task, stage): {"count", "since", "last"}} for every task and stage whose last
     ESCALATE_STOP stage sessions all ended `escalate`, with no commit on the task since the
-    first of them. A session's task is its batch, else its current task; a stage session
-    of that task and stage with any other outcome ends the run of escalations."""
+    first of them. An escalation counts against a batch of one, or the session's current
+    task; a stage session of that task and stage with any other outcome ends the run."""
     runs = {}
     for r in stop_records(project) if records is None else records:
         stage = r.get("stage") or ""
         if stage not in STAGES:
             continue
-        ids = [x for x in (r.get("batch") or []) if isinstance(x, str)] or \
-            ([r["current_task"]] if r.get("current_task") else [])
-        for tid in ids:
-            k = (tid, stage)
-            if r.get("outcome") == "escalate":
-                runs.setdefault(k, []).append(r.get("ts"))
-            else:
-                runs.pop(k, None)
+        batch = [x for x in (r.get("batch") or []) if isinstance(x, str)]
+        cur = r.get("current_task") or ""
+        if r.get("outcome") != "escalate":
+            for tid in batch or ([cur] if cur else []):
+                runs.pop((tid, stage), None)
+            continue
+        # an escalation counts against one task only: a batch of one, else the session's
+        # current task when it is in the batch (one stuck task must not stop its neighbours)
+        tid = batch[0] if len(batch) == 1 else (cur if cur and (not batch or cur in batch) else "")
+        if tid:
+            runs.setdefault((tid, stage), []).append(r.get("ts"))
     out = {}
     for k, stamps in runs.items():
         if len(stamps) < ESCALATE_STOP:
@@ -1401,7 +1411,6 @@ def decide(project, taken=None, stage=None, ids=None, worked=None):
                                        "the lowest priority cap in the pass wins) - end the pass at "
                                        "this barrier" % (len(taken), budget["limit"])))
         cands = kept
-    cands = session_cap(cands, worked, proc["flow"]["max_tasks_per_session"])
     for c in cands:
         if c["action"] == "start" and auto:
             c["ask_owner"] = False
@@ -1409,6 +1418,8 @@ def decide(project, taken=None, stage=None, ids=None, worked=None):
     eff = effective_priority(tasks)
     info = stage_queues(project, cands, tasks, proc, eff)
     cands = hold_back(cands, info)
+    # after hold_back: the cap looks at the work that would actually run next
+    cands = session_cap(cands, worked, proc["flow"]["max_tasks_per_session"])
     if st["pause"]:
         first = _d("paused", None, "TEAMWRIGHT_PAUSE exists: the team is stopped; a person removes the "
                    "file to resume (next would be: %s)" % (

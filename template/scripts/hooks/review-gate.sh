@@ -136,8 +136,8 @@ if tool == "Bash":
             or re.search(r"\b(sed|perl)\s+-[a-zA-Z]*i", cmd)):
         io.deny("REVIEW GATE: review records and .teamwright/ ledgers are written only "
                 "through Edit/Write (review records: by a %s agent), never by shell "
-                "commands - otherwise the gate cannot tell who wrote them. " % REVIEWER
-                + getattr(io, "record_edit_hint", lambda c: "")(cmd), "review-gate")
+                "commands - otherwise the gate cannot tell who wrote them." % REVIEWER,
+                "review-gate")
     try:
         rec_write = io.shell_writes_records(cmd, root) if hasattr(io, "shell_writes_records") else False
     except Exception:
@@ -147,7 +147,7 @@ if tool == "Bash":
                 "validation record or a gate stamp (docs/tasks/<ID>.reviews|verify|validation/, "
                 "*.gate.json), never by shell commands: records are written through Edit/Write by "
                 "their agent, stamps only by the gates. A copy from another task or an old version "
-                "does not count anyway. " + getattr(io, "record_edit_hint", lambda c: "")(cmd), "review-gate")
+                "does not count anyway.", "review-gate")
     sys.exit(0)
 
 rel = io.rel_path(data, ti.get("file_path") or "")

@@ -180,6 +180,8 @@ elif ev in ("Stop", "SubagentStop"):
     # the batch the session chose from the router's candidates, and why:
     # `Batch: T-1 T-2 - disjoint seams, same area`
     BATCH_RE = re.compile(r"(?im)^\W*batch\W*[:=]\s*(.+)$")
+    # the one-line end block: `Stage: review \u00b7 Batch: T-3 - why \u00b7 Outcome: barrier`
+    BATCH_IN_LINE_RE = re.compile(r"(?i)(?:\u00b7|\|)\s*\W*batch\W*[:=]\s*([^\u00b7|\n]+)")
     # the flow's line for a turn that ends while a role runs in the background
     WAIT_RE = re.compile(r"(?im)^\W*waiting for [\w.-]+ on [A-Za-z][\w.]*-\d+\W*$")
 
@@ -263,6 +265,9 @@ elif ev in ("Stop", "SubagentStop"):
     # previous step) above its own end block, which is always the bottom of the message
     sm = (list(STAGE_RE.finditer(text)) or [None])[-1] if ev == "Stop" else None
     bm = (list(BATCH_RE.finditer(text)) or [None])[-1] if ev == "Stop" else None
+    if ev == "Stop" and bm is None:
+        tail = [ln for ln in text.splitlines() if ln.strip()]
+        bm = BATCH_IN_LINE_RE.search(tail[-1]) if tail else None
     batch = ID_RE.findall(bm.group(1).split(" - ")[0].split("\u2014")[0]) if bm else []
     reason = ""
     if bm:

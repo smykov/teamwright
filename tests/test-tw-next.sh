@@ -654,4 +654,30 @@ expect_rc "a task already worked in this session may move on" "start T-1" "$(wk 
 printf '  flow:\n    max_tasks_per_session: 0\n' >> .teamwright/config.yml
 expect_rc "max_tasks_per_session: 0 turns the limit off" "start T-1" "$(wk --worked T-7,T-8,T-9)"
 
+# the cap looks at the work that runs next, after a held-back stage moves behind (review)
+fresh capheld
+printf 'process:\n  autonomy:\n    start: auto\n  stages:\n    review:\n      min: 2\n' >> .teamwright/config.yml
+mk T-1 NEEDS_REVIEW; mk T-3 TODO; commit_all
+expect_rc "a held-back review of a worked task does not hide the next task: stop" "stop None" "$(wk --worked T-1,T-2)"
+
+# the escalation stop in a timezone with summer time: journal times are UTC
+fresh esctz
+printf 'process:\n  autonomy:\n    start: auto\n' >> .teamwright/config.yml
+mk T-1 TODO; mk T-2 TODO
+GIT_COMMITTER_DATE="2021-07-01T00:30:00Z" GIT_AUTHOR_DATE="2021-07-01T00:30:00Z" git add -A
+GIT_COMMITTER_DATE="2021-07-01T00:30:00Z" GIT_AUTHOR_DATE="2021-07-01T00:30:00Z" git commit -qm "chore(task): T-1 TODO"
+mkdir -p .teamwright/logs; OUT=.teamwright/logs/outcomes.jsonl
+stop_rec 2021-07-01T01:00:00Z analyze T-1 escalate; stop_rec 2021-07-01T01:01:00Z analyze T-1 escalate
+expect_rc "a commit half an hour before the first escalation does not lift the stop under summer time" "True T-2 analyze 1" \
+  "$(TZ=Europe/Berlin hl)"
+
+# an escalation of a batch counts against one task only
+rm -f "$OUT"
+bat_rec() { printf '{"event":"Stop","ts":"%s","stage":"review","batch":["T-1","T-2"],"current_task":"%s","outcome":"escalate"}\n' "$1" "$2" >> "$OUT"; }
+bat_rec 2021-07-01T01:00:00Z ""; bat_rec 2021-07-01T01:01:00Z ""
+stops() { python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("n",sys.argv[1]); n=importlib.util.module_from_spec(s); s.loader.exec_module(n); print(" ".join(sorted("%s/%s" % k for k in n.escalation_stops("."))) or "-")' "$NEXT"; }
+expect_rc "a batch of two escalating with no current task stops neither" "-" "$(stops)"
+rm -f "$OUT"; bat_rec 2021-07-01T01:00:00Z T-1; bat_rec 2021-07-01T01:01:00Z T-1
+expect_rc "the session's current task takes the escalation, its neighbour does not" "T-1/review" "$(stops)"
+
 finish
