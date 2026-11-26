@@ -9,6 +9,9 @@ All notable changes to teamwright, in the [Keep a Changelog](https://keepachange
 - **User-value groups in `/teamwright:sprint`** (#38). `tw-sprint.py --json` gives each candidate a `value`: `feature` (grouped by `design_ref`, then FR-NN, then area), `invisible` (a chore, a follow-up task, a seam only in tests, CI, guards or process) or `owner` (acceptance needs a person or a device), with the reason, and `value_groups` names the invisible tasks other tasks wait on. The goal **user value** shows the value table, asks the goal and whether to freeze the invisible tasks, and writes the sprint file.
 - **`scripts/tw-groom.py`: facts about the open backlog** (#26, merged into #38). Read-only, one finding per record with its evidence: possibly done (a later commit names the task), its seam changed, a path in Context gone, no seam, a block already settled, an inherited priority, an old record, a follow-up task too large for one chain, a likely duplicate, a `DEFERRED` task whose `absorbed_by` is `DONE`. Per plan stage: a stage or a release stage with no task, FR-NN with no task, a plan status left at "not started", a milestone stage the plan no longer has. `/teamwright:sprint` shows the findings on each candidate and warns; it never excludes.
 
+### Fixed
+- **A seam path starting with a dot lost it** (`.github/workflows/ci.yml` read as `github/workflows/ci.yml`), so `/teamwright:parallel` and `tw-sprint.py` compared such seams by a path that does not exist. Only a leading `./` is dropped now.
+
 ### What to do by hand
 - `/teamwright:update`, then restart Claude Code.
 - To let a sprint goal steer the router: `ready.sprint_first: true` with `/teamwright:settings`.

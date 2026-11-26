@@ -198,7 +198,7 @@ unblock, then how many. Task state and question status come from the router's re
 `python3 scripts/tw-groom.py [--project PATH] [--json] [--old-days N]` is read-only. It flags the
 open records worth reading before a sprint, each with its evidence: `possibly-done` (a `TODO` or
 `BLOCKED` task named by a commit after its record last changed), `seam-changed` (its seam's files
-changed since), `missing-path` (a path in backticks in `## Context` or the seam is gone), `no-seam`,
+changed since), `missing-path` (a seam path, or a `## Context` path with a line reference such as `app/a.py:12`, is gone), `no-seam`,
 `settled` (`blocked_on` names only answered questions and closed tasks), `inherits-priority`, `old`
 (the record unchanged for N days, default 90), `too-large` (a `from-follow-up` task over 10 open
 items), `duplicate` (same title, or same class and an overlapping seam) and `absorbed-done` (a

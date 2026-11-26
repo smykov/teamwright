@@ -11,7 +11,7 @@ finding names its evidence, and the owner says what happens to the record.
 Per record (open = not DONE or DEFERRED):
   possibly-done      TODO/BLOCKED, and a commit after the record's last change names the task
   seam-changed       TODO/BLOCKED, and files in its seam changed after the record's last change
-  missing-path       a path in backticks in Context or the seam does not exist
+  missing-path       a seam path, or a Context path with a line reference (`a.py:12`), does not exist
   no-seam            TODO with no seam path: overlaps cannot be computed until analysis
   settled            BLOCKED, or blocked_on set, and everything it names is answered or closed
   inherits-priority  an open task of higher priority waits on it (depends_on, transitively)
@@ -40,6 +40,9 @@ OLD_DAYS = 90
 RELEASE_RE = re.compile(r"(?i)\b(release|ship(ped|ping)?|launch|e2e|end-to-end|go-live)\b|релиз|выпуск")
 NOT_STARTED_RE = re.compile(r"(?i)^\W*(not started|planned|todo)\b|^\W*не\s+начат")
 PATH_RE = re.compile(r"`([^`\s<>*]+)`")
+# a Context path is checked only with a line reference (`app/a.py:12`): it claims the file
+# exists. A bare path may be a file the task will create, a MIME type or a branch name.
+LINE_REF_RE = re.compile(r":\d+([-:]\d+)?$")
 
 
 def _load(name):
@@ -82,9 +85,11 @@ def commits_touching(project, paths, since):
     return [l for l in out.splitlines() if l.strip()] if rc == 0 else []
 
 
-def _paths_in(text):
+def _paths_in(text, line_refs_only=False):
     out = []
     for m in PATH_RE.finditer(text or ""):
+        if line_refs_only and not LINE_REF_RE.search(m.group(1)):
+            continue
         p = re.sub(r"(:\d+([-:]\d+)?|#.*)$", "", m.group(1)).rstrip("/.,;")
         if "/" in p and not p.startswith(("http:", "https:", "/", "~")) and "://" not in p and p not in out:
             out.append(p)
@@ -106,6 +111,10 @@ def collect(project, old_days=OLD_DAYS, now=None):
     oqs = nxt.open_questions(project)
     eff = nxt.effective_priority(tasks)
     open_ids = [tid for tid, t in tasks.items() if t["status"] not in nxt.CLOSED]
+    rc, out = _git(project, "status", "--porcelain", "--", "docs/tasks")
+    dirty = {m.group(1) for m in re.finditer(r"docs/tasks/([^/\s]+)\.md$", out, re.M)} if rc == 0 else set()
+    rc, out = _git(project, "rev-parse", "--is-shallow-repository")
+    shallow = rc == 0 and out.strip() == "true"
     rows = []
     for t in nxt._sorted(tasks.values()):
         tid = t["id"]
@@ -139,8 +148,8 @@ def collect(project, old_days=OLD_DAYS, now=None):
                     add("seam-changed", "%d commit(s) changed its seam after the record last changed"
                         % len(touched), touched[:5])
         context = task.section(text, "Context") if hasattr(task, "section") else ""
-        seam_text = " ".join("`%s`" % p for p in paths)
-        missing = [p for p in _paths_in(context + "\n" + seam_text) if not os.path.exists(os.path.join(project, p))]
+        named = _paths_in(context, line_refs_only=True) + [p for p in paths if "/" in p or "." in p]
+        missing = [p for p in dict.fromkeys(named) if not os.path.exists(os.path.join(project, p))]
         if missing:
             add("missing-path", "named in Context or the seam, not in the tree: %s" % ", ".join(missing), missing)
         if t["status"] == "TODO" and not paths:
@@ -158,8 +167,8 @@ def collect(project, old_days=OLD_DAYS, now=None):
         if src and rank < nxt.PRIO.get(t["priority"], 9):
             add("inherits-priority", "%s %s waits on it: worked as P%d, recorded as %s"
                 % (tasks[src]["priority"], src, rank, t["priority"]), [src])
-        age = int((now - last_ts) // 86400) if last_ts else None
-        if age is not None and age >= old_days:
+        age = 0 if tid in dirty else int((now - last_ts) // 86400) if last_ts else None
+        if age is not None and age >= old_days and tid not in dirty:
             add("old", "the record has not changed for %d days" % age)
         if s("class") == "from-follow-up" and e.get("open_items", 0) > FOLLOW_UP_MAX:
             add("too-large", "%d open items, more than one chain takes (%d): split"
@@ -218,12 +227,16 @@ def collect(project, old_days=OLD_DAYS, now=None):
         counts[x["kind"]] = counts.get(x["kind"], 0) + 1
     return {"installed": True, "open": len(open_ids), "records": [r for r in rows if r["findings"]],
             "stages": stages, "milestone": milestone, "counts": dict(sorted(counts.items())),
-            "old_days": old_days}
+            "old_days": old_days,
+            "warnings": ["shallow clone: record history is cut, so possibly-done, seam-changed and old are "
+                         "incomplete - git fetch --unshallow"] if shallow else []}
 
 
 def show(data):
     print("open tasks: %d; findings: %s" % (data["open"], ", ".join(
         "%s %d" % kv for kv in data["counts"].items()) or "none"))
+    for w in data["warnings"]:
+        print("warning: %s" % w)
     # no-seam is on most TODO records before analysis: a count, not a line each
     no_seam = [r["id"] for r in data["records"] if any(f["kind"] == "no-seam" for f in r["findings"])]
     for r in data["records"]:

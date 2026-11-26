@@ -831,13 +831,13 @@ def active_sprint(project, task=None):
     sprint file. Ids mentioned elsewhere in the file (an out-of-sprint list) do not count."""
     d = os.path.join(project, "docs", "sprints")
     try:
-        nums = [int(m.group(1)) for m in (re.fullmatch(r"(\d+)\.md", f) for f in os.listdir(d)) if m]
+        files = [(int(m.group(1)), f) for f in os.listdir(d) for m in [re.fullmatch(r"(\d+)\.md", f)] if m]
     except OSError:
         return None
-    if not nums:
+    if not files:
         return None
-    n = max(nums)
-    path = os.path.join(d, "%d.md" % n)
+    n, name = max(files)  # 01.md is sprint 1, read under its own name
+    path = os.path.join(d, name)
     tid_re = re.compile(r"(?:%s)" % getattr(task, "TASK_ID", r"[A-Z][A-Z0-9]*-\d+"))
     ids, inside = [], False
     try:
@@ -847,13 +847,13 @@ def active_sprint(project, task=None):
         lines = []
     for line in lines:
         if re.match(r"^#{1,6}\s", line):
-            inside = bool(re.match(r"^#{1,6}\s+Tasks\b", line, re.I))
+            inside = bool(re.match(r"^#{1,6}\s+Tasks\s*$", line, re.I))
             continue
         if inside and line.strip().startswith("|"):
             cell = re.sub(r"[`*\[\]]", "", line.strip().strip("|").split("|")[0]).strip()
             if tid_re.fullmatch(cell) and cell not in ids:
                 ids.append(cell)
-    return {"number": n, "path": "docs/sprints/%d.md" % n, "tasks": ids}
+    return {"number": n, "path": "docs/sprints/" + name, "tasks": ids}
 
 
 def candidates(tasks, st, oqs=None, after="verified", own=None, sprint=None):

@@ -289,6 +289,23 @@ printf 'version: 1\nmode: gate-first\nareas:\n  - name: core\nprocess:\n  ready:
 expect_rc "sprint_first: the sprint's task first at equal priority, a higher priority still wins" "T-3 T-4 T-1 T-2" "$(order)"
 j | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["alternatives"] if x["task"]=="T-4"][0]; assert "in the active sprint" in a["reason"], a' \
   && ok "sprint_first: the reason names the sprint" || bad "sprint_first: the reason names the sprint"
+git rm -q docs/sprints/2.md
+printf '# Sprint 3
+
+## Tasks deferred
+
+| ID | Why |
+|---|---|
+| T-1 | later |
+
+## Tasks
+
+| ID | Title |
+|---|---|
+| T-2 | a |
+' > docs/sprints/03.md; commit_all
+expect_rc "a zero-padded sprint file is read; a heading that only starts with Tasks is not the table" "3 docs/sprints/03.md ['T-2']" \
+  "$(j | python3 -c 'import json,sys; s=json.load(sys.stdin)["sprint"]; print(s["number"], s["path"], s["tasks"])')"
 printf 'version: 1\nmode: gate-first\nprocess:\n  ready:\n    sprint_first: maybe\n' > "$TMP/sf.yml"
 python3 -c "import sys; sys.path.insert(0,'$HOOKS'); import _config as c; print(c.process_errors(c.parse_yaml(open('$TMP/sf.yml').read())))" \
   | grep -q "sprint_first must be true or false" && ok "an invalid sprint_first is refused" || bad "an invalid sprint_first is refused"

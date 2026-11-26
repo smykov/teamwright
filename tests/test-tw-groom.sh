@@ -36,7 +36,9 @@ for i in $(seq 1 11); do echo "- [ ] item $i" >> docs/tasks/T-11.md; done  # too
 mk T-12 TODO 'class: input-parsing' 'analysis:' '  seam: "app/h.py"'
 mk T-13 TODO 'class: input-parsing' 'analysis:' '  seam: "app/h.py"'    # duplicate of T-12
 mk T-14 TODO 'analysis:' '  seam: "app/i.py"'
-printf -- '- see `app/a.py:12` and `docs/nowhere.md#x` and `https://x.example/a/b`\n' >> docs/tasks/T-14.md
+printf -- '- see `app/a.py:12` and `docs/nowhere.md:3` and `https://x.example/a/b`\n- return `application/json`, rebase on `origin/main`, add `app/new_export.py`\n' >> docs/tasks/T-14.md
+mk T-15 TODO 'analysis:' '  seam: ".github/workflows/ci.yml"'   # a dotfile seam that exists
+mkdir -p .github/workflows; echo on > .github/workflows/ci.yml
 touch app/c.py app/d.py app/e.py app/f.py app/g.py app/h.py app/i.py
 cat > docs/plan.md <<'MD'
 # Plan
@@ -65,7 +67,8 @@ expect_rc "a P3 prerequisite of a P1 task" "['inherits-priority']" "$(kinds T-7)
 expect_rc "DEFERRED whose absorbed_by is DONE" "['absorbed-done']" "$(kinds T-10)"
 expect_rc "a from-follow-up task over the size limit" "['too-large']" "$(kinds T-11)"
 expect_rc "same class and the same seam: duplicate" "['duplicate', 'possibly-done']" "$(kinds T-12)"
-expect_rc "a path in Context that is gone (a line number and a URL are not paths to check)" \
+expect_rc "a dotfile seam keeps its dot: it exists" "[]" "$(kinds T-15)"
+expect_rc "a Context path with a line reference that is gone; a MIME type, a branch, a file to create and a URL are not checked" \
   "['docs/nowhere.md']" "$(python3 "$G" --project . --json | python3 -c "import json,sys; d=json.load(sys.stdin); print([f['evidence'] for r in d['records'] if r['id']=='T-14' for f in r['findings'] if f['kind']=='missing-path'][0])")"
 expect_rc "an id inside a longer id is not a mention" "[]" \
   "$(python3 "$G" --project . --json | python3 -c "import json,sys; d=json.load(sys.stdin); print([f for r in d['records'] if r['id']=='T-10' for f in r['findings'] if f['kind']=='possibly-done'])")"
@@ -77,6 +80,15 @@ python3 "$G" --project . --json --old-days 0 | python3 -c 'import json,sys; d=js
 printf '{"milestone": {"name": "m1", "stages": ["0 — Skeleton", "Beta"]}}\n' > .teamwright/progress.json
 expect_rc "a milestone stage that is not in the plan" "['milestone-stage-missing']" \
   "$(python3 "$G" --project . --json | python3 -c 'import json,sys; print([f["kind"] for f in json.load(sys.stdin)["milestone"]])')"
+echo "edited" >> docs/tasks/T-4.md
+expect_rc "an uncommitted edit of the record is not old" "[]" \
+  "$(python3 "$G" --project . --json --old-days 0 | python3 -c "import json,sys; d=json.load(sys.stdin); print([f for r in d['records'] if r['id']=='T-4' for f in r['findings'] if f['kind']=='old'])")"
+git checkout -q docs/tasks/T-4.md
+echo more >> .github/workflows/ci.yml; git commit -qam "ci tweak"
+expect_rc "a dotfile seam that changed: seam-changed" "['seam-changed']" "$(kinds T-15)"
+git clone -q --depth 1 "file://$p" "$TMP/shallow" 2>/dev/null
+expect_rc "a shallow clone is said" "1" \
+  "$(python3 "$G" --project "$TMP/shallow" --json | python3 -c 'import json,sys; print(len([w for w in json.load(sys.stdin)["warnings"] if "shallow" in w]))')"
 before="$(git status --porcelain)"
 python3 "$G" --project . | grep -q "^open tasks: " && ok "human output" || bad "human output"
 expect_rc "read-only: the tree is unchanged" "$before" "$(git status --porcelain)"

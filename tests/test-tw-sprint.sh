@@ -118,6 +118,7 @@ vk T-6 bug "" "" "tests/test_x.py" "x is checked"
 vk T-7 feature "" "" "" "fix flaky upload test"
 vk T-8 feature "" "" "web/f.py" "sign in" "checked on a real phone"
 vk T-9 feature "" "" "web/g.py" "share"
+vk T-11 feature "" "" ".github/workflows/ci.yml" "faster pipeline"
 printf -- '---\nid: T-10\ntitle: needs T-6\ntype: feature\nstatus: TODO\npriority: P1\ndeploys: false\nsurface: none\ndepends_on: [T-6]\nanalysis:\n  seam: "web/h.py"\n---\n' > docs/tasks/T-10.md
 touch web/a.py web/b.py web/c.py web/d.py web/e.py web/f.py web/h.py tests/test_x.py
 git add -A; git commit -qm init; git commit -q --allow-empty -m "fix(T-9): shared already"
@@ -129,6 +130,7 @@ expect_rc "only an area: a feature grouped by the area" "feature area web" "$(vv
 expect_rc "type chore: invisible" "invisible invisible" "$(vv T-4)"
 expect_rc "class from-follow-up: invisible" "invisible invisible" "$(vv T-5)"
 expect_rc "a seam only in tests: invisible" "invisible invisible" "$(vv T-6)"
+expect_rc "a seam only in .github: invisible (the dot is kept)" "invisible invisible" "$(vv T-11)"
 expect_rc "no seam, a test in the title: invisible" "invisible invisible" "$(vv T-7)"
 expect_rc "a device in the acceptance: owner" "owner owner checks" "$(vv T-8)"
 expect_rc "every value has a reason" "True" "$(vq 'all(c["value"]["reason"] for c in d["candidates"])')"

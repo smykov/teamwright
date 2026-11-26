@@ -222,6 +222,7 @@ def collect(project):
     if flagged:
         warnings.append("%d candidate(s) have backlog findings (tw-groom.py): %s - read them before choosing"
                         % (len(flagged), ", ".join(flagged)))
+    warnings += g.get("warnings") or []
     if g.get("error"):
         warnings.append("backlog facts not collected: %s" % g["error"])
     current = [{"task": i["task"], "issue": i["number"], "state": i["state"], "stage": i.get("stage"),
