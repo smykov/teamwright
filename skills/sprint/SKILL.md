@@ -2,7 +2,7 @@
 name: sprint
 description: Form a sprint for the autonomous contour — which tasks can go into the GitHub queue, which cannot and why, what would stop a chain, what must come first — and, after the owner's "yes", open their Issues and start the queue. Use when the owner asks to pick tasks for the autonomous queue, form a sprint, groom the backlog by user value, or choose candidates for a run.
 argument-hint: "[N tasks] [goal, e.g. user value | measure | clear work] [T-NNN ...]"
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-groom.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" *) Bash(git status *) Bash(git log *) Bash(git add *) Bash(git commit *) Read Grep Write Edit
+allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-groom.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" doctor *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-next.py" *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-blockers.py" *) Bash(git status *) Bash(git log *) Bash(git add *) Bash(git commit *) Read Grep Write Edit
 ---
 
 # /teamwright:sprint — what goes into the autonomous queue
@@ -24,6 +24,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-sprint.py" --json
 - `warnings` — unpushed commits, a task `IN_PROGRESS` on the default branch, a failed chain, GitHub not checked.
 
 GitHub not checked → say so, do §1b, and stop: without the queue the current sprint is unknown.
+
+Then `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" doctor --json --scope contour`: a contour check that is `missing` or `unknown` (the workflow, the model key secret, a label, an online runner, the CI dispatch) stops a chain before its first stage. Show those first, with class and fix; with any of them, a new sprint is offered only after the owner has fixed them or said to go anyway. `warn` lines (no branch protection, a shared runner) are shown once and do not stop.
 
 ## 1a. The current sprint comes first
 
@@ -106,4 +108,4 @@ Labels go on in the order shown; the queue takes as many at once as it has place
 - Never pass `--add-to-current` on your own judgement.
 - Never label a task the owner did not approve, and never widen the list after the "yes".
 - Do not edit existing task records here: a task that needs an answer goes to `/teamwright:blockers`. Written here, each on the owner's "yes": a new task from a follow-up (§1b) or for an empty plan stage (§1c), and the sprint file with its decision row (§2a).
-- No GitHub remote or no contour workflow in the project → do §1b, say that this command is for the autonomous queue, and offer `/teamwright:flow` or `/teamwright:parallel`.
+- No GitHub remote or no contour workflow in the project (doctor: `contour-workflow` missing) → do §1b, say that this command is for the autonomous queue, and offer `/teamwright:flow` or `/teamwright:parallel`.

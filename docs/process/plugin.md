@@ -20,6 +20,7 @@ scripts/tw-process.py             read-only: review findings, send-backs, settin
 scripts/tw-parallel.py            parallel tasks: group by disjoint seams, worktrees on tw/<ID>, context index per worktree, headless stage runs, status, journal merge
 scripts/tw-sprint.py              candidates for the autonomous queue (dependencies, seams, what could stop a chain, user-value group), their Issues and label
 scripts/tw-groom.py               read-only: facts about the open backlog (possibly done, stale seams, settled blocks, plan stages with no task)
+scripts/tw-doctor.py              read-only: what the project and its autonomous contour still need, one check per requirement (adopt, status, update, sprint)
 providers/<capability>/<provider>.md   tool adapters (read by the installer, not copied wholesale)
 template/                         files installed into a project
 docs/process/                     process reference, copied into projects (except this page)
@@ -50,7 +51,8 @@ Python 3 stdlib only. Every subcommand takes `--project PATH` (default: current 
 | `scan` | secret scan of every tracked and untracked, not ignored, file (whole tree outside git), with the pre-commit hook's built-in rules and its `teamwright:allow-secret` marker. Findings are classified — `secret-like` (high), `config-placeholder`, `test-fixture`, `docs-example` (rules in `gates.md` › Secret scan) — with a summary per class (`--json` → `summary`, `blocking`, `findings[].class`); exit 1 only on secret-like findings. Each line is fed to the scanner as its own one-line hunk, so findings carry the exact path and line whatever the content (a line starting with `++ ` is content, not a header) | nothing |
 | `check-commands [--config FILE] [--area NAME] [--timeout S]` | runs every configured area command once through `scripts/tw-run` (the project's copy, or the kit's before `apply`): first each `generate_command`, then `test`, `lint`, `api_test`, `e2e_ui`. Each gets `pass`, `fail` (non-zero exit, or timeout — default 900 s, the whole process group is killed) or `not-runnable` (exit 125–127: tool, docker or image missing; a tw-run config error; or an environment error, below). `git status` (with content hashes) is taken after code generation and after every check: a check that changes tracked files **inside its area's `workdir`** (the whole repository when the area has none) is a `fail` with `gate modifies tracked files: <paths>`; tracked files changed **outside** the workdir during the run are a note (`changed_outside_workdir` in JSON) — most likely someone edited them meanwhile, so run it in the foreground and edit nothing until it finishes; new untracked files are a note. Full output per command: `.teamwright/logs/check-commands/<area>.<key>.log`. Exit 1 unless all pass. `--dry-run` lists the commands | logs only |
 | `next` | the router decision of `scripts/tw-next.py` for `/teamwright:flow` | nothing |
-| `update [--apply] [--no-fetch]` | for `/teamwright:update`: `claude plugin marketplace update` and `claude plugin update` for the project's channel (skipped with `--no-fetch`), then `plan` — or with `--apply`, `apply` — from the newly installed copy (`installed_plugins.json`; `TW_PLUGINS_FILE`, `TW_CLAUDE` override) | with `--apply`: as `apply` |
+| `doctor [--scope repo\|contour\|runner] [--since X.Y.Z]` | `scripts/tw-doctor.py`: what the project and its contour still need (below) | nothing |
+| `update [--apply] [--no-fetch]` | for `/teamwright:update`: `claude plugin marketplace update` and `claude plugin update` for the project's channel (skipped with `--no-fetch`), then `plan` — or with `--apply`, `apply` — from the newly installed copy (`installed_plugins.json`; `TW_PLUGINS_FILE`, `TW_CLAUDE` override), then that copy's doctor with `--since` the kit version the project had, so the manual steps of every version crossed are listed | with `--apply`: as `apply` |
 
 `apply`, in order — each step is skipped when there is nothing to change, so a second run reports `0 changed`:
 
@@ -207,6 +209,28 @@ stage by the FR-NN they name): `stage-empty`, `release-stage-empty`, `frs-withou
 `plan-status-stale`, and `milestone-stage-missing` for a `.teamwright/progress.json` milestone
 stage the plan no longer has. `tw-sprint.py` shows each candidate's findings (`groom`) and warns,
 never excludes. It decides nothing: the owner says what happens to each record.
+
+## tw-doctor.py: what is still missing
+
+`python3 scripts/tw-doctor.py [--project PATH] [--json] [--scope repo|contour|runner ...] [--since X.Y.Z]`
+(also `tw-install.py doctor`) is read-only. "In sync" from `plan` says the kit files match; the
+doctor says whether the project, and its autonomous contour, can run. Each requirement is one
+check with an `id`, a `state` (`ok`, `missing`, `warn`, `unknown` - could not be checked, the
+evidence says why -, `manual` - no check can tell, a person confirms -, `n/a`), a `class` (`agent`
+may fix it, `owner-action`, `owner-decision`), `why`, the exact `fix` and the `evidence`.
+
+| Scope | Checks |
+|---|---|
+| `repo` | `config`; `kit-version` (the project's kit older than the plugin); `git-hooks` (`core.hooksPath`); `setting:<key>` for each process key left at its default whose recommended value differs; `gitleaks` and `docker-image:<image>` of each docker area on this machine (docker itself failing is `unknown`); `manual:<version>:<n>`, the "What to do by hand" lines of the CHANGELOG for each version after `--since` (default: the kit in `installed.json`; none without one), a line that only says to run `/teamwright:update` left out |
+| `contour` | `contour-workflow` (a workflow under `.github/workflows` runs `tw-next.py` or a `/teamwright:` stage; none is a decision, not a fault); in it `workflow-kit` (`TEAMWRIGHT_KIT` or `--plugin-dir`), `workflow-hooks` (`install-hooks.sh`), `workflow-allowed-bots` (with `claude-code-action`), `workflow-ci-dispatch` (`gh workflow run <ci> ... --ref`), `workflow-scrub` (`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` with a docker area: the sandbox masks the docker socket). Through `gh`: `model-secret` (the secrets the workflow names, else `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`; repository, the job's `environment:` and organisation secrets count), `labels` (`teamwright` and every `tw:*` the workflow names), `branch-protection` of the default branch (classic protection, or a ruleset with `pull_request` or `update`; else 404 → missing, 403 → warn: not on this plan, TM-16 stays open), `runner-online` (each self-hosted `runs-on` label set - scalar, list or a group's `labels:`, matched ignoring case - has an online repository or organisation runner; runners that could not be listed give `unknown`), `runner-shared` (another workflow whose `runs-on` the same runner serves, with the secrets it names) |
+| `runner` | run on the runner host: `runner-kit` (`TEAMWRIGHT_KIT` points at a kit), `gitleaks`, `docker-image:<image>` |
+
+Default scopes: `repo` and `contour`; with no contour workflow the `gh` checks are skipped unless
+`--scope contour` asks. `gh` missing or not logged in gives `unknown`, never `ok`. Exit 0 with a
+report; 2 when the project is not a directory. `TW_GH` and `TW_DOCKER` override the binaries.
+`/teamwright:status` shows the checks that are not `ok` and a contour row, `/teamwright:adopt`
+lists them in its report, `/teamwright:update` shows the manual steps of the versions it crossed,
+and `/teamwright:sprint` stops on a `missing` or `unknown` contour check before offering a sprint.
 
 ## tw-github.py: the autonomous queue
 

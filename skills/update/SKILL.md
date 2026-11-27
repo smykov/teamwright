@@ -34,6 +34,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tw-install.py" update --no-fetch --apply
 
 Conflicts are not overwritten: list each with its path; the owner merges by hand and records it with `tw-install.py apply --accept <path>` (the plan shows the command).
 
+After the plan or the apply the command runs the doctor of the new copy with `--since <the kit version before>`: the **manual steps** of every version it crossed (`manual:<version>:<n>`, from the CHANGELOG's "What to do by hand") and what the project still lacks. Show them in the report as a list, each with its class and fix; never drop one because it looks done — say which of them an agent may do now and do those only on the owner's "yes".
+
 ## 3. Commit
 
 `git status` → the files the installer changed (and `.gitignore` when it added lines). Commit only those: `chore(process): teamwright <old kit> → <new kit>`.
@@ -42,4 +44,4 @@ Conflicts are not overwritten: list each with its path; the owner merges by hand
 
 Say: "Restart Claude Code to load the new commands and skills — the hooks and role files are already in effect." Then, after the restart, `/teamwright:status` shows no drift.
 
-Report: `Updated: plugin <id> <old> → <new> · kit <old> → <new> · changed <n> · kept-local <n> · conflicts <paths or none> · commit <sha>`.
+Report: `Updated: plugin <id> <old> → <new> · kit <old> → <new> · changed <n> · kept-local <n> · conflicts <paths or none> · commit <sha>`, then the manual steps and the doctor's gaps.

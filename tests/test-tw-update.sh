@@ -23,6 +23,14 @@ out="$(TW_PLUGINS_FILE="$PF" python3 "$I" update --no-fetch --apply --project . 
 expect_rc "update --apply installs the kit" 0 "$rc"
 [ -f .teamwright/installed.json ] && ok "apply wrote the kit files" || bad "apply wrote the kit files" "$out"
 printf '%s' "$out" | grep -q "restart Claude Code" && ok "says to restart for the new commands" || bad "restart note" "$out"
+# the doctor after apply lists the manual steps of the versions crossed: installed.json already
+# holds the new version then, so the version before the update is what counts
+python3 - <<'EOF'
+import json; p = ".teamwright/installed.json"; d = json.load(open(p)); d["@kit"]["version"] = "0.17.0"; json.dump(d, open(p, "w"))
+EOF
+out="$(TW_PLUGINS_FILE="$PF" python3 "$I" update --no-fetch --apply --project . 2>&1)"
+printf '%s' "$out" | grep -q "doctor (the steps of the versions after 0.17.0" && ok "update runs the doctor" || bad "update runs the doctor" "$out"
+printf '%s' "$out" | grep -q "manual:0.18.0:1 " && ok "with the manual steps of the versions it crossed" || bad "manual steps of the crossed versions" "$out"
 # an update on a project installed before the new deny rules: rules are merged in, the
 # project's own settings kept, and the hooks it just got do not block finishing the update
 printf '{"plugins": {"teamwright@teamwright": [{"scope": "user", "installPath": "%s", "version": "9.9.9"}]}}\n' "$KIT" > "$PF.ok"
